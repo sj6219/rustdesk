@@ -156,13 +156,24 @@ pub fn start(args: &mut [String]) {
         frame.load_html(html.as_bytes(), Some(page));
     }
     #[cfg(not(feature = "inline"))]
-    frame.load_file(&format!(
-        "file://{}/src/ui/{}",
-        std::env::current_dir()
-            .map(|c| c.display().to_string())
-            .unwrap_or("".to_owned()),
-        page
-    ));
+    // frame.load_file(&format!(
+    //     "file://{}/src/ui/{}",
+    //     std::env::current_dir()
+    //         .map(|c| c.display().to_string())
+    //         .unwrap_or("".to_owned()),
+    //     page
+    // ));
+    {
+        let mut path = std::env::current_exe().unwrap_or_default();
+        path.pop();
+        path.pop();
+        path.pop();
+        frame.load_file(&format!(
+            "file://{}/src/ui/{}",
+            path.to_str().unwrap_or_default(),
+            page
+        ));
+    }
     frame.run_app();
 }
 
@@ -1045,7 +1056,7 @@ async fn check_id(
             if let Some(Ok(bytes)) = socket.next_timeout(3_000).await {
                 if let Ok(msg_in) = RendezvousMessage::parse_from_bytes(&bytes) {
                     match msg_in.union {
-                        Some(rendezvous_message::Union::RegisterPkResponse(rpr)) => {
+                        Some(rendezvous_message::Union::register_pk_response(rpr)) => {
                             match rpr.result.enum_value_or_default() {
                                 register_pk_response::Result::OK => {
                                     ok = true;

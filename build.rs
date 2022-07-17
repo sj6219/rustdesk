@@ -6,7 +6,7 @@ fn build_windows() {
     println!("cargo:rerun-if-changed=windows.cc");
 }
 
-#[cfg(all(windows, feature = "inline"))]
+#[cfg(all(windows))]
 fn build_manifest() {
     use std::io::Write;
     if std::env::var("PROFILE").unwrap() == "release" {
@@ -103,7 +103,7 @@ fn main() {
     }
     #[cfg(all(windows, feature = "with_rc"))]
     build_rc_source();
-    #[cfg(all(windows, feature = "inline"))]
+    #[cfg(all(windows))]
     build_manifest();
     #[cfg(windows)]
     build_windows();
