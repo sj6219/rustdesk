@@ -15,6 +15,14 @@ fn main() {
 
 #[cfg(not(any(target_os = "android", target_os = "ios", feature = "cli")))]
 fn main() {
+    {
+        use std::io::Write;
+
+        println!("======================");
+        std::io::stdout().flush().unwrap();
+        
+        platform::macos::is_can_screen_recording(false);
+    }
     // https://docs.rs/flexi_logger/latest/flexi_logger/error_info/index.html#write
     let mut _async_logger_holder: Option<flexi_logger::LoggerHandle> = None;
     let mut args = Vec::new();
