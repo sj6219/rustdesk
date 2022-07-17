@@ -9,7 +9,7 @@
             "type": "cppvsdbg",
             "request": "launch",
             "program": "${workspaceFolder}/target/debug/rustdesk.exe",
-            "args": [],
+            "args": ["--connect", "192.168.111.11"],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],

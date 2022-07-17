@@ -24,11 +24,9 @@ fn main() {
     let mut is_setup = false;
 
     {
-        println!("======================");
+        println!("======================0");
         println!("{}", std::process::id());
         std::io::stdout().flush().unwrap();
-        std::io::stdout().flush().unwrap();
-  
     }
     unsafe {
         let name  = "kernel32.dll\0";
@@ -38,7 +36,7 @@ fn main() {
         let proc : winapi::shared::minwindef::FARPROC = winapi::um::libloaderapi::GetProcAddress(dll as winapi::shared::minwindef::HMODULE, name.as_ptr() as winapi::um::winnt::LPCSTR);
         let func : extern "stdcall" fn(winapi::um::winnt::LPCSTR) = std::mem::transmute(proc);
 
-        let name  = "================\n\0";
+        let name  = "======================0\n\0";
         func(name.as_ptr() as winapi::um::winnt::LPCSTR);
         let name  = std::format!("{}\n\0", std::process::id()).to_string();
         func(name.as_ptr() as winapi::um::winnt::LPCSTR);
@@ -49,7 +47,7 @@ fn main() {
         winapi::um::libloaderapi::GetModuleFileNameA(winapi::shared::ntdef::NULL as winapi::shared::minwindef::HMODULE, filename.as_ptr() as winapi::um::winnt::LPSTR, 511);
         let name = std::str::from_utf8(&filename).unwrap_or_default();
         let event_log : winapi::um::winnt::HANDLE = winapi::um::winbase::RegisterEventSourceA(winapi::shared::ntdef::NULL as winapi::um::winnt::LPCSTR, "EchoServer\0".as_ptr() as winapi::um::winnt::LPCSTR);
-        let mut bytes : Vec<u8> = std::format!("================\n").to_string().into_bytes();
+        let mut bytes : Vec<u8> = std::format!("======================0\n").to_string().into_bytes();
         bytes.append(&mut std::format!("{} {}\n\0", std::process::id(), name).to_string().into_bytes());
         let mut message = bytes.as_ptr() as winapi::um::winnt::LPCSTR;
 		winapi::um::winbase::ReportEventA(event_log, winapi::um::winnt::EVENTLOG_INFORMATION_TYPE, 0, 0xC0020100, winapi::shared::ntdef::NULL, 1, 0, &mut message, winapi::shared::ntdef::NULL);

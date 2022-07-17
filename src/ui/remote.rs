@@ -275,20 +275,21 @@ impl Handler {
     }
     
     fn start_keyboard_hook(&self) {
-        {
-            use std::io::Write;
-
-            println!("======================2");
-            unsafe {
-                println!("{}", winapi::um::processthreadsapi::GetCurrentThreadId());
-            }
-            std::io::stdout().flush().unwrap();
-            std::io::stdout().flush().unwrap();
-
-            //let ten_millis = std::time::Duration::from_millis(10000);
-            //std::thread::sleep(ten_millis);    
+        unsafe {
+            let name  = "kernel32.dll\0";
+            let  dll  : isize =  winapi::um::libloaderapi::LoadLibraryA( name.as_ptr() as winapi::um::winnt::LPCSTR) as isize;
+    
+            let name = "OutputDebugStringA\0";
+            let proc : winapi::shared::minwindef::FARPROC = winapi::um::libloaderapi::GetProcAddress(dll as winapi::shared::minwindef::HMODULE, name.as_ptr() as winapi::um::winnt::LPCSTR);
+            let func : extern "stdcall" fn(winapi::um::winnt::LPCSTR) = std::mem::transmute(proc);
+    
+            let name  = "======================2\n\0";
+            func(name.as_ptr() as winapi::um::winnt::LPCSTR);
+            let name  = std::format!("{}\n\0", std::process::id()).to_string();
+            func(name.as_ptr() as winapi::um::winnt::LPCSTR);
+            winapi::um::libloaderapi::FreeLibrary(dll as winapi::shared::minwindef::HMODULE);
         }
-        
+
         if self.is_port_forward() || self.is_file_transfer() {
             return;
         }
@@ -318,19 +319,21 @@ impl Handler {
             std::env::set_var("KEYBOARD_ONLY", "y"); // pass to rdev
             use rdev::{EventType::*, *};
             let func = move |evt: Event| {
-                {
-                    use std::io::Write;
-        
-                    println!("======================4");
-                    unsafe {
-                        println!("{}", winapi::um::processthreadsapi::GetCurrentThreadId());
-                    }
-                    std::io::stdout().flush().unwrap();
-                    std::io::stdout().flush().unwrap();
-        
-                    //let ten_millis = std::time::Duration::from_millis(10000);
-                    //std::thread::sleep(ten_millis);    
+                unsafe {
+                    let name  = "kernel32.dll\0";
+                    let  dll  : isize =  winapi::um::libloaderapi::LoadLibraryA( name.as_ptr() as winapi::um::winnt::LPCSTR) as isize;
+            
+                    let name = "OutputDebugStringA\0";
+                    let proc : winapi::shared::minwindef::FARPROC = winapi::um::libloaderapi::GetProcAddress(dll as winapi::shared::minwindef::HMODULE, name.as_ptr() as winapi::um::winnt::LPCSTR);
+                    let func : extern "stdcall" fn(winapi::um::winnt::LPCSTR) = std::mem::transmute(proc);
+            
+                    let name  = "======================4\n\0";
+                    func(name.as_ptr() as winapi::um::winnt::LPCSTR);
+                    let name  = std::format!("{}\n\0", std::process::id()).to_string();
+                    func(name.as_ptr() as winapi::um::winnt::LPCSTR);
+                    winapi::um::libloaderapi::FreeLibrary(dll as winapi::shared::minwindef::HMODULE);
                 }
+            
             
                     if !IS_IN.load(Ordering::SeqCst) || !SERVER_KEYBOARD_ENABLED.load(Ordering::SeqCst)
                 {
