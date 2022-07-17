@@ -155,24 +155,27 @@ pub fn start(args: &mut [String]) {
         };
         frame.load_html(html.as_bytes(), Some(page));
     }
-    #[cfg(not(feature = "inline"))]
-    // frame.load_file(&format!(
-    //     "file://{}/src/ui/{}",
-    //     std::env::current_dir()
-    //         .map(|c| c.display().to_string())
-    //         .unwrap_or("".to_owned()),
-    //     page
-    // ));
-    {
-        let mut path = std::env::current_exe().unwrap_or_default();
-        path.pop();
-        path.pop();
-        path.pop();
+    #[cfg(not(feature = "inline"))] {
+        #[cfg(not(target_os = "macos"))]
         frame.load_file(&format!(
             "file://{}/src/ui/{}",
-            path.to_str().unwrap_or_default(),
+            std::env::current_dir()
+                .map(|c| c.display().to_string())
+                .unwrap_or("".to_owned()),
             page
         ));
+        #[cfg(target_os = "macos")]
+        {
+            let mut path = std::env::current_exe().unwrap_or_default();
+            path.pop();
+            path.pop();
+            path.pop();
+            frame.load_file(&format!(
+                "file://{}/src/ui/{}",
+                path.to_str().unwrap_or_default(),
+                page
+            ));
+        }
     }
     frame.run_app();
 }
