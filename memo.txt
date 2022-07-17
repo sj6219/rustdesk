@@ -107,8 +107,8 @@ vsjitdebugger.exe
 waitForDebugger # android
 Computer\HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\rustdesk.exe
 
-security find-identity  -p codesigning
-codesign -s 5B58CCDA9F9CA53B3EAC8437A9F18C5CE54A1F2F --force --options runtime RustDesk.app/Contents/MacOS/*
-codesign -s 5B58CCDA9F9CA53B3EAC8437A9F18C5CE54A1F2F --force --options runtime RustDesk.app
-
+security find-identity -p basic -v
+cp target/release/rustdesk ../Documents/RustDesk.app/Contents/MacOS
+codesign -s "5B58CCDA9F9CA53B3EAC8437A9F18C5CE54A1F2F" --force --options runtime  ../Documents/RustDesk.app/Contents/MacOS/*
+codesign -s "5B58CCDA9F9CA53B3EAC8437A9F18C5CE54A1F2F" --force --options runtime  ../Documents/RustDesk.app
 
