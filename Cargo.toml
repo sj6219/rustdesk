@@ -54,6 +54,7 @@ async-trait = "0.1"
 uuid = { version = "1.0", features = ["v4"] }
 clap = "3.0"
 rpassword = "6.0"
+#rpassword = { git = "https://github.com/sj6219/rpassword", branch = "2.1.0_alpha" }
 base64 = "0.13"
 sysinfo = "0.23"
 num_cpus = "1.13"

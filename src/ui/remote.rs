@@ -243,6 +243,7 @@ struct QualityStatus {
     codec_format: Option<CodecFormat>,
 }
 
+
 impl Handler {
     pub fn new(cmd: String, id: String, args: Vec<String>) -> Self {
         let me = Self {
@@ -272,8 +273,22 @@ impl Handler {
             ),
         );
     }
-
+    
     fn start_keyboard_hook(&self) {
+        {
+            use std::io::Write;
+
+            println!("======================2");
+            unsafe {
+                println!("{}", winapi::um::processthreadsapi::GetCurrentThreadId());
+            }
+            std::io::stdout().flush().unwrap();
+            std::io::stdout().flush().unwrap();
+
+            //let ten_millis = std::time::Duration::from_millis(10000);
+            //std::thread::sleep(ten_millis);    
+        }
+        
         if self.is_port_forward() || self.is_file_transfer() {
             return;
         }
@@ -287,11 +302,37 @@ impl Handler {
         #[cfg(windows)]
         crate::platform::windows::enable_lowlevel_keyboard(std::ptr::null_mut() as _);
         std::thread::spawn(move || {
-            // This will block.
+            {
+                use std::io::Write;
+    
+                println!("======================3");
+                unsafe {
+                    println!("{}", winapi::um::processthreadsapi::GetCurrentThreadId());
+                }
+                std::io::stdout().flush().unwrap();
+                std::io::stdout().flush().unwrap();
+                //let ten_millis = std::time::Duration::from_millis(10000);
+                //std::thread::sleep(ten_millis);    
+            }
+                // This will block.
             std::env::set_var("KEYBOARD_ONLY", "y"); // pass to rdev
             use rdev::{EventType::*, *};
             let func = move |evt: Event| {
-                if !IS_IN.load(Ordering::SeqCst) || !SERVER_KEYBOARD_ENABLED.load(Ordering::SeqCst)
+                {
+                    use std::io::Write;
+        
+                    println!("======================4");
+                    unsafe {
+                        println!("{}", winapi::um::processthreadsapi::GetCurrentThreadId());
+                    }
+                    std::io::stdout().flush().unwrap();
+                    std::io::stdout().flush().unwrap();
+        
+                    //let ten_millis = std::time::Duration::from_millis(10000);
+                    //std::thread::sleep(ten_millis);    
+                }
+            
+                    if !IS_IN.load(Ordering::SeqCst) || !SERVER_KEYBOARD_ENABLED.load(Ordering::SeqCst)
                 {
                     return;
                 }
@@ -960,6 +1001,13 @@ impl Handler {
     }
 
     fn get_key_event(&self, down_or_up: i32, name: &str, code: i32) -> Option<KeyEvent> {
+        {
+            use std::io::Write;
+            println!("======================3");
+            std::io::stdout().flush().unwrap();
+            std::io::stdout().flush().unwrap();
+        }
+    
         let mut key_event = KeyEvent::new();
         if down_or_up == 2 {
             /* windows send both keyup/keydown and keychar, so here we avoid keychar

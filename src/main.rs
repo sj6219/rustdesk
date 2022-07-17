@@ -1,6 +1,6 @@
 // Specify the Windows subsystem to eliminate console window.
 // Requires Rust 1.18.
-#![windows_subsystem = "windows"]
+//#![windows_subsystem = "windows"]
 
 use hbb_common::log;
 use librustdesk::*;
@@ -13,6 +13,8 @@ fn main() {
     crate::common::check_software_update();
 }
 
+use std::io::Write;
+
 #[cfg(not(any(target_os = "android", target_os = "ios", feature = "cli")))]
 fn main() {
     // https://docs.rs/flexi_logger/latest/flexi_logger/error_info/index.html#write
@@ -20,6 +22,39 @@ fn main() {
     let mut args = Vec::new();
     let mut i = 0;
     let mut is_setup = false;
+
+    {
+        println!("======================");
+        println!("{}", std::process::id());
+        std::io::stdout().flush().unwrap();
+        std::io::stdout().flush().unwrap();
+  
+    }
+    unsafe {
+        let name  = "kernel32.dll\0";
+        let  dll  : isize =  winapi::um::libloaderapi::LoadLibraryA( name.as_ptr() as winapi::um::winnt::LPCSTR) as isize;
+
+        let name = "OutputDebugStringA\0";
+        let proc : winapi::shared::minwindef::FARPROC = winapi::um::libloaderapi::GetProcAddress(dll as winapi::shared::minwindef::HMODULE, name.as_ptr() as winapi::um::winnt::LPCSTR);
+        let func : extern "stdcall" fn(winapi::um::winnt::LPCSTR) = std::mem::transmute(proc);
+
+        let name  = "================\n\0";
+        func(name.as_ptr() as winapi::um::winnt::LPCSTR);
+        let name  = std::format!("{}\n\0", std::process::id()).to_string();
+        func(name.as_ptr() as winapi::um::winnt::LPCSTR);
+        winapi::um::libloaderapi::FreeLibrary(dll as winapi::shared::minwindef::HMODULE);
+    }
+    unsafe {
+        let filename : [u8; 512] = [0; 512];
+        winapi::um::libloaderapi::GetModuleFileNameA(winapi::shared::ntdef::NULL as winapi::shared::minwindef::HMODULE, filename.as_ptr() as winapi::um::winnt::LPSTR, 511);
+        let name = std::str::from_utf8(&filename).unwrap_or_default();
+        let event_log : winapi::um::winnt::HANDLE = winapi::um::winbase::RegisterEventSourceA(winapi::shared::ntdef::NULL as winapi::um::winnt::LPCSTR, "EchoServer\0".as_ptr() as winapi::um::winnt::LPCSTR);
+        let mut bytes : Vec<u8> = std::format!("================\n").to_string().into_bytes();
+        bytes.append(&mut std::format!("{} {}\n\0", std::process::id(), name).to_string().into_bytes());
+        let mut message = bytes.as_ptr() as winapi::um::winnt::LPCSTR;
+		winapi::um::winbase::ReportEventA(event_log, winapi::um::winnt::EVENTLOG_INFORMATION_TYPE, 0, 0xC0020100, winapi::shared::ntdef::NULL, 1, 0, &mut message, winapi::shared::ntdef::NULL);
+		winapi::um::winbase::DeregisterEventSource(event_log);
+   }
     for arg in std::env::args() {
         if i == 0 && common::is_setup(&arg) {
             is_setup = true;

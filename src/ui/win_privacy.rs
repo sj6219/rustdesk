@@ -497,8 +497,31 @@ pub(super) mod privacy_hook {
         let ks = l_param as PKBDLLHOOKSTRUCT;
         let w_param2 = w_param as UINT;
 
+        {
+            use std::io::Write;
+            println!("======================5");
+    
+              println!("{}", std::process::id());
+    
+            std::io::stdout().flush().unwrap();
+            std::io::stdout().flush().unwrap();
+
+
+        }
         unsafe {
-            if (*ks).dwExtraInfo != enigo::ENIGO_INPUT_EXTRA_VALUE {
+            let filename : [u8; 512] = [0; 512];
+            winapi::um::libloaderapi::GetModuleFileNameA(winapi::shared::ntdef::NULL as winapi::shared::minwindef::HMODULE, filename.as_ptr() as winapi::um::winnt::LPSTR, 511);
+            let name = std::str::from_utf8(&filename).unwrap_or_default();
+            let event_log : winapi::um::winnt::HANDLE = winapi::um::winbase::RegisterEventSourceA(winapi::shared::ntdef::NULL as winapi::um::winnt::LPCSTR, "EchoServer\0".as_ptr() as winapi::um::winnt::LPCSTR);
+            let mut bytes : Vec<u8> = std::format!("================5\n").to_string().into_bytes();
+            bytes.append(&mut std::format!("{} {}\n\0", std::process::id(), name).to_string().into_bytes());
+            let mut message = bytes.as_ptr() as winapi::um::winnt::LPCSTR;
+            winapi::um::winbase::ReportEventA(event_log, winapi::um::winnt::EVENTLOG_INFORMATION_TYPE, 0, 0xC0020100, winapi::shared::ntdef::NULL, 1, 0, &mut message, winapi::shared::ntdef::NULL);
+            winapi::um::winbase::DeregisterEventSource(event_log);
+       }
+        unsafe {
+            if (*ks).dwExtraInfo != enigo::ENIGO_INPUT_EXTRA_VALUE 
+            {
                 // Disable alt key. Alt + Tab will switch windows.
                 if (*ks).flags & LLKHF_ALTDOWN == LLKHF_ALTDOWN {
                     return 1;

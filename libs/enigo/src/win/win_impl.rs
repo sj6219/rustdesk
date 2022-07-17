@@ -41,7 +41,16 @@ fn mouse_event(flags: u32, data: u32, dx: i32, dy: i32) -> DWORD {
 fn keybd_event(flags: u32, vk: u16, scan: u16) -> DWORD {
     let mut vk = vk;
     let mut scan = scan;
-    unsafe {
+    {
+        use std::io::Write;
+        println!("======================1");
+
+        println!("{}", std::process::id());
+
+        std::io::stdout().flush().unwrap();
+        std::io::stdout().flush().unwrap();
+    }
+        unsafe {
         // https://github.com/rustdesk/rustdesk/issues/366
         if scan == 0 {
             if LAYOUT.is_null() {
