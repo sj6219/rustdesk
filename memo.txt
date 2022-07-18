@@ -4,6 +4,8 @@
 cargo build --release --target=aarch64-pc-windows-msvc -vv 
 cargo build --release --target=x86_64-apple-darwin
 cargo build --release --target=aarch64-apple-darwin
+cargo build --release --target aarch64-apple-ios
+
 file libsciter.dylib
 
 cargo update
@@ -107,9 +109,21 @@ vsjitdebugger.exe
 waitForDebugger # android
 Computer\HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\rustdesk.exe
 
+https://github.com/create-dmg/create-dmg
 security find-identity -p basic -v
 cp target/release/rustdesk ../Documents/RustDesk.app/Contents/MacOS
 codesign -s "5B58CCDA9F9CA53B3EAC8437A9F18C5CE54A1F2F" --force --options runtime  ../Documents/RustDesk.app/Contents/MacOS/*
 codesign -s "5B58CCDA9F9CA53B3EAC8437A9F18C5CE54A1F2F" --force --options runtime  ../Documents/RustDesk.app
-create-dmg  --codesign "5B58CCDA9F9CA53B3EAC8437A9F18C5CE54A1F2F" ../Documents/RustDesk.dmg ../Documents/RustDesk.app
+create-dmg  ../Documents/RustDesk.dmg ../Documents/RustDesk.app
+codesign -s "5B58CCDA9F9CA53B3EAC8437A9F18C5CE54A1F2F" --force --options runtime ../Documents/RustDesk.dmg
 
+# tool
+
+rustup update
+rustup target install aarch64-apple-ios
+rustup target list
+
+xcrun simctl list
+open -a Simulator --args -CurrentDeviceUDID 5D1C39DD-708B-41D3-B89A-3F0D9B8E42BF
+
+file target\release\rustdesk
