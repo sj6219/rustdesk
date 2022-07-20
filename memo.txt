@@ -111,11 +111,11 @@ Computer\HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image F
 
 https://github.com/create-dmg/create-dmg
 security find-identity -p basic -v
-cp target/release/rustdesk ../Documents/RustDesk.app/Contents/MacOS
-codesign -s "5B58CCDA9F9CA53B3EAC8437A9F18C5CE54A1F2F" --force --options runtime  ../Documents/RustDesk.app/Contents/MacOS/*
-codesign -s "5B58CCDA9F9CA53B3EAC8437A9F18C5CE54A1F2F" --force --options runtime  ../Documents/RustDesk.app
-create-dmg  ../Documents/RustDesk.dmg ../Documents/RustDesk.app
-codesign -s "5B58CCDA9F9CA53B3EAC8437A9F18C5CE54A1F2F" --force --options runtime ../Documents/RustDesk.dmg
+codesign -s "5B58CCDA9F9CA53B3EAC8437A9F18C5CE54A1F2F" --force --options runtime  ./RustDesk.app/Contents/MacOS/*
+codesign -s "5B58CCDA9F9CA53B3EAC8437A9F18C5CE54A1F2F" --force --options runtime  ./RustDesk.app
+create-dmg  RustDesk.dmg RustDesk.app
+codesign -s "5B58CCDA9F9CA53B3EAC8437A9F18C5CE54A1F2F" --force --options runtime ./RustDesk.dmg
+rcodesign notarize --api-issuer 69a6de71-2a59-47e3-e053-5b8c7c11a4d1 --api-key 3Y4FWB23RH --staple ./rustdesk.dmg
 
 # tool
 
