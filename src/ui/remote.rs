@@ -1684,6 +1684,11 @@ impl Remote {
         // log::info!("new msg from ui, {}",data);
         match data {
             Data::Close => {
+                let mut misc = Misc::new();
+                misc.set_close_reason("".to_owned());
+                let mut msg = Message::new();
+                msg.set_misc(misc);
+                allow_err!(peer.send(&msg).await);
                 return false;
             }
             Data::Login((password, remember)) => {
