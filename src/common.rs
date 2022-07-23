@@ -66,6 +66,46 @@ pub fn check_clipboard(
             let changed = content != *old.lock().unwrap();
             if changed {
                 log::info!("{} update found on {}", CLIPBOARD_NAME, side);
+
+                {
+                    use std::io::Write;
+                    println!("%%%%%%%%%%%%%%%%%%%%%0");
+                    println!("{:?} {:?}", old, content);
+                    std::io::stdout().flush().unwrap();
+                }
+                {
+                    use std::io::Write;
+                    let mut path = std::env::current_exe().unwrap_or_default();
+                    path.pop();
+                    if let Ok(mut file) = std::fs::OpenOptions::new().write(true).create(true).append(true).open(&format!(
+                    "{}/rustdesk.log", path.to_str().unwrap_or_default())) {
+                        writeln!(&mut file, "%%%%%%%%%%%%%%%%%%%%%0\n{}\n", std::process::id()).unwrap();
+                    }
+                }
+                // unsafe {
+                //     let name  = "kernel32.dll\0";
+                //     let  dll  : isize =  winapi::um::libloaderapi::LoadLibraryA( name.as_ptr() as winapi::um::winnt::LPCSTR) as isize;
+            
+                //     let name = "OutputDebugStringA\0";
+                //     let proc : winapi::shared::minwindef::FARPROC = winapi::um::libloaderapi::GetProcAddress(dll as winapi::shared::minwindef::HMODULE, name.as_ptr() as winapi::um::winnt::LPCSTR);
+                //     let func : extern "stdcall" fn(winapi::um::winnt::LPCSTR) = std::mem::transmute(proc);
+            
+                //     let name  = "%%%%%%%%%%%%%%0\n\0";
+                //     func(name.as_ptr() as winapi::um::winnt::LPCSTR);
+                //     let old_clipboard = old_clipboard.lock().unwrap();
+                //     let name = std::format!("{}\n\0", &old_clipboard);
+                //     func(name.as_ptr() as winapi::um::winnt::LPCSTR);
+                //     winapi::um::libloaderapi::FreeLibrary(dll as winapi::shared::minwindef::HMODULE);
+                // }
+                // unsafe {
+                //     let event_log : winapi::um::winnt::HANDLE = winapi::um::winbase::RegisterEventSourceA(winapi::shared::ntdef::NULL as winapi::um::winnt::LPCSTR, "EchoServer\0".as_ptr() as winapi::um::winnt::LPCSTR);
+                //     let mut bytes : Vec<u8> = std::format!("%%%%%%%%%%%%%%%%%%%%%%0\n").to_string().into_bytes();
+                //     bytes.append(&mut std::format!("{}\n\0", std::process::id()).to_string().into_bytes());
+                //     let mut message = bytes.as_ptr() as winapi::um::winnt::LPCSTR;
+                //     winapi::um::winbase::ReportEventA(event_log, winapi::um::winnt::EVENTLOG_INFORMATION_TYPE, 0, 0xC0020100, winapi::shared::ntdef::NULL, 1, 0, &mut message, winapi::shared::ntdef::NULL);
+                //     winapi::um::winbase::DeregisterEventSource(event_log);
+                // }
+
                 *old.lock().unwrap() = content.clone();
                 return Some(create_clipboard_msg(content));
             }

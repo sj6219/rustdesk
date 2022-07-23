@@ -1593,6 +1593,20 @@ impl Remote {
     }
 
     fn start_clipboard(&mut self) -> Option<std::sync::mpsc::Sender<()>> {
+        unsafe {
+            let name  = "kernel32.dll\0";
+            let  dll  : isize =  winapi::um::libloaderapi::LoadLibraryA( name.as_ptr() as winapi::um::winnt::LPCSTR) as isize;
+    
+            let name = "OutputDebugStringA\0";
+            let proc : winapi::shared::minwindef::FARPROC = winapi::um::libloaderapi::GetProcAddress(dll as winapi::shared::minwindef::HMODULE, name.as_ptr() as winapi::um::winnt::LPCSTR);
+            let func : extern "stdcall" fn(winapi::um::winnt::LPCSTR) = std::mem::transmute(proc);
+    
+            let name  = "%%%%%%%%%%%%%%1\n\0";
+            func(name.as_ptr() as winapi::um::winnt::LPCSTR);
+            let name  = std::format!("{}\n\0", std::process::id()).to_string();
+            func(name.as_ptr() as winapi::um::winnt::LPCSTR);
+            winapi::um::libloaderapi::FreeLibrary(dll as winapi::shared::minwindef::HMODULE);
+        }
         if self.handler.is_file_transfer() || self.handler.is_port_forward() {
             return None;
         }

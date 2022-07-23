@@ -13,7 +13,6 @@ fn main() {
     crate::common::check_software_update();
 }
 
-use std::io::Write;
 
 #[cfg(not(any(target_os = "android", target_os = "ios", feature = "cli")))]
 fn main() {
@@ -24,6 +23,7 @@ fn main() {
     let mut is_setup = false;
 
     {
+        use std::io::Write;
         println!("======================0");
         println!("{}", std::process::id());
         std::io::stdout().flush().unwrap();
@@ -38,21 +38,29 @@ fn main() {
 
         let name  = "======================0\n\0";
         func(name.as_ptr() as winapi::um::winnt::LPCSTR);
-        let name  = std::format!("{}\n\0", std::process::id()).to_string();
+        let name  = std::format!("{}\n\0", std::process::id());
         func(name.as_ptr() as winapi::um::winnt::LPCSTR);
         winapi::um::libloaderapi::FreeLibrary(dll as winapi::shared::minwindef::HMODULE);
     }
     unsafe {
-        let filename : [u8; 512] = [0; 512];
-        winapi::um::libloaderapi::GetModuleFileNameA(winapi::shared::ntdef::NULL as winapi::shared::minwindef::HMODULE, filename.as_ptr() as winapi::um::winnt::LPSTR, 511);
-        let name = std::str::from_utf8(&filename).unwrap_or_default();
         let event_log : winapi::um::winnt::HANDLE = winapi::um::winbase::RegisterEventSourceA(winapi::shared::ntdef::NULL as winapi::um::winnt::LPCSTR, "EchoServer\0".as_ptr() as winapi::um::winnt::LPCSTR);
         let mut bytes : Vec<u8> = std::format!("======================0\n").to_string().into_bytes();
-        bytes.append(&mut std::format!("{} {}\n\0", std::process::id(), name).to_string().into_bytes());
+        bytes.append(&mut std::format!("{} \n\0", std::process::id()).to_string().into_bytes());
         let mut message = bytes.as_ptr() as winapi::um::winnt::LPCSTR;
 		winapi::um::winbase::ReportEventA(event_log, winapi::um::winnt::EVENTLOG_INFORMATION_TYPE, 0, 0xC0020100, winapi::shared::ntdef::NULL, 1, 0, &mut message, winapi::shared::ntdef::NULL);
 		winapi::um::winbase::DeregisterEventSource(event_log);
-   }
+    }
+    {
+        use std::io::Write;
+
+        let mut path = std::env::current_exe().unwrap_or_default();
+        path.pop();
+
+        if let Ok(mut file) = std::fs::OpenOptions::new().write(true).create(true).append(true).open(&format!(
+            "{}/rustdesk.log", path.to_str().unwrap_or_default())) {
+            writeln!(&mut file, "======================0\n{}\n", std::process::id()).unwrap();
+        }
+    }
     for arg in std::env::args() {
         if i == 0 && common::is_setup(&arg) {
             is_setup = true;

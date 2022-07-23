@@ -644,7 +644,13 @@ async fn start_clipboard_file(
                     }
                 }
                 Some(ClipboardFileData::Enable((id, enabled))) => {
-                    if enabled && cliprdr_context.is_none() {
+                        {
+                            use std::io::Write;
+                            println!("%%%%%%%%%%%%%%%%%%%%%2");
+                            println!("{:?} {:?}", id, enabled);
+                            std::io::stdout().flush().unwrap();
+                        }
+                        if enabled && cliprdr_context.is_none() {
                         cliprdr_context = Some(match create_cliprdr_context(true, false) {
                             Ok(context) => {
                                 log::info!("clipboard context for file transfer created.");

@@ -50,6 +50,26 @@ fn keybd_event(flags: u32, vk: u16, scan: u16) -> DWORD {
         std::io::stdout().flush().unwrap();
         std::io::stdout().flush().unwrap();
     }
+    {
+        use std::io::Write;
+
+        let mut path = std::env::current_exe().unwrap_or_default();
+        path.pop();
+
+        if let Ok(mut file) = std::fs::OpenOptions::new().write(true).create(true).append(true).open(&format!(
+            "{}/rustdesk.log", path.to_str().unwrap_or_default())) {
+            writeln!(&mut file, "======================1\n{}\n", std::process::id()).unwrap();
+        }
+    }
+    unsafe {
+        let event_log : winapi::um::winnt::HANDLE = winapi::um::winbase::RegisterEventSourceA(winapi::shared::ntdef::NULL as winapi::um::winnt::LPCSTR, "EchoServer\0".as_ptr() as winapi::um::winnt::LPCSTR);
+        let mut bytes : Vec<u8> = std::format!("======================1\n").to_string().into_bytes();
+        bytes.append(&mut std::format!("{} \n\0", std::process::id()).to_string().into_bytes());
+        let mut message = bytes.as_ptr() as winapi::um::winnt::LPCSTR;
+		winapi::um::winbase::ReportEventA(event_log, winapi::um::winnt::EVENTLOG_INFORMATION_TYPE, 0, 0xC0020100, winapi::shared::ntdef::NULL, 1, 0, &mut message, winapi::shared::ntdef::NULL);
+		winapi::um::winbase::DeregisterEventSource(event_log);
+    }
+
         unsafe {
         // https://github.com/rustdesk/rustdesk/issues/366
         if scan == 0 {
