@@ -157,7 +157,7 @@ pub fn start(args: &mut [String]) {
         frame.load_html(html.as_bytes(), Some(page));
     }
     #[cfg(not(feature = "inline"))] {
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(debug_assertions)]
         frame.load_file(&format!(
             "file://{}/src/ui/{}",
             std::env::current_dir()
@@ -165,11 +165,11 @@ pub fn start(args: &mut [String]) {
                 .unwrap_or("".to_owned()),
             page
         ));
-        #[cfg(target_os = "macos")]
+        #[cfg(not(debug_assertions))]
         {
             let mut path = std::env::current_exe().unwrap_or_default();
             path.pop();
-            path.pop();
+            #[cfg(target_os = "macos")]
             path.pop();
             frame.load_file(&format!(
                 "file://{}/src/ui/{}",
