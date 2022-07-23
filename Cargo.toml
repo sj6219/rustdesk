@@ -57,6 +57,7 @@ rpassword = "7.0"
 base64 = "0.13"
 sysinfo = "0.24"
 num_cpus = "1.13"
+bytes = { version = "1.2", features = ["serde"] }
 default-net = "0.11.0"
 wol-rs = "0.9.1"
 
@@ -81,8 +82,11 @@ arboard = "2.0"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 #systray = { git = "https://github.com/open-trade/systray-rs" }
-trayicon = { git = "https://github.com/open-trade/trayicon-rs", features = ["winit"] }
-winit = "0.26"
+#trayicon = { git = "https://github.com/open-trade/trayicon-rs", features = ["winit"] }
+trayicon = { git = "https://github.com/sj6219/trayicon-rs", branch = "0.1.3-1_alpha", features = ["winit"] }
+#winit = "0.26"
+winit = { git = "https://github.com/sj6219/winit", branch = "0.26.1_alpha" }
+
 winapi = { version = "0.3", features = ["winuser"] }
 winreg = "0.10"
 windows-service = "0.4"
