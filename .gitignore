@@ -1,4 +1,6 @@
 /target
+/Cargo.lock
+.vscode
 .idea
 .DS_Store
 libsciter-gtk.so
