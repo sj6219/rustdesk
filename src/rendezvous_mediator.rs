@@ -2,7 +2,7 @@ use crate::server::{check_zombie, new as new_server, ServerPtr};
 use hbb_common::{
     allow_err,
     anyhow::bail,
-    config::{self, Config, REG_INTERVAL, RENDEZVOUS_PORT, RENDEZVOUS_TIMEOUT},
+    config::{Config, REG_INTERVAL, RENDEZVOUS_PORT, RENDEZVOUS_TIMEOUT},
     futures::future::join_all,
     log,
     protobuf::Message as _,
@@ -64,7 +64,7 @@ impl RendezvousMediator {
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         if crate::platform::is_installed() {
             std::thread::spawn(move || {
-                allow_err!(lan_discovery());
+                allow_err!(super::lan::start_listening());
             });
         }
         loop {
@@ -266,7 +266,7 @@ impl RendezvousMediator {
 
     async fn handle_request_relay(&self, rr: RequestRelay, server: ServerPtr) -> ResultType<()> {
         self.create_relay(
-            rr.socket_addr,
+            rr.socket_addr.into(),
             rr.relay_server,
             rr.uuid,
             server,
@@ -303,7 +303,7 @@ impl RendezvousMediator {
 
         let mut msg_out = Message::new();
         let mut rr = RelayResponse {
-            socket_addr,
+            socket_addr: socket_addr.into(),
             version: crate::VERSION.to_owned(),
             ..Default::default()
         };
@@ -334,8 +334,8 @@ impl RendezvousMediator {
         let relay_server = self.get_relay_server(fla.relay_server);
         msg_out.set_local_addr(LocalAddr {
             id: Config::get_id(),
-            socket_addr: AddrMangle::encode(peer_addr),
-            local_addr: AddrMangle::encode(local_addr),
+            socket_addr: AddrMangle::encode(peer_addr).into(),
+            local_addr: AddrMangle::encode(local_addr).into(),
             relay_server,
             version: crate::VERSION.to_owned(),
             ..Default::default()
@@ -353,7 +353,7 @@ impl RendezvousMediator {
         {
             let uuid = Uuid::new_v4().to_string();
             return self
-                .create_relay(ph.socket_addr, relay_server, uuid, server, true, true)
+                .create_relay(ph.socket_addr.into(), relay_server, uuid, server, true, true)
                 .await;
         }
         let peer_addr = AddrMangle::decode(&ph.socket_addr);
@@ -389,13 +389,13 @@ impl RendezvousMediator {
     async fn register_pk(&mut self, socket: &mut FramedSocket) -> ResultType<()> {
         let mut msg_out = Message::new();
         let pk = Config::get_key_pair().1;
-        let uuid = crate::get_uuid();
+        let uuid = hbb_common::get_uuid();
         let id = Config::get_id();
         self.last_id_pk_registry = id.clone();
         msg_out.set_register_pk(RegisterPk {
             id,
-            uuid,
-            pk,
+            uuid: uuid.into(),
+            pk: pk.into(),
             ..Default::default()
         });
         socket.send(&msg_out, self.addr.to_owned()).await?;
@@ -539,104 +539,4 @@ async fn direct_server(server: ServerPtr) {
             sleep(1.).await;
         }
     }
-}
-
-#[inline]
-pub fn get_broadcast_port() -> u16 {
-    (RENDEZVOUS_PORT + 3) as _
-}
-
-pub fn get_mac() -> String {
-    #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    if let Ok(Some(mac)) = mac_address::get_mac_address() {
-        mac.to_string()
-    } else {
-        "".to_owned()
-    }
-    #[cfg(any(target_os = "android", target_os = "ios"))]
-    "".to_owned()
-}
-
-fn lan_discovery() -> ResultType<()> {
-    let addr = SocketAddr::from(([0, 0, 0, 0], get_broadcast_port()));
-    let socket = std::net::UdpSocket::bind(addr)?;
-    socket.set_read_timeout(Some(std::time::Duration::from_millis(1000)))?;
-    log::info!("lan discovery listener started");
-    loop {
-        let mut buf = [0; 2048];
-        if let Ok((len, addr)) = socket.recv_from(&mut buf) {
-            if let Ok(msg_in) = Message::parse_from_bytes(&buf[0..len]) {
-                match msg_in.union {
-                    Some(rendezvous_message::Union::PeerDiscovery(p)) => {
-                        if p.cmd == "ping" {
-                            let mut msg_out = Message::new();
-                            let peer = PeerDiscovery {
-                                cmd: "pong".to_owned(),
-                                mac: get_mac(),
-                                id: Config::get_id(),
-                                hostname: whoami::hostname(),
-                                username: crate::platform::get_active_username(),
-                                platform: whoami::platform().to_string(),
-                                ..Default::default()
-                            };
-                            msg_out.set_peer_discovery(peer);
-                            socket.send_to(&msg_out.write_to_bytes()?, addr).ok();
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
-    }
-}
-
-pub fn discover() -> ResultType<()> {
-    let addr = SocketAddr::from(([0, 0, 0, 0], 0));
-    let socket = std::net::UdpSocket::bind(addr)?;
-    socket.set_broadcast(true)?;
-    let mut msg_out = Message::new();
-    let peer = PeerDiscovery {
-        cmd: "ping".to_owned(),
-        ..Default::default()
-    };
-    msg_out.set_peer_discovery(peer);
-    let maddr = SocketAddr::from(([255, 255, 255, 255], get_broadcast_port()));
-    socket.send_to(&msg_out.write_to_bytes()?, maddr)?;
-    log::info!("discover ping sent");
-    let mut last_recv_time = Instant::now();
-    let mut last_write_time = Instant::now();
-    let mut last_write_n = 0;
-    // to-do: load saved peers, and update incrementally (then we can see offline)
-    let mut peers = Vec::new();
-    let mac = get_mac();
-    socket.set_read_timeout(Some(std::time::Duration::from_millis(10)))?;
-    loop {
-        let mut buf = [0; 2048];
-        if let Ok((len, _)) = socket.recv_from(&mut buf) {
-            if let Ok(msg_in) = Message::parse_from_bytes(&buf[0..len]) {
-                match msg_in.union {
-                    Some(rendezvous_message::Union::PeerDiscovery(p)) => {
-                        last_recv_time = Instant::now();
-                        if p.cmd == "pong" {
-                            if p.mac != mac {
-                                peers.push((p.id, p.username, p.hostname, p.platform));
-                            }
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
-        if last_write_time.elapsed().as_millis() > 300 && last_write_n != peers.len() {
-            config::LanPeers::store(serde_json::to_string(&peers)?);
-            last_write_time = Instant::now();
-            last_write_n = peers.len();
-        }
-        if last_recv_time.elapsed().as_millis() > 3_000 {
-            break;
-        }
-    }
-    log::info!("discover ping done");
-    config::LanPeers::store(serde_json::to_string(&peers)?);
-    Ok(())
 }

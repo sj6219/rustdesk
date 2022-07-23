@@ -22,7 +22,7 @@ def get_version():
     return ''
 
 
-def get_features(feature):
+def parse_rc_features(feature):
     available_features = {
         'IddDriver': {
             'zip_url': 'https://github.com/fufesou/RustDeskIddDriver/releases/download/v0.1/RustDeskIddDriver_x64.zip',
@@ -94,8 +94,8 @@ def download_extract_features(features, res_dir):
         print(f'{feat} extract end')
 
 
-def build_windows(args):
-    features = get_features(args.feature)
+def get_rc_features(args):
+    features = parse_rc_features(args.feature)
     if features:
         print(f'Build with features {list(features.keys())}')
         res_dir = 'resources'
@@ -105,12 +105,17 @@ def build_windows(args):
             raise Exception(f'Find file {res_dir}, not a directory')
         os.makedirs(res_dir, exist_ok=True)
         download_extract_features(features, res_dir)
+    return ['with_rc'] if features else []
+    
 
-    with_rc = ',with_rc' if features else ''
-    hwcodec = ',hwcodec' if args.hwcodec else ''
-    cmd = 'cargo build --release --features inline' + with_rc + hwcodec
-    print(cmd)
-    os.system(cmd)
+def get_features(args):
+    features = ['inline']
+    if windows:
+        features.extend(get_rc_features(args))
+    if args.hwcodec:
+        features.append('hwcodec')
+    print("features:", features)
+    return features
 
 def main():
     parser = make_parser()
@@ -129,8 +134,9 @@ def main():
     if os.path.isfile('/usr/bin/pacman'):
         os.system('git checkout src/ui/common.tis')
     version = get_version()
+    features = ",".join(get_features(args))
     if windows:
-        build_windows(args)
+        os.system('cargo build --release --features ' + features)
         # os.system('upx.exe target/release/rustdesk.exe')
         os.system('mv target/release/rustdesk.exe target/release/RustDesk.exe')
         pa = os.environ.get('P')
@@ -141,7 +147,7 @@ def main():
             print('Not signed')
         os.system(f'cp -rf target/release/RustDesk.exe rustdesk-{version}-setdown.exe')
     elif os.path.isfile('/usr/bin/pacman'):
-        os.system('cargo build --release --features inline')
+        os.system('cargo build --release --features ' + features)
         os.system('git checkout src/ui/common.tis')
         os.system('strip target/release/rustdesk')
         os.system("sed -i 's/pkgver=.*/pkgver=%s/g' PKGBUILD" % version)
@@ -150,7 +156,7 @@ def main():
         os.system('mv rustdesk-%s-0-x86_64.pkg.tar.zst rustdesk-%s-manjaro-arch.pkg.tar.zst' % (version, version))
         # pacman -U ./rustdesk.pkg.tar.zst
     elif os.path.isfile('/usr/bin/yum'):
-        os.system('cargo build --release --features inline')
+        os.system('cargo build --release --features ' + features)
         os.system('strip target/release/rustdesk')
         os.system("sed -i 's/Version:    .*/Version:    %s/g' rpm.spec" % version)
         os.system('HBB=`pwd` rpmbuild -ba rpm.spec')
@@ -158,14 +164,14 @@ def main():
             version, version))
         # yum localinstall rustdesk.rpm
     elif os.path.isfile('/usr/bin/zypper'):
-        os.system('cargo build --release --features inline')
+        os.system('cargo build --release --features ' + features)
         os.system('strip target/release/rustdesk')
         os.system("sed -i 's/Version:    .*/Version:    %s/g' rpm-suse.spec" % version)
         os.system('HBB=`pwd` rpmbuild -ba rpm-suse.spec')
         os.system('mv $HOME/rpmbuild/RPMS/x86_64/rustdesk-%s-0.x86_64.rpm ./rustdesk-%s-suse.rpm' % (version, version))
         # yum localinstall rustdesk.rpm
     else:
-        os.system('cargo bundle --release --features inline')
+        os.system('cargo bundle --release --features ' + features)
         if osx:
             os.system(
                 'strip target/release/bundle/osx/RustDesk.app/Contents/MacOS/rustdesk')
@@ -209,12 +215,15 @@ rcodesign notarize --api-issuer 69a6de7d-2907-47e3-e053-5b8c7c11a4d1 --api-key 9
             os.system('mkdir -p tmpdeb/usr/share/rustdesk/files/systemd/')
             os.system(
                 'cp rustdesk.service tmpdeb/usr/share/rustdesk/files/systemd/')
+            os.system(
+                'cp rustdesk.service.user tmpdeb/usr/share/rustdesk/files/systemd/')
             os.system('cp pynput_service.py tmpdeb/usr/share/rustdesk/files/')
-            os.system('cp DEBIAN/* tmpdeb/DEBIAN/')
+            os.system('cp -a DEBIAN/* tmpdeb/DEBIAN/')
             os.system('strip tmpdeb/usr/bin/rustdesk')
             os.system('mkdir -p tmpdeb/usr/lib/rustdesk')
             os.system('cp libsciter-gtk.so tmpdeb/usr/lib/rustdesk/')
             md5_file('usr/share/rustdesk/files/systemd/rustdesk.service')
+            md5_file('usr/share/rustdesk/files/systemd/rustdesk.service.user')
             md5_file('usr/share/rustdesk/files/pynput_service.py')
             md5_file('usr/lib/rustdesk/libsciter-gtk.so')
             os.system('dpkg-deb -b tmpdeb rustdesk.deb; /bin/rm -rf tmpdeb/')

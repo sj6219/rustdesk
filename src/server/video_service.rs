@@ -26,11 +26,12 @@ use hbb_common::tokio::sync::{
 use scrap::{
     codec::{Encoder, EncoderCfg, HwEncoderConfig},
     vpxcodec::{VpxEncoderConfig, VpxVideoCodecId},
-    Capturer, Display, Frame,
+    Capturer, Display, TraitCapturer,
 };
 use std::{
     collections::HashSet,
-    io::{ErrorKind::WouldBlock, Result},
+    io::ErrorKind::WouldBlock,
+    ops::{Deref, DerefMut},
     time::{self, Duration, Instant},
 };
 #[cfg(windows)]
@@ -127,46 +128,6 @@ impl VideoFrameController {
     }
 }
 
-trait TraitCapturer {
-    fn frame<'a>(&'a mut self, timeout: Duration) -> Result<Frame<'a>>;
-
-    #[cfg(windows)]
-    fn is_gdi(&self) -> bool;
-    #[cfg(windows)]
-    fn set_gdi(&mut self) -> bool;
-}
-
-impl TraitCapturer for Capturer {
-    fn frame<'a>(&'a mut self, timeout: Duration) -> Result<Frame<'a>> {
-        self.frame(timeout)
-    }
-
-    #[cfg(windows)]
-    fn is_gdi(&self) -> bool {
-        self.is_gdi()
-    }
-
-    #[cfg(windows)]
-    fn set_gdi(&mut self) -> bool {
-        self.set_gdi()
-    }
-}
-
-#[cfg(windows)]
-impl TraitCapturer for scrap::CapturerMag {
-    fn frame<'a>(&'a mut self, _timeout_ms: Duration) -> Result<Frame<'a>> {
-        self.frame(_timeout_ms)
-    }
-
-    fn is_gdi(&self) -> bool {
-        false
-    }
-
-    fn set_gdi(&mut self) -> bool {
-        false
-    }
-}
-
 pub fn new() -> GenericService {
     let sp = GenericService::new(NAME, true);
     sp.run(run);
@@ -179,6 +140,14 @@ fn check_display_changed(
     last_width: usize,
     last_hegiht: usize,
 ) -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        // wayland do not support changing display for now
+        if !scrap::is_x11() {
+            return false;
+        }
+    }
+
     let displays = match try_get_displays() {
         Ok(d) => d,
         _ => return false,
@@ -293,6 +262,7 @@ fn ensure_close_virtual_device() -> ResultType<()> {
     Ok(())
 }
 
+// This function works on privacy mode. Windows only for now.
 pub fn test_create_capturer(privacy_mode_id: i32, timeout_millis: u64) -> bool {
     let test_begin = Instant::now();
     while test_begin.elapsed().as_millis() < timeout_millis as _ {
@@ -321,9 +291,38 @@ fn check_uac_switch(privacy_mode_id: i32, captuerer_privacy_mode_id: i32) -> Res
     Ok(())
 }
 
-fn run(sp: GenericService) -> ResultType<()> {
-    #[cfg(windows)]
-    ensure_close_virtual_device()?;
+pub(super) struct CapturerInfo {
+    pub origin: (i32, i32),
+    pub width: usize,
+    pub height: usize,
+    pub ndisplay: usize,
+    pub current: usize,
+    pub privacy_mode_id: i32,
+    pub _captuerer_privacy_mode_id: i32,
+    pub capturer: Box<dyn TraitCapturer>,
+}
+
+impl Deref for CapturerInfo {
+    type Target = Box<dyn TraitCapturer>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.capturer
+    }
+}
+
+impl DerefMut for CapturerInfo {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.capturer
+    }
+}
+
+fn get_capturer(use_yuv: bool) -> ResultType<CapturerInfo> {
+    #[cfg(target_os = "linux")]
+    {
+        if !scrap::is_x11() {
+            return super::wayland::get_capturer();
+        }
+    }
 
     let (ndisplay, current, display) = get_current_display()?;
     let (origin, width, height) = (display.origin(), display.width(), display.height());
@@ -338,9 +337,49 @@ fn run(sp: GenericService) -> ResultType<()> {
         num_cpus::get(),
     );
 
+    let privacy_mode_id = *PRIVACY_MODE_CONN_ID.lock().unwrap();
+    #[cfg(not(windows))]
+    let captuerer_privacy_mode_id = privacy_mode_id;
+    #[cfg(windows)]
+    let mut captuerer_privacy_mode_id = privacy_mode_id;
+    #[cfg(windows)]
+    if captuerer_privacy_mode_id != 0 {
+        if crate::ui::win_privacy::is_process_consent_running()? {
+            captuerer_privacy_mode_id = 0;
+        }
+    }
+    log::debug!(
+        "Try create capturer with captuerer privacy mode id {}",
+        captuerer_privacy_mode_id,
+    );
+
+    if privacy_mode_id != captuerer_privacy_mode_id {
+        log::info!("In privacy mode, but show UAC prompt window for now");
+    } else {
+        log::info!("In privacy mode, the peer side cannot watch the screen");
+    }
+    let capturer = create_capturer(captuerer_privacy_mode_id, display, use_yuv)?;
+    Ok(CapturerInfo {
+        origin,
+        width,
+        height,
+        ndisplay,
+        current,
+        privacy_mode_id,
+        _captuerer_privacy_mode_id: captuerer_privacy_mode_id,
+        capturer,
+    })
+}
+
+fn run(sp: GenericService) -> ResultType<()> {
+    #[cfg(windows)]
+    ensure_close_virtual_device()?;
+
+    let mut c = get_capturer(true)?;
+
     let mut video_qos = VIDEO_QOS.lock().unwrap();
 
-    video_qos.set_size(width as _, height as _);
+    video_qos.set_size(c.width as _, c.height as _);
     let mut spf = video_qos.spf();
     let bitrate = video_qos.generate_bitrate()?;
     let abr = video_qos.check_abr_config();
@@ -350,13 +389,13 @@ fn run(sp: GenericService) -> ResultType<()> {
     let encoder_cfg = match Encoder::current_hw_encoder_name() {
         Some(codec_name) => EncoderCfg::HW(HwEncoderConfig {
             codec_name,
-            width,
-            height,
+            width: c.width,
+            height: c.height,
             bitrate: bitrate as _,
         }),
         None => EncoderCfg::VPX(VpxEncoderConfig {
-            width: width as _,
-            height: height as _,
+            width: c.width as _,
+            height: c.height as _,
             timebase: [1, 1000], // Output timestamp precision
             bitrate,
             codec: VpxVideoCodecId::VP9,
@@ -369,37 +408,17 @@ fn run(sp: GenericService) -> ResultType<()> {
         Ok(x) => encoder = x,
         Err(err) => bail!("Failed to create encoder: {}", err),
     }
-
-    let privacy_mode_id = *PRIVACY_MODE_CONN_ID.lock().unwrap();
-    #[cfg(not(windows))]
-    let captuerer_privacy_mode_id = privacy_mode_id;
-    #[cfg(windows)]
-    let mut captuerer_privacy_mode_id = privacy_mode_id;
-    #[cfg(windows)]
-    if crate::ui::win_privacy::is_process_consent_running()? {
-        captuerer_privacy_mode_id = 0;
-    }
-    log::debug!(
-        "Try create capturer with captuerer privacy mode id {}",
-        captuerer_privacy_mode_id,
-    );
-
-    if privacy_mode_id != captuerer_privacy_mode_id {
-        log::info!("In privacy mode, but show UAC prompt window for now");
-    } else {
-        log::info!("In privacy mode, the peer side cannot watch the screen");
-    }
-    let mut c = create_capturer(captuerer_privacy_mode_id, display, encoder.use_yuv())?;
+    c.set_use_yuv(encoder.use_yuv());
 
     if *SWITCH.lock().unwrap() {
         log::debug!("Broadcasting display switch");
         let mut misc = Misc::new();
         misc.set_switch_display(SwitchDisplay {
-            display: current as _,
-            x: origin.0 as _,
-            y: origin.1 as _,
-            width: width as _,
-            height: height as _,
+            display: c.current as _,
+            x: c.origin.0 as _,
+            y: c.origin.1 as _,
+            width: c.width as _,
+            height: c.height as _,
             ..Default::default()
         });
         let mut msg_out = Message::new();
@@ -416,10 +435,11 @@ fn run(sp: GenericService) -> ResultType<()> {
     let mut try_gdi = 1;
     #[cfg(windows)]
     log::info!("gdi: {}", c.is_gdi());
+    let codec_name = Encoder::current_hw_encoder_name();
 
     while sp.ok() {
         #[cfg(windows)]
-        check_uac_switch(privacy_mode_id, captuerer_privacy_mode_id)?;
+        check_uac_switch(c.privacy_mode_id, c._captuerer_privacy_mode_id)?;
 
         {
             let mut video_qos = VIDEO_QOS.lock().unwrap();
@@ -437,11 +457,14 @@ fn run(sp: GenericService) -> ResultType<()> {
         if *SWITCH.lock().unwrap() {
             bail!("SWITCH");
         }
-        if current != *CURRENT_DISPLAY.lock().unwrap() {
+        if c.current != *CURRENT_DISPLAY.lock().unwrap() {
             *SWITCH.lock().unwrap() = true;
             bail!("SWITCH");
         }
-        check_privacy_mode_changed(&sp, privacy_mode_id)?;
+        if codec_name != Encoder::current_hw_encoder_name() {
+            bail!("SWITCH");
+        }
+        check_privacy_mode_changed(&sp, c.privacy_mode_id)?;
         #[cfg(windows)]
         {
             if crate::platform::windows::desktop_changed() {
@@ -451,7 +474,7 @@ fn run(sp: GenericService) -> ResultType<()> {
         let now = time::Instant::now();
         if last_check_displays.elapsed().as_millis() > 1000 {
             last_check_displays = now;
-            if ndisplay != get_display_num() {
+            if c.ndisplay != get_display_num() {
                 log::info!("Displays changed");
                 *SWITCH.lock().unwrap() = true;
                 bail!("SWITCH");
@@ -515,7 +538,7 @@ fn run(sp: GenericService) -> ResultType<()> {
                 }
             }
             Err(err) => {
-                if check_display_changed(ndisplay, current, width, height) {
+                if check_display_changed(c.ndisplay, c.current, c.width, c.height) {
                     log::info!("Displays changed");
                     *SWITCH.lock().unwrap() = true;
                     bail!("SWITCH");
@@ -537,9 +560,9 @@ fn run(sp: GenericService) -> ResultType<()> {
         let timeout_millis = 3_000u64;
         let wait_begin = Instant::now();
         while wait_begin.elapsed().as_millis() < timeout_millis as _ {
-            check_privacy_mode_changed(&sp, privacy_mode_id)?;
+            check_privacy_mode_changed(&sp, c.privacy_mode_id)?;
             #[cfg(windows)]
-            check_uac_switch(privacy_mode_id, captuerer_privacy_mode_id)?;
+            check_uac_switch(c.privacy_mode_id, c._captuerer_privacy_mode_id)?;
             frame_controller.try_wait_next(&mut fetched_conn_ids, 300);
             // break if all connections have received current frame
             if fetched_conn_ids.len() >= frame_controller.send_conn_ids.len() {
@@ -633,6 +656,17 @@ pub fn handle_one_frame_encoded(
 }
 
 fn get_display_num() -> usize {
+    #[cfg(target_os = "linux")]
+    {
+        if !scrap::is_x11() {
+            return if let Ok(n) = super::wayland::get_display_num() {
+                n
+            } else {
+                0
+            };
+        }
+    }
+
     if let Ok(d) = try_get_displays() {
         d.len()
     } else {
@@ -640,14 +674,10 @@ fn get_display_num() -> usize {
     }
 }
 
-pub fn get_displays() -> ResultType<(usize, Vec<DisplayInfo>)> {
-    // switch to primary display if long time (30 seconds) no users
-    if LAST_ACTIVE.lock().unwrap().elapsed().as_secs() >= 30 {
-        *CURRENT_DISPLAY.lock().unwrap() = usize::MAX;
-    }
+pub(super) fn get_displays_2(all: &Vec<Display>) -> (usize, Vec<DisplayInfo>) {
     let mut displays = Vec::new();
     let mut primary = 0;
-    for (i, d) in try_get_displays()?.iter().enumerate() {
+    for (i, d) in all.iter().enumerate() {
         if d.is_primary() {
             primary = i;
         }
@@ -665,12 +695,26 @@ pub fn get_displays() -> ResultType<(usize, Vec<DisplayInfo>)> {
     if *lock >= displays.len() {
         *lock = primary
     }
-    Ok((*lock, displays))
+    (*lock, displays)
 }
 
-pub fn switch_display(i: i32) {
+pub async fn get_displays() -> ResultType<(usize, Vec<DisplayInfo>)> {
+    #[cfg(target_os = "linux")]
+    {
+        if !scrap::is_x11() {
+            return super::wayland::get_displays().await;
+        }
+    }
+    // switch to primary display if long time (30 seconds) no users
+    if LAST_ACTIVE.lock().unwrap().elapsed().as_secs() >= 30 {
+        *CURRENT_DISPLAY.lock().unwrap() = usize::MAX;
+    }
+    Ok(get_displays_2(&try_get_displays()?))
+}
+
+pub async fn switch_display(i: i32) {
     let i = i as usize;
-    if let Ok((_, displays)) = get_displays() {
+    if let Ok((_, displays)) = get_displays().await {
         if i < displays.len() {
             *CURRENT_DISPLAY.lock().unwrap() = i;
         }
@@ -684,6 +728,16 @@ pub fn refresh() {
 }
 
 fn get_primary() -> usize {
+    #[cfg(target_os = "linux")]
+    {
+        if !scrap::is_x11() {
+            return match super::wayland::get_primary() {
+                Ok(n) => n,
+                Err(_) => 0,
+            };
+        }
+    }
+
     if let Ok(all) = try_get_displays() {
         for (i, d) in all.iter().enumerate() {
             if d.is_primary() {
@@ -694,8 +748,8 @@ fn get_primary() -> usize {
     0
 }
 
-pub fn switch_to_primary() {
-    switch_display(get_primary() as _);
+pub async fn switch_to_primary() {
+    switch_display(get_primary() as _).await;
 }
 
 #[cfg(not(windows))]
@@ -733,16 +787,15 @@ fn try_get_displays() -> ResultType<Vec<Display>> {
     Ok(displays)
 }
 
-fn get_current_display() -> ResultType<(usize, usize, Display)> {
+pub(super) fn get_current_display_2(mut all: Vec<Display>) -> ResultType<(usize, usize, Display)> {
     let mut current = *CURRENT_DISPLAY.lock().unwrap() as usize;
-    let mut displays = try_get_displays()?;
-    if displays.len() == 0 {
+    if all.len() == 0 {
         bail!("No displays");
     }
-    let n = displays.len();
+    let n = all.len();
     if current >= n {
         current = 0;
-        for (i, d) in displays.iter().enumerate() {
+        for (i, d) in all.iter().enumerate() {
             if d.is_primary() {
                 current = i;
                 break;
@@ -750,5 +803,9 @@ fn get_current_display() -> ResultType<(usize, usize, Display)> {
         }
         *CURRENT_DISPLAY.lock().unwrap() = current;
     }
-    return Ok((n, current, displays.remove(current)));
+    return Ok((n, current, all.remove(current)));
+}
+
+fn get_current_display() -> ResultType<(usize, usize, Display)> {
+    get_current_display_2(try_get_displays()?)
 }

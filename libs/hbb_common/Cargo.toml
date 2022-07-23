@@ -11,7 +11,7 @@ protobuf = { version = "3.1", features = ["with-bytes"] }
 tokio = { version = "1.20", features = ["full"] }
 tokio-util = { version = "0.7", features = ["full"] }
 futures = "0.3"
-bytes = "1.1"
+bytes = { version = "1.2", features = ["serde"] }
 log = "0.4"
 env_logger = "0.9"
 socket2 = { version = "0.3", features = ["reuseport"] }
@@ -24,6 +24,7 @@ directories-next = "2.0"
 rand = "0.8"
 serde_derive = "1.0"
 serde = "1.0"
+serde_with = "1.14.0"
 lazy_static = "1.4"
 confy = { git = "https://github.com/open-trade/confy" }
 dirs-next = "2.0"
@@ -37,6 +38,7 @@ tokio-socks = { git = "https://github.com/open-trade/tokio-socks" }
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 mac_address = "1.1"
+machine-uid = "0.2"
 
 [features]
 quic = []

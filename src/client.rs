@@ -28,6 +28,7 @@ use hbb_common::{
     log,
     message_proto::{option_message::BoolOption, *},
     protobuf::Message as _,
+    rand,
     rendezvous_proto::*,
     socket_client,
     sodiumoxide::crypto::{box_, secretbox, sign},
@@ -215,7 +216,7 @@ impl Client {
                             } else {
                                 peer_nat_type = ph.nat_type();
                                 is_local = ph.is_local();
-                                signed_id_pk = ph.pk;
+                                signed_id_pk = ph.pk.into();
                                 relay_server = ph.relay_server;
                                 peer_addr = AddrMangle::decode(&ph.socket_addr);
                                 log::info!("Hole Punched {} = {}", peer, peer_addr);
@@ -407,8 +408,8 @@ impl Client {
                                 let sealed_key = box_::seal(&key.0, &nonce, &their_pk_b, &out_sk_b);
                                 let mut msg_out = Message::new();
                                 msg_out.set_public_key(PublicKey {
-                                    asymmetric_value: our_pk_b.0.into(),
-                                    symmetric_value: sealed_key,
+                                    asymmetric_value: Vec::from(our_pk_b.0).into(),
+                                    symmetric_value: sealed_key.into(),
                                     ..Default::default()
                                 });
                                 timeout(CONNECT_TIMEOUT, conn.send(&msg_out)).await??;
@@ -782,6 +783,8 @@ pub struct LoginConfigHandler {
     pub version: i64,
     pub conn_id: i32,
     features: Option<Features>,
+    session_id: u64,
+    pub supported_encoding: Option<(bool, bool)>,
 }
 
 impl Deref for LoginConfigHandler {
@@ -805,6 +808,8 @@ impl LoginConfigHandler {
         let config = self.load_config();
         self.remember = !config.password.is_empty();
         self.config = config;
+        self.session_id = rand::random();
+        self.supported_encoding = None;
     }
 
     pub fn should_auto_login(&self) -> String {
@@ -955,8 +960,7 @@ impl LoginConfigHandler {
             msg.disable_clipboard = BoolOption::Yes.into();
             n += 1;
         }
-        // TODO: add option
-        let state = Decoder::video_codec_state();
+        let state = Decoder::video_codec_state(&self.id);
         msg.video_codec_state = hbb_common::protobuf::MessageField::some(state);
         n += 1;
 
@@ -1108,6 +1112,10 @@ impl LoginConfigHandler {
         self.conn_id = pi.conn_id;
         // no matter if change, for update file time
         self.save_config(config);
+        #[cfg(feature = "hwcodec")]
+        {
+            self.supported_encoding = Some((pi.encoding.h264, pi.encoding.h265));
+        }
     }
 
     pub fn get_remote_dir(&self) -> String {
@@ -1136,10 +1144,11 @@ impl LoginConfigHandler {
         let my_id = Config::get_id();
         let mut lr = LoginRequest {
             username: self.id.clone(),
-            password,
+            password:password.into(),
             my_id,
             my_name: crate::username(),
             option: self.get_option_message(true).into(),
+            session_id: self.session_id,
             ..Default::default()
         };
         if self.is_file_transfer {
@@ -1157,6 +1166,18 @@ impl LoginConfigHandler {
         }
         let mut msg_out = Message::new();
         msg_out.set_login_request(lr);
+        msg_out
+    }
+
+    pub fn change_prefer_codec(&self) -> Message {
+        let state = scrap::codec::Decoder::video_codec_state(&self.id);
+        let mut misc = Misc::new();
+        misc.set_option(OptionMessage {
+            video_codec_state: hbb_common::protobuf::MessageField::some(state),
+            ..Default::default()
+        });
+        let mut msg_out = Message::new();
+        msg_out.set_misc(misc);
         msg_out
     }
 }

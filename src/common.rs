@@ -48,7 +48,7 @@ pub fn create_clipboard_msg(content: String) -> Message {
     let mut msg = Message::new();
     msg.set_clipboard(Clipboard {
         compress,
-        content,
+        content:content.into(),
         ..Default::default()
     });
     msg
@@ -79,7 +79,7 @@ pub fn update_clipboard(clipboard: Clipboard, old: Option<&Arc<Mutex<String>>>) 
     let content = if clipboard.compress {
         decompress(&clipboard.content)
     } else {
-        clipboard.content
+        clipboard.content.into()
     };
     if let Ok(content) = String::from_utf8(content) {
         if content.is_empty() {
@@ -535,14 +535,6 @@ pub fn is_ip(id: &str) -> bool {
 
 pub fn is_setup(name: &str) -> bool {
     name.to_lowercase().ends_with("setdown.exe") || name.to_lowercase().ends_with("安装.exe")
-}
-
-pub fn get_uuid() -> Vec<u8> {
-    #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    if let Ok(id) = machine_uid::get() {
-        return id.into();
-    }
-    Config::get_key_pair().1
 }
 
 pub fn get_custom_rendezvous_server(custom: String) -> String {
