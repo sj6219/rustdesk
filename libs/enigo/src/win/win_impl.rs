@@ -78,7 +78,7 @@ fn keybd_event(flags: u32, vk: u16, scan: u16) -> DWORD {
                     GetWindowThreadProcessId(GetForegroundWindow(), std::ptr::null_mut());
                 LAYOUT = GetKeyboardLayout(current_window_thread_id);
             }
-            if LAYOUT as u32 == 0x0412 && vk == winapi::um::winuser::VK_RMENU as u16 {
+            if (LAYOUT as u16 == 0x0412) && (vk == winapi::um::winuser::VK_RMENU as u16) { 
                 vk = winapi::um::winuser::VK_HANGUL as u16;
             }
             scan = MapVirtualKeyExW(vk as _, 0, LAYOUT) as _;
