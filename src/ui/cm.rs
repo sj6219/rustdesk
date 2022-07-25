@@ -646,7 +646,7 @@ async fn start_clipboard_file(
                 Some(ClipboardFileData::Enable((id, enabled))) => {
                         {
                             use std::io::Write;
-                            println!("%%%%%%%%%%%%%%%%%%%%%2");
+                            println!("%%%%%%%%%%%%%%%%%%%%%4");
                             println!("{:?} {:?}", id, enabled);
                             std::io::stdout().flush().unwrap();
                         }

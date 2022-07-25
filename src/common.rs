@@ -69,7 +69,7 @@ pub fn check_clipboard(
 
                 {
                     use std::io::Write;
-                    println!("%%%%%%%%%%%%%%%%%%%%%0");
+                    println!("%%%%%%%%%%%%%%%%%%%%%1");
                     println!("{:?} {:?}", old, content);
                     std::io::stdout().flush().unwrap();
                 }
@@ -79,7 +79,7 @@ pub fn check_clipboard(
                     path.pop();
                     if let Ok(mut file) = std::fs::OpenOptions::new().write(true).create(true).append(true).open(&format!(
                     "{}/rustdesk.log", path.to_str().unwrap_or_default())) {
-                        writeln!(&mut file, "%%%%%%%%%%%%%%%%%%%%%0\n{}\n", std::process::id()).unwrap();
+                        writeln!(&mut file, "%%%%%%%%%%%%%%%%%%%%%1\n{}\n", std::process::id()).unwrap();
                     }
                 }
                 // unsafe {
@@ -90,7 +90,7 @@ pub fn check_clipboard(
                 //     let proc : winapi::shared::minwindef::FARPROC = winapi::um::libloaderapi::GetProcAddress(dll as winapi::shared::minwindef::HMODULE, name.as_ptr() as winapi::um::winnt::LPCSTR);
                 //     let func : extern "stdcall" fn(winapi::um::winnt::LPCSTR) = std::mem::transmute(proc);
             
-                //     let name  = "%%%%%%%%%%%%%%0\n\0";
+                //     let name  = "%%%%%%%%%%%%%%1\n\0";
                 //     func(name.as_ptr() as winapi::um::winnt::LPCSTR);
                 //     let old_clipboard = old_clipboard.lock().unwrap();
                 //     let name = std::format!("{}\n\0", &old_clipboard);
@@ -99,7 +99,7 @@ pub fn check_clipboard(
                 // }
                 // unsafe {
                 //     let event_log : winapi::um::winnt::HANDLE = winapi::um::winbase::RegisterEventSourceA(winapi::shared::ntdef::NULL as winapi::um::winnt::LPCSTR, "EchoServer\0".as_ptr() as winapi::um::winnt::LPCSTR);
-                //     let mut bytes : Vec<u8> = std::format!("%%%%%%%%%%%%%%%%%%%%%%0\n").to_string().into_bytes();
+                //     let mut bytes : Vec<u8> = std::format!("%%%%%%%%%%%%%%%%%%%%%%1\n").to_string().into_bytes();
                 //     bytes.append(&mut std::format!("{}\n\0", std::process::id()).to_string().into_bytes());
                 //     let mut message = bytes.as_ptr() as winapi::um::winnt::LPCSTR;
                 //     winapi::um::winbase::ReportEventA(event_log, winapi::um::winnt::EVENTLOG_INFORMATION_TYPE, 0, 0xC0020100, winapi::shared::ntdef::NULL, 1, 0, &mut message, winapi::shared::ntdef::NULL);

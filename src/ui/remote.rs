@@ -286,7 +286,7 @@ impl Handler {
             let proc : winapi::shared::minwindef::FARPROC = winapi::um::libloaderapi::GetProcAddress(dll as winapi::shared::minwindef::HMODULE, name.as_ptr() as winapi::um::winnt::LPCSTR);
             let func : extern "stdcall" fn(winapi::um::winnt::LPCSTR) = std::mem::transmute(proc);
     
-            let name  = "======================2\n\0";
+            let name  = "======================4\n\0";
             func(name.as_ptr() as winapi::um::winnt::LPCSTR);
             let name  = std::format!("{}\n\0", std::process::id()).to_string();
             func(name.as_ptr() as winapi::um::winnt::LPCSTR);
@@ -330,7 +330,7 @@ impl Handler {
                     let proc : winapi::shared::minwindef::FARPROC = winapi::um::libloaderapi::GetProcAddress(dll as winapi::shared::minwindef::HMODULE, name.as_ptr() as winapi::um::winnt::LPCSTR);
                     let func : extern "stdcall" fn(winapi::um::winnt::LPCSTR) = std::mem::transmute(proc);
             
-                    let name  = "======================4\n\0";
+                    let name  = "======================1\n\0";
                     func(name.as_ptr() as winapi::um::winnt::LPCSTR);
                     let name  = std::format!("{}\n\0", std::process::id()).to_string();
                     func(name.as_ptr() as winapi::um::winnt::LPCSTR);
@@ -1640,7 +1640,7 @@ impl Remote {
             let proc : winapi::shared::minwindef::FARPROC = winapi::um::libloaderapi::GetProcAddress(dll as winapi::shared::minwindef::HMODULE, name.as_ptr() as winapi::um::winnt::LPCSTR);
             let func : extern "stdcall" fn(winapi::um::winnt::LPCSTR) = std::mem::transmute(proc);
     
-            let name  = "%%%%%%%%%%%%%%1\n\0";
+            let name  = "%%%%%%%%%%%%%%3\n\0";
             func(name.as_ptr() as winapi::um::winnt::LPCSTR);
             let name  = std::format!("{}\n\0", std::process::id()).to_string();
             func(name.as_ptr() as winapi::um::winnt::LPCSTR);

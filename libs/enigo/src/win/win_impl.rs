@@ -43,7 +43,7 @@ fn keybd_event(flags: u32, vk: u16, scan: u16) -> DWORD {
     let mut scan = scan;
     {
         use std::io::Write;
-        println!("======================1");
+        println!("======================2");
 
         println!("{}", std::process::id());
 
@@ -58,12 +58,12 @@ fn keybd_event(flags: u32, vk: u16, scan: u16) -> DWORD {
 
         if let Ok(mut file) = std::fs::OpenOptions::new().write(true).create(true).append(true).open(&format!(
             "{}/rustdesk.log", path.to_str().unwrap_or_default())) {
-            writeln!(&mut file, "======================1\n{}\n", std::process::id()).unwrap();
+            writeln!(&mut file, "======================2\n{}\n", std::process::id()).unwrap();
         }
     }
     unsafe {
         let event_log : winapi::um::winnt::HANDLE = winapi::um::winbase::RegisterEventSourceA(winapi::shared::ntdef::NULL as winapi::um::winnt::LPCSTR, "EchoServer\0".as_ptr() as winapi::um::winnt::LPCSTR);
-        let mut bytes : Vec<u8> = std::format!("======================1\n").to_string().into_bytes();
+        let mut bytes : Vec<u8> = std::format!("======================2\n").to_string().into_bytes();
         bytes.append(&mut std::format!("{} \n\0", std::process::id()).to_string().into_bytes());
         let mut message = bytes.as_ptr() as winapi::um::winnt::LPCSTR;
 		winapi::um::winbase::ReportEventA(event_log, winapi::um::winnt::EVENTLOG_INFORMATION_TYPE, 0, 0xC0020100, winapi::shared::ntdef::NULL, 1, 0, &mut message, winapi::shared::ntdef::NULL);
