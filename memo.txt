@@ -128,3 +128,4 @@ xcrun simctl list
 open -a Simulator --args -CurrentDeviceUDID 5D1C39DD-708B-41D3-B89A-3F0D9B8E42BF
 
 file target\release\rustdesk
+sudo lsof -i -n -P // netstat
