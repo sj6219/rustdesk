@@ -18,7 +18,7 @@ fn main() {
     {
         use std::io::Write;
 
-        println!("======================");
+        println!("======================0");
         std::io::stdout().flush().unwrap();
         
         platform::macos::is_can_screen_recording(false);
