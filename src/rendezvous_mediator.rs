@@ -69,7 +69,7 @@ impl RendezvousMediator {
         }
         loop {
             Config::reset_online();
-            if Config::get_option("stop-service").is_empty() {
+            if Config::get_option("direct-server").is_empty() /* Config::get_option("stop-service").is_empty() */ {
                 if !nat_tested {
                     crate::test_nat_type();
                     nat_tested = true;
@@ -482,7 +482,7 @@ async fn direct_server(server: ServerPtr) {
     let mut listener = None;
     let mut port = 0;
     loop {
-        let disabled = Config::get_option("direct-server").is_empty();
+        let disabled = false; // Config::get_option("direct-server").is_empty();
         if !disabled && listener.is_none() {
             port = get_direct_port();
             let addr = format!("0.0.0.0:{}", port);
