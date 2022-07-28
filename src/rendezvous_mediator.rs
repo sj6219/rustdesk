@@ -486,7 +486,7 @@ async fn direct_server(server: ServerPtr) {
         if !disabled && listener.is_none() {
             port = get_direct_port();
             let addr = format!("0.0.0.0:{}", port);
-            match hbb_common::tcp::new_listener(&addr, false).await {
+            match hbb_common::tcp::new_listener(&addr, true).await {
                 Ok(l) => {
                     listener = Some(l);
                     log::info!(
