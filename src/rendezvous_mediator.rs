@@ -486,7 +486,7 @@ async fn direct_server(server: ServerPtr) {
         if !disabled && listener.is_none() {
             port = get_direct_port();
             let addr = format!("0.0.0.0:{}", port);
-            match hbb_common::tcp::new_listener(&addr, true).await {
+            match hbb_common::tcp::new_listener(&addr, false).await {
                 Ok(l) => {
                     listener = Some(l);
                     log::info!(
@@ -501,12 +501,13 @@ async fn direct_server(server: ServerPtr) {
                         addr,
                         err
                     );
-                    loop {
-                        if port != get_direct_port() {
-                            break;
-                        }
-                        sleep(1.).await;
-                    }
+                    // loop {
+                    //     if port != get_direct_port() {
+                    //         break;
+                    //     }
+                    //     sleep(1.).await;
+                    // }
+                    sleep(1.).await;
                 }
             }
         }
@@ -517,7 +518,6 @@ async fn direct_server(server: ServerPtr) {
                 continue;
             }
             if let Ok(Ok((stream, addr))) = hbb_common::timeout(1000, l.accept()).await {
-                // :::::::::2
                 stream.set_nodelay(true).ok();
                 log::info!("direct access from {}", addr);
                 let local_addr = stream.local_addr().unwrap_or(Config::get_any_listen_addr());
