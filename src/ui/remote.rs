@@ -2108,6 +2108,7 @@ impl Remote {
                     self.video_sender.send(MediaData::VideoFrame(vf)).ok();
                 }
                 Some(message::Union::Hash(hash)) => {
+                    // ::::::3.1
                     self.handler
                         .handle_hash(&self.handler.password.clone(), hash, peer)
                         .await;

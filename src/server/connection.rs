@@ -578,6 +578,7 @@ impl Connection {
         }
         self.ip = addr.ip().to_string();
         let mut msg_out = Message::new();
+        // ::::::2.2
         msg_out.set_hash(self.hash.clone());
         self.send(msg_out).await;
         self.get_api_server();
@@ -887,9 +888,9 @@ impl Connection {
     }
 
     async fn on_message(&mut self, msg: Message) -> bool {
-        // ::::::::6
         if let Some(message::Union::LoginRequest(lr)) = msg.union {
-            self.lr = lr.clone();
+        // ::::::::4
+        self.lr = lr.clone();
             if let Some(o) = lr.option.as_ref() {
                 self.update_option(o).await;
                 if let Some(q) = o.video_codec_state.clone().take() {
@@ -1417,7 +1418,7 @@ impl Connection {
 
     #[inline]
     async fn send(&mut self, msg: Message) {
-        // ::::::::::3
+        // :::::::2.3
         allow_err!(self.stream.send(&msg).await);
     }
 }
