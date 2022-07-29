@@ -22,5 +22,12 @@
             "args": ["--connect", "192.168.111.11"],
             "cwd": "${workspaceFolder}"
         },
+        {
+            "type": "lldb",
+            "request": "attach",
+            "name": "Debug executable 'rustdesk'",
+            "program" : "${workspaceFolder}/target/debug/rustdesk",
+            "processID" : "${command:pickProcess}",
+        },
    ] 
 }

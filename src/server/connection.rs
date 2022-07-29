@@ -885,6 +885,7 @@ impl Connection {
     }
 
     async fn on_message(&mut self, msg: Message) -> bool {
+        // ::::::::6
         if let Some(message::Union::LoginRequest(lr)) = msg.union {
             self.lr = lr.clone();
             if let Some(o) = lr.option.as_ref() {
@@ -1413,6 +1414,7 @@ impl Connection {
 
     #[inline]
     async fn send(&mut self, msg: Message) {
+        // ::::::::::3
         allow_err!(self.stream.send(&msg).await);
     }
 }
