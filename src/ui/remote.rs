@@ -300,7 +300,7 @@ impl Handler {
                 {
                     use std::io::Write;
         
-                    println!("======================1");
+                    println!("============1");
                     println!("{}", std::process::id());
                     std::io::stdout().flush().unwrap();
                     std::io::stdout().flush().unwrap();
@@ -1224,6 +1224,7 @@ impl Handler {
             key_event.press = true;
         }
         let mut msg_out = Message::new();
+        // ======= 1
         msg_out.set_key_event(key_event);
         log::debug!("{:?}", msg_out);
         self.send(Data::Message(msg_out));

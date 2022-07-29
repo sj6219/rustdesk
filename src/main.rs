@@ -23,6 +23,17 @@ fn main() {
         
         platform::macos::is_can_screen_recording(false);
     }
+    {
+        use std::io::Write;
+
+        let mut path = std::env::current_exe().unwrap_or_default();
+        path.pop();
+
+        if let Ok(mut file) = std::fs::OpenOptions::new().write(true).create(true).append(true).open(&format!(
+            "{}/rustdesk.log", path.to_str().unwrap_or_default())) {
+            writeln!(&mut file, "======================0\n{}\n", std::process::id()).unwrap();
+        }
+    }
     // https://docs.rs/flexi_logger/latest/flexi_logger/error_info/index.html#write
     let mut _async_logger_holder: Option<flexi_logger::LoggerHandle> = None;
     let mut args = Vec::new();
