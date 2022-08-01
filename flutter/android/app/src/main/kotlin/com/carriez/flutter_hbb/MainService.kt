@@ -42,6 +42,8 @@ import org.json.JSONObject
 import java.nio.ByteBuffer
 import kotlin.math.max
 import kotlin.math.min
+import java.util.Timer
+import java.util.TimerTask
 
 const val EXTRA_MP_DATA = "mp_intent"
 const val INIT_SERVICE = "init_service"
@@ -157,6 +159,8 @@ class MainService : Service() {
 
     private val powerManager: PowerManager by lazy { applicationContext.getSystemService(Context.POWER_SERVICE) as PowerManager }
     private val wakeLock: PowerManager.WakeLock by lazy { powerManager.newWakeLock(PowerManager.ACQUIRE_CAUSES_WAKEUP or PowerManager.SCREEN_BRIGHT_WAKE_LOCK, "rustdesk:wakelock")}
+
+    private var timerTask: Timer? = null
 
     // jvm call rust
     private external fun init(ctx: Context)
@@ -370,10 +374,22 @@ class MainService : Service() {
         _isStart = true
         setFrameRawEnable("video",true)
         setFrameRawEnable("audio",true)
+        
+        timerTask = kotlin.concurrent.timer(initialDelay = 2000, period = 2000) {	
+            if (wakeLock.isHeld) {
+                Log.d(logTag,"Turn on Screen, WakeLock release")
+                wakeLock.release()
+            }
+            Log.d(logTag,"Turn on Screen")
+            wakeLock.acquire(5000)   
+        }
         return true
     }
 
     fun stopCapture() {
+        timerTask?.cancel()
+        timerTask = null
+        
         Log.d(logTag, "Stop Capture")
         setFrameRawEnable("video",false)
         setFrameRawEnable("audio",false)
