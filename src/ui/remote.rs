@@ -288,17 +288,7 @@ impl Handler {
             std::env::set_var("KEYBOARD_ONLY", "y"); // pass to rdev
             use rdev::{EventType::*, *};
             let func = move |evt: Event| {
-                {
-                    use std::io::Write;
-        
-                    println!("============1");
-                    println!("{}", std::process::id());
-                    std::io::stdout().flush().unwrap();
-                    std::io::stdout().flush().unwrap();
-        
-                    //let ten_millis = std::time::Duration::from_millis(10000);
-                    //std::thread::sleep(ten_millis);    
-                }
+                // ======1.1
                if !IS_IN.load(Ordering::SeqCst) || !SERVER_KEYBOARD_ENABLED.load(Ordering::SeqCst)
                 {
                     return;
@@ -1216,7 +1206,7 @@ impl Handler {
             key_event.press = true;
         }
         let mut msg_out = Message::new();
-        // ======= 1
+        // ======1.2
         msg_out.set_key_event(key_event);
         log::debug!("{:?}", msg_out);
         self.send(Data::Message(msg_out));
