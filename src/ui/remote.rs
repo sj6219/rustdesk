@@ -23,10 +23,6 @@ use clipboard::{
     get_rx_clip_client, server_clip_file,
 };
 use enigo::{self, Enigo, KeyboardControllable};
-use hbb_common::fs::{
-    can_enable_overwrite_detection, get_job, get_string, new_send_confirm, DigestCheckResult,
-    RemoveJobMeta,
-};
 use hbb_common::{
     allow_err,
     config::{Config, LocalConfig, PeerConfig},
@@ -43,6 +39,13 @@ use hbb_common::{
     Stream,
 };
 use hbb_common::{config::TransferSerde, fs::TransferJobMeta};
+use hbb_common::{
+    fs::{
+        can_enable_overwrite_detection, get_job, get_string, new_send_confirm, DigestCheckResult,
+        RemoveJobMeta,
+    },
+    get_version_number,
+};
 
 #[cfg(windows)]
 use crate::clipboard_file::*;
@@ -322,6 +325,17 @@ impl Handler {
                 let command = crate::platform::windows::get_win_key_state();
                 #[cfg(not(windows))]
                 let command = get_key_state(enigo::Key::Meta);
+                #[cfg(target_os = "macos")] 
+                // swap ctrl command key
+                let (key, ctrl, command) = (
+                    match key {
+                        Key::MetaLeft => Key::ControlLeft,
+                        Key::MetaRight => Key::ControlRight,
+                        Key::ControlLeft => Key::MetaLeft,
+                        Key::ControlRight => Key::MetaRight,
+                        _ => key,
+                    }, 
+                    command, ctrl);
                 let control_key = match key {
                     Key::Alt => Some(ControlKey::Alt),
                     Key::AltGr => Some(ControlKey::RAlt),
@@ -2607,6 +2621,9 @@ impl Interface for Handler {
         pi_sciter.set_item("hostname", pi.hostname.clone());
         pi_sciter.set_item("platform", pi.platform.clone());
         pi_sciter.set_item("sas_enabled", pi.sas_enabled);
+        if get_version_number(&pi.version) < get_version_number("1.1.10") {
+            self.call2("setPermission", &make_args!("restart", false));
+        }
         if self.is_file_transfer() {
             if pi.username.is_empty() {
                 self.on_error("No active console user logged on, please connect and logon first.");

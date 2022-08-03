@@ -445,10 +445,51 @@ impl Connection {
             match receiver.recv_timeout(std::time::Duration::from_millis(500)) {
                 Ok(v) => match v {
                     MessageInput::Mouse((msg, id)) => {
+                        #[cfg(target_os = "macos")]
+                        let msg = {
+                            let mut msg = msg;
+                            msg.modifiers = msg.modifiers.iter().map(|ck| {
+                                let ck = ck.enum_value_or_default();
+                                let ck = match (ck) {
+                                    ControlKey::Control => ControlKey::Meta,
+                                    ControlKey::Meta => ControlKey::Control,
+                                    ControlKey::RControl => ControlKey::RWin,
+                                    ControlKey::RWin => ControlKey::RControl,
+                                    _ => ck,
+                                };
+                                hbb_common::protobuf::EnumOrUnknown::new(ck)
+                            }).collect();
+                            msg
+                        };
                         handle_mouse(&msg, id);
                     }
                     MessageInput::Key((mut msg, press)) => {
                         // ======2.3
+                        #[cfg(target_os = "macos")]
+                        {
+                            if let Some(key_event::Union::ControlKey(ck)) = msg.union {
+                                let ck = ck.enum_value_or_default();
+                                let ck = match (ck) {
+                                    ControlKey::Control => ControlKey::Meta,
+                                    ControlKey::Meta => ControlKey::Control,
+                                    ControlKey::RControl => ControlKey::RWin,
+                                    ControlKey::RWin => ControlKey::RControl,
+                                    _ => ck,
+                                };
+                                msg.set_control_key(ck);
+                            }
+                            msg.modifiers = msg.modifiers.iter().map(|ck| {
+                                let ck = ck.enum_value_or_default();
+                                let ck = match (ck) {
+                                    ControlKey::Control => ControlKey::Meta,
+                                    ControlKey::Meta => ControlKey::Control,
+                                    ControlKey::RControl => ControlKey::RWin,
+                                    ControlKey::RWin => ControlKey::RControl,
+                                    _ => ck,
+                                };
+                                hbb_common::protobuf::EnumOrUnknown::new(ck)
+                            }).collect();
+                        }
                         if press {
                             msg.down = true;
                         }
