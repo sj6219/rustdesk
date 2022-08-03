@@ -324,6 +324,17 @@ impl Handler {
                 let command = crate::platform::windows::get_win_key_state();
                 #[cfg(not(windows))]
                 let command = get_key_state(enigo::Key::Meta);
+                #[cfg(target_os = "macos")] 
+                // swap ctrl command key
+                let (key, ctrl, command) = (
+                    match key {
+                        Key::MetaLeft => Key::ControlLeft,
+                        Key::MetaRight => Key::ControlRight,
+                        Key::ControlLeft => Key::MetaLeft,
+                        Key::ControlRight => Key::MetaRight,
+                        _ => key,
+                    }, 
+                    command, ctrl);
                 let control_key = match key {
                     Key::Alt => Some(ControlKey::Alt),
                     Key::AltGr => Some(ControlKey::RAlt),
