@@ -376,12 +376,14 @@ class MainService : Service() {
         setFrameRawEnable("audio",true)
         
         timerTask = kotlin.concurrent.timer(initialDelay = 2000, period = 2000) {	
-            if (wakeLock.isHeld) {
-                Log.d(logTag,"Turn on Screen, WakeLock release")
-                wakeLock.release()
+            if (!powerManager.isInteractive && mask == LIFT_DOWN) {
+                if (wakeLock.isHeld) {
+                    Log.d(logTag,"Turn on Screen, WakeLock release")
+                    wakeLock.release()
+                }
+                Log.d(logTag,"Turn on Screen")
+                wakeLock.acquire(5000)   
             }
-            Log.d(logTag,"Turn on Screen")
-            wakeLock.acquire(5000)   
         }
         return true
     }
