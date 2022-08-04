@@ -325,17 +325,6 @@ impl Handler {
                 let command = crate::platform::windows::get_win_key_state();
                 #[cfg(not(windows))]
                 let command = get_key_state(enigo::Key::Meta);
-                #[cfg(target_os = "macos")] 
-                // swap ctrl command key
-                let (key, ctrl, command) = (
-                    match key {
-                        Key::MetaLeft => Key::ControlLeft,
-                        Key::MetaRight => Key::ControlRight,
-                        Key::ControlLeft => Key::MetaLeft,
-                        Key::ControlRight => Key::MetaRight,
-                        _ => key,
-                    }, 
-                    command, ctrl);
                 let control_key = match key {
                     Key::Alt => Some(ControlKey::Alt),
                     Key::AltGr => Some(ControlKey::RAlt),
@@ -1219,6 +1208,32 @@ impl Handler {
         } else if down_or_up == 3 {
             key_event.press = true;
         }
+        #[cfg(target_os = "macos")]
+        {
+            if let Some(key_event::Union::ControlKey(ck)) = key_event.union {
+                let ck = ck.enum_value_or_default();
+                let ck = match ck {
+                    ControlKey::Control => ControlKey::Meta,
+                    ControlKey::Meta => ControlKey::Control,
+                    ControlKey::RControl => ControlKey::RWin,
+                    ControlKey::RWin => ControlKey::RControl,
+                    _ => ck,
+                };
+                key_event.set_control_key(ck);
+            }
+            key_event.modifiers = key_event.modifiers.iter().map(|ck| {
+                let ck = ck.enum_value_or_default();
+                let ck = match ck {
+                    ControlKey::Control => ControlKey::Meta,
+                    ControlKey::Meta => ControlKey::Control,
+                    ControlKey::RControl => ControlKey::RWin,
+                    ControlKey::RWin => ControlKey::RControl,
+                    _ => ck,
+                };
+                hbb_common::protobuf::EnumOrUnknown::new(ck)
+            }).collect();
+        }
+
         let mut msg_out = Message::new();
         // ======1.2
         msg_out.set_key_event(key_event);

@@ -450,7 +450,7 @@ impl Connection {
                             let mut msg = msg;
                             msg.modifiers = msg.modifiers.iter().map(|ck| {
                                 let ck = ck.enum_value_or_default();
-                                let ck = match (ck) {
+                                let ck = match ck {
                                     ControlKey::Control => ControlKey::Meta,
                                     ControlKey::Meta => ControlKey::Control,
                                     ControlKey::RControl => ControlKey::RWin,
@@ -469,7 +469,7 @@ impl Connection {
                         {
                             if let Some(key_event::Union::ControlKey(ck)) = msg.union {
                                 let ck = ck.enum_value_or_default();
-                                let ck = match (ck) {
+                                let ck = match ck {
                                     ControlKey::Control => ControlKey::Meta,
                                     ControlKey::Meta => ControlKey::Control,
                                     ControlKey::RControl => ControlKey::RWin,
@@ -480,7 +480,7 @@ impl Connection {
                             }
                             msg.modifiers = msg.modifiers.iter().map(|ck| {
                                 let ck = ck.enum_value_or_default();
-                                let ck = match (ck) {
+                                let ck = match ck {
                                     ControlKey::Control => ControlKey::Meta,
                                     ControlKey::Meta => ControlKey::Control,
                                     ControlKey::RControl => ControlKey::RWin,
