@@ -1,18 +1,41 @@
-# build
-
+#windows
 %comspec% /k "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsamd64_arm64.bat" 
 cargo build --release --target=aarch64-pc-windows-msvc -vv 
-cargo build --release --target=x86_64-apple-darwin
-cargo build --release --target=aarch64-apple-darwin
-cargo build --release --target=aarch64-apple-ios
 
-file libsciter.dylib
+rustup update
+rustup target add aarch64-pc-windows-msvc
+rustup target list
 
-cargo update
-target\release\rustdesk
-target/x86_64-apple-darwin/release/rustdesk
+"C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\gflags.exe"
+vsjitdebugger.exe
+waitForDebugger # android
+Computer\HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\rustdesk.exe
 
-MSVC v143 - VS 2022 c++ ARM64 build tools(Latest)
+#macos
+cp target/release/rustdesk ../Documents/RustDesk.app/Contents/MacOS/rustdesk 
+codesign -s "5B58CCDA9F9CA53B3EAC8437A9F18C5CE54A1F2F" --force --options runtime  ../Documents/RustDesk.app/Contents/MacOS/*
+codesign -s "5B58CCDA9F9CA53B3EAC8437A9F18C5CE54A1F2F" --force --options runtime  ../Documents/RustDesk.app
+rm ../Documents/RustDesk.dmg
+create-dmg  ../Documents/RustDesk.dmg ../Documents/RustDesk.app
+codesign -s "5B58CCDA9F9CA53B3EAC8437A9F18C5CE54A1F2F" --force --options runtime ../Documents/RustDesk.dmg
+rcodesign notarize --api-issuer 69a6de71-2a59-47e3-e053-5b8c7c11a4d1 --api-key 3Y4FWB23RH --staple ../Documents/rustdesk.dmg
+
+csrutil disable
+file target\release\rustdesk
+sudo lsof -i -n -P | grep rustdesk     // netstat
+https://github.com/create-dmg/create-dmg
+security find-identity -p basic -v
+
+xcrun simctl list
+open -a Simulator --args -CurrentDeviceUDID 5D1C39DD-708B-41D3-B89A-3F0D9B8E42BF
+
+#android
+cargo ndk --platform 21 --target aarch64-linux-android build --release
+cd ~/rustdesk/flutter
+cp ../target/aarch64-linux-android/release/liblibrustdesk.so android/app/src/main/jniLibs/arm64-v8a/librustdesk.so
+flutter build apk --split-per-abi
+adb install  ~/rustdesk/flutter/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+adb logcat | grep LOG_SERVICE
 
 # rustdesk
 cd C:\Users\sjpark\Documents\rustdesk
@@ -24,6 +47,7 @@ set path=C:\Program Files\LLVM\bin;C:\Strawberry\perl\bin\%path%;
 .\target\tools\windows\nasm\nasm.exe
 set RING_PREGENERATE_ASM=1
 
+#dependencies
 ring = { git = "https://github.com/sj6219/ring", branch = "0.16.20_alpha" }
 ring = { path = "../ring" }
 
@@ -32,10 +56,10 @@ version = "0.16.20"
 
 name = "sct"
 version = "0.7.0"
-source = "git+https://github.com/sj6219/ring?branch=0.16.20_alpha#14361a09694419ad93ceb42d3d3935adce8731ab"
+
 name = "webpki"
 version = "0.22.0"
-source = "git+https://github.com/sj6219/ring?branch=0.16.20_alpha#14361a09694419ad93ceb42d3d3935adce8731ab"
+
 name = "rustls"
 version = "0.20.6"
 
@@ -70,7 +94,6 @@ version = "0.1.0"
 name = "virtual_display"
 version = "0.1.0"
 
-
 name = "rpassword"
 version = "2.1.0"
 
@@ -100,38 +123,3 @@ version = "0.4.0+alpha"
 
 name = "sodiumoxide"
 version = "0.2.7"	
-
-
-# debugger 
-
-"C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\gflags.exe"
-vsjitdebugger.exe
-waitForDebugger # android
-Computer\HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\rustdesk.exe
-
-https://github.com/create-dmg/create-dmg
-security find-identity -p basic -v
-
-cp target/debug/rustdesk ../Documents/RustDesk.app/Contents/MacOS/rustdesk 
-codesign -s "5B58CCDA9F9CA53B3EAC8437A9F18C5CE54A1F2F" --force --options runtime  ../Documents/RustDesk.app/Contents/MacOS/*
-codesign -s "5B58CCDA9F9CA53B3EAC8437A9F18C5CE54A1F2F" --force --options runtime  ../Documents/RustDesk.app
-rm ../Documents/RustDesk.dmg
-create-dmg  ../Documents/RustDesk.dmg ../Documents/RustDesk.app
-codesign -s "5B58CCDA9F9CA53B3EAC8437A9F18C5CE54A1F2F" --force --options runtime ../Documents/RustDesk.dmg
-rcodesign notarize --api-issuer 69a6de71-2a59-47e3-e053-5b8c7c11a4d1 --api-key 3Y4FWB23RH --staple ../Documents/rustdesk.dmg
-
-# tool
-
-rustup update
-rustup target add aarch64-apple-ios
-rustup target list
-
-xcrun simctl list
-open -a Simulator --args -CurrentDeviceUDID 5D1C39DD-708B-41D3-B89A-3F0D9B8E42BF
-
-file target\release\rustdesk
-sudo lsof -i -n -P | grep rustdesk     // netstat
-
-#debug
-
-csrutil disable
