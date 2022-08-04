@@ -474,6 +474,8 @@ impl Connection {
                                     ControlKey::Meta => ControlKey::Control,
                                     ControlKey::RControl => ControlKey::RWin,
                                     ControlKey::RWin => ControlKey::RControl,
+                                    ControlKey::Alt => ControlKey::RAlt,
+                                    ControlKey::RAlt => ControlKey::Alt,
                                     _ => ck,
                                 };
                                 msg.set_control_key(ck);

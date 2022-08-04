@@ -1217,6 +1217,8 @@ impl Handler {
                     ControlKey::Meta => ControlKey::Control,
                     ControlKey::RControl => ControlKey::RWin,
                     ControlKey::RWin => ControlKey::RControl,
+                    ControlKey::Alt => ControlKey::RAlt,
+                    ControlKey::RAlt => ControlKey::Alt,
                     _ => ck,
                 };
                 key_event.set_control_key(ck);
