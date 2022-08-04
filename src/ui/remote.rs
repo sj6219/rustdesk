@@ -981,7 +981,7 @@ impl Handler {
                 command = true;
             }
         }
-
+        // ======3.1
         send_mouse(mask, x, y, alt, ctrl, shift, command, self);
         // on macos, ctrl + left button down = right button down, up won't emit, so we need to
         // emit up myself if peer is not macos

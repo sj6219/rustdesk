@@ -1312,6 +1312,7 @@ pub fn send_mouse(
     if command {
         mouse_event.modifiers.push(ControlKey::Meta.into());
     }
+    // ======3.2
     msg_out.set_mouse_event(mouse_event);
     interface.send(Data::Message(msg_out));
 }
