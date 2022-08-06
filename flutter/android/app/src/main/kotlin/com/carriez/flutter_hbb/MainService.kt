@@ -44,6 +44,8 @@ import kotlin.math.max
 import kotlin.math.min
 import android.content.ClipboardManager
 import android.content.ClipData
+import java.util.Timer
+import java.util.TimerTask
 //import android.content.ClipboardManager.OnPrimaryClipChangedListener
 
 const val EXTRA_MP_DATA = "mp_intent"
@@ -164,8 +166,9 @@ class MainService : Service() /* , ClipboardManager.OnPrimaryClipChangedListener
     private var serviceHandler: Handler? = null
 
     private val powerManager: PowerManager by lazy { applicationContext.getSystemService(Context.POWER_SERVICE) as PowerManager }
-    private val wakeLock: PowerManager.WakeLock by lazy { powerManager.newWakeLock(PowerManager.ACQUIRE_CAUSES_WAKEUP or PowerManager.SCREEN_BRIGHT_WAKE_LOCK, "rustdesk:wakelock")}
+    private val wakeLock: PowerManager.WakeLock by lazy { powerManager.newWakeLock(PowerManager.ACQUIRE_CAUSES_WAKEUP or PowerManager.SCREEN_BRIGHT_WAKE_LOCK or PowerManager.ON_AFTER_RELEASE, "rustdesk:wakelock")}
     private val clipboardManager: ClipboardManager by lazy { applicationContext.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager }
+    private var timerTask: Timer? = null
     // override fun   onPrimaryClipChanged() {
     //     Log.d(logTag, "Clipboard===")
     //     val clip : ClipData? = clipboardManager.getPrimaryClip();
@@ -387,10 +390,25 @@ class MainService : Service() /* , ClipboardManager.OnPrimaryClipChangedListener
         _isStart = true
         setFrameRawEnable("video",true)
         setFrameRawEnable("audio",true)
+        
+        timerTask = kotlin.concurrent.timer(initialDelay = 2000, period = 2000) {	
+            if (!powerManager.isInteractive) {
+                Log.d(logTag,"Turn on Screen!!!")
+            }
+            if (wakeLock.isHeld) {
+                //Log.d(logTag,"Turn on Screen, WakeLock release")
+                wakeLock.release()
+            }
+            //Log.d(logTag,"Turn on Screen")
+            wakeLock.acquire(5000)   
+        }
         return true
     }
 
     fun stopCapture() {
+        timerTask?.cancel()
+        timerTask = null
+        
         Log.d(logTag, "Stop Capture")
         setFrameRawEnable("video",false)
         setFrameRawEnable("audio",false)
