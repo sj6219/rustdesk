@@ -1652,7 +1652,7 @@ impl Remote {
                         continue;
                     }
                     if let Some(msg) = check_clipboard(&mut ctx, Some(&old_clipboard)) {
-                        // %%%%%% 1.2
+                        // %%%%%%1.2
                         tx_protobuf.send(Data::Message(msg)).ok();
                     }
                 });
