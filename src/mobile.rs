@@ -704,8 +704,6 @@ impl Connection {
                     _ => {}
                 },
                 Some(message::Union::Clipboard(cb)) => {
-                    // %%%%%%2.1
-                    log::debug!("%%%%%%2.1 1");
                     if !self.session.lc.read().unwrap().disable_clipboard {
                         let content = if cb.compress {
                             decompress(&cb.content)

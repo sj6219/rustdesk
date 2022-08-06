@@ -44,7 +44,7 @@ import kotlin.math.max
 import kotlin.math.min
 import android.content.ClipboardManager
 import android.content.ClipData
-import android.content.ClipboardManager.OnPrimaryClipChangedListener
+//import android.content.ClipboardManager.OnPrimaryClipChangedListener
 
 const val EXTRA_MP_DATA = "mp_intent"
 const val INIT_SERVICE = "init_service"

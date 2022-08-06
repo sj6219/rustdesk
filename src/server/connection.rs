@@ -1111,8 +1111,7 @@ impl Connection {
                 }
                 Some(message::Union::Clipboard(cb)) =>
                 {
-                    // %%%%%%2.1
-                    log::debug!("%%%%%%2.1 2");
+                    log::debug!("%%%%%%2.1");
                     #[cfg(not(target_os = "ios"))]
                     if self.clipboard {
                         update_clipboard(cb, None);
