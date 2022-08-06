@@ -2183,6 +2183,8 @@ impl Remote {
                     self.handler.set_cursor_position(cp);
                 }
                 Some(message::Union::Clipboard(cb)) => {
+                    // %%%%%%2.1
+                    log::debug!("%%%%%%2.1 3");
                     if !self.handler.lc.read().unwrap().disable_clipboard {
                         update_clipboard(cb, Some(&self.old_clipboard));
                     }
