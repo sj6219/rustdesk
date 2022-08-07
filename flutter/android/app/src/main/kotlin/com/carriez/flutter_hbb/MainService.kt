@@ -381,17 +381,17 @@ class MainService : Service() {
         setFrameRawEnable("video",true)
         setFrameRawEnable("audio",true)
         
-        timerTask = kotlin.concurrent.timer(initialDelay = 2000, period = 2000) {	
-            if (!powerManager.isInteractive) {
-                Log.d(logTag,"Turn on Screen!!!")
-            }
-            if (wakeLock.isHeld) {
-                //Log.d(logTag,"Turn on Screen, WakeLock release")
-                wakeLock.release()
-            }
-            //Log.d(logTag,"Turn on Screen")
-            wakeLock.acquire(5000)   
-        }
+        // timerTask = kotlin.concurrent.timer(initialDelay = 2000, period = 2000) {	
+        //     if (!powerManager.isInteractive) {
+        //         Log.d(logTag,"Turn on Screen!!!")
+        //     }
+        //     if (wakeLock.isHeld) {
+        //         //Log.d(logTag,"Turn on Screen, WakeLock release")
+        //         wakeLock.release()
+        //     }
+        //     //Log.d(logTag,"Turn on Screen")
+        //     wakeLock.acquire(5000)   
+        // }
         return true
     }
 
