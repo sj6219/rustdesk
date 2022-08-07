@@ -42,6 +42,8 @@ import org.json.JSONObject
 import java.nio.ByteBuffer
 import kotlin.math.max
 import kotlin.math.min
+import android.content.ClipboardManager
+import android.content.ClipData
 import java.util.Timer
 import java.util.TimerTask
 
@@ -88,6 +90,11 @@ class MainService : Service() {
         } else {
             InputService.ctx?.onMouseInput(mask,x,y)
         }
+    }
+
+    @Keep
+    fun rustSetClipText(name: String) {
+        clipboardManager.setPrimaryClip(ClipData.newPlainText("label", name))
     }
 
     @Keep
@@ -158,10 +165,9 @@ class MainService : Service() {
     private var serviceHandler: Handler? = null
 
     private val powerManager: PowerManager by lazy { applicationContext.getSystemService(Context.POWER_SERVICE) as PowerManager }
-    private val wakeLock: PowerManager.WakeLock by lazy { powerManager.newWakeLock(PowerManager.ACQUIRE_CAUSES_WAKEUP or PowerManager.SCREEN_BRIGHT_WAKE_LOCK, "rustdesk:wakelock")}
-
+    private val wakeLock: PowerManager.WakeLock by lazy { powerManager.newWakeLock(PowerManager.ACQUIRE_CAUSES_WAKEUP or PowerManager.SCREEN_BRIGHT_WAKE_LOCK or PowerManager.ON_AFTER_RELEASE, "rustdesk:wakelock")}
+    private val clipboardManager: ClipboardManager by lazy { applicationContext.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager }
     private var timerTask: Timer? = null
-
     // jvm call rust
     private external fun init(ctx: Context)
     private external fun startServer()
@@ -375,16 +381,17 @@ class MainService : Service() {
         setFrameRawEnable("video",true)
         setFrameRawEnable("audio",true)
         
-        timerTask = kotlin.concurrent.timer(initialDelay = 2000, period = 2000) {	
-            if (!powerManager.isInteractive) {
-                if (wakeLock.isHeld) {
-                    Log.d(logTag,"Turn on Screen, WakeLock release")
-                    wakeLock.release()
-                }
-                Log.d(logTag,"Turn on Screen")
-                wakeLock.acquire(5000)   
-            }
-        }
+        // timerTask = kotlin.concurrent.timer(initialDelay = 2000, period = 2000) {	
+        //     if (!powerManager.isInteractive) {
+        //         Log.d(logTag,"Turn on Screen!!!")
+        //     }
+        //     if (wakeLock.isHeld) {
+        //         //Log.d(logTag,"Turn on Screen, WakeLock release")
+        //         wakeLock.release()
+        //     }
+        //     //Log.d(logTag,"Turn on Screen")
+        //     wakeLock.acquire(5000)   
+        // }
         return true
     }
 

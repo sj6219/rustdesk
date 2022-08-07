@@ -37,6 +37,8 @@ flutter build apk --split-per-abi
 adb install  ~/rustdesk/flutter/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
 adb logcat | grep LOG_SERVICE
 
+adb shell dumpsys package com.carriez.flutter_hbb
+
 # rustdesk
 cd C:\Users\sjpark\Documents\rustdesk
 set VCPKG_ROOT=C:\Users\sjpark\Documents\vcpkg
