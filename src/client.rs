@@ -1312,6 +1312,20 @@ pub fn send_mouse(
     if command {
         mouse_event.modifiers.push(ControlKey::Meta.into());
     }
+    #[cfg(target_os = "macos")]
+    {
+        mouse_event.modifiers = mouse_event.modifiers.iter().map(|ck| {
+            let ck = ck.enum_value_or_default();
+            let ck = match ck {
+                ControlKey::Control => ControlKey::Meta,
+                ControlKey::Meta => ControlKey::Control,
+                ControlKey::RControl => ControlKey::RWin,
+                ControlKey::RWin => ControlKey::RControl,
+                _ => ck,
+            };
+            hbb_common::protobuf::EnumOrUnknown::new(ck)
+        }).collect();
+    }
     msg_out.set_mouse_event(mouse_event);
     interface.send(Data::Message(msg_out));
 }
