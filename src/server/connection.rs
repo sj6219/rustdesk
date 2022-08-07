@@ -1,7 +1,7 @@
 use super::{input_service::*, *};
 #[cfg(windows)]
 use crate::clipboard_file::*;
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
+#[cfg(not(target_os = "ios"))]
 use crate::common::update_clipboard;
 use crate::video_service;
 #[cfg(any(target_os = "android", target_os = "ios"))]
@@ -1111,8 +1111,8 @@ impl Connection {
                 }
                 Some(message::Union::Clipboard(cb)) =>
                 {
-                    // %%%%%%%2.1
-                    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+                	// %%%%%%%2.1
+                    #[cfg(not(target_os = "ios"))]
                     if self.clipboard {
                         update_clipboard(cb, None);
                     }
