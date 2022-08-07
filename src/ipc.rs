@@ -8,9 +8,7 @@ use hbb_common::{
     config::{self, Config, Config2},
     futures::StreamExt as _,
     futures_util::sink::SinkExt,
-    log,
-    password_security::password,
-    timeout, tokio,
+    log, password_security as password, timeout, tokio,
     tokio::io::{AsyncRead, AsyncWrite},
     tokio_util::codec::Framed,
     ResultType,
@@ -59,6 +57,7 @@ pub enum FS {
         id: i32,
         file_num: i32,
         files: Vec<(String, u64)>,
+        overwrite_detection: bool,
     },
     CancelWrite {
         id: i32,
@@ -87,6 +86,7 @@ pub enum FS {
     },
 }
 
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(tag = "t", content = "c")]
 pub enum DataKeyboard {
@@ -103,6 +103,7 @@ pub enum DataKeyboardResponse {
     GetKeyState(bool),
 }
 
+#[cfg(not(any(target_os = "android", target_os = "ios", feature = "cli")))]
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(tag = "t", content = "c")]
 pub enum DataMouse {
@@ -171,8 +172,11 @@ pub enum Data {
     ClipboardFileEnabled(bool),
     PrivacyModeState((i32, PrivacyModeState)),
     TestRendezvousServer,
+    #[cfg(not(any(target_os = "android", target_os = "ios", feature = "cli")))]
     Keyboard(DataKeyboard),
+    #[cfg(not(any(target_os = "android", target_os = "ios", feature = "cli")))]
     KeyboardResponse(DataKeyboardResponse),
+    #[cfg(not(any(target_os = "android", target_os = "ios", feature = "cli")))]
     Mouse(DataMouse),
     Control(DataControl),
     Empty,

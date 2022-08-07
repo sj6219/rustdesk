@@ -7,15 +7,14 @@ use crate::video_service;
 #[cfg(any(target_os = "android", target_os = "ios"))]
 use crate::{common::MOBILE_INFO2, mobile::connection_manager::start_channel};
 use crate::{ipc, VERSION};
-use hbb_common::fs::can_enable_overwrite_detection;
-use hbb_common::password_security::password;
 use hbb_common::{
     config::Config,
     fs,
+    fs::can_enable_overwrite_detection,
     futures::{SinkExt, StreamExt},
     get_version_number,
     message_proto::{option_message::BoolOption, permission_info::Permission},
-    sleep, timeout,
+    password_security as password, sleep, timeout,
     tokio::{
         net::TcpStream,
         sync::mpsc,
@@ -307,24 +306,24 @@ impl Connection {
                                 ipc::PrivacyModeState::OffSucceeded => {
                                     video_service::set_privacy_mode_conn_id(0);
                                     crate::common::make_privacy_mode_msg(
-                                        back_notification::PrivacyModeState::OffSucceeded,
+                                        back_notification::PrivacyModeState::PrvOffSucceeded,
                                     )
                                 }
                                 ipc::PrivacyModeState::OffFailed => {
                                     crate::common::make_privacy_mode_msg(
-                                        back_notification::PrivacyModeState::OffFailed,
+                                        back_notification::PrivacyModeState::PrvOffFailed,
                                     )
                                 }
                                 ipc::PrivacyModeState::OffByPeer => {
                                     video_service::set_privacy_mode_conn_id(0);
                                     crate::common::make_privacy_mode_msg(
-                                        back_notification::PrivacyModeState::OffByPeer,
+                                        back_notification::PrivacyModeState::PrvOffByPeer,
                                     )
                                 }
                                 ipc::PrivacyModeState::OffUnknown => {
                                     video_service::set_privacy_mode_conn_id(0);
                                      crate::common::make_privacy_mode_msg(
-                                        back_notification::PrivacyModeState::OffUnknown,
+                                        back_notification::PrivacyModeState::PrvOffUnknown,
                                     )
                                 }
                             };
@@ -464,7 +463,7 @@ impl Connection {
                         } else {
                             Self::send_block_input_error(
                                 &tx,
-                                back_notification::BlockInputState::OnFailed,
+                                back_notification::BlockInputState::BlkOnFailed,
                             );
                         }
                     }
@@ -474,7 +473,7 @@ impl Connection {
                         } else {
                             Self::send_block_input_error(
                                 &tx,
-                                back_notification::BlockInputState::OffFailed,
+                                back_notification::BlockInputState::BlkOffFailed,
                             );
                         }
                     }
@@ -1101,8 +1100,9 @@ impl Connection {
                             }
                             Some(file_action::Union::Send(s)) => {
                                 let id = s.id;
-                                let od =
-                                    can_enable_overwrite_detection(get_version_number(VERSION));
+                                let od = can_enable_overwrite_detection(get_version_number(
+                                    &self.lr.version,
+                                ));
                                 let path = s.path.clone();
                                 match fs::TransferJob::new_read(
                                     id,
@@ -1125,6 +1125,11 @@ impl Connection {
                                 }
                             }
                             Some(file_action::Union::Receive(r)) => {
+                                // note: 1.1.10 introduced identical file detection, which breaks original logic of send/recv files
+                                // whenever got send/recv request, check peer version to ensure old version of rustdesk
+                                let od = can_enable_overwrite_detection(get_version_number(
+                                    &self.lr.version,
+                                ));
                                 self.send_fs(ipc::FS::NewWrite {
                                     path: r.path,
                                     id: r.id,
@@ -1135,6 +1140,7 @@ impl Connection {
                                         .drain(..)
                                         .map(|f| (f.name, f.modified_time))
                                         .collect(),
+                                    overwrite_detection: od,
                                 });
                             }
                             Some(file_action::Union::RemoveDir(d)) => {
@@ -1318,7 +1324,7 @@ impl Connection {
                     BoolOption::Yes => {
                         let msg_out = if !video_service::is_privacy_mode_supported() {
                             crate::common::make_privacy_mode_msg(
-                                back_notification::PrivacyModeState::NotSupported,
+                                back_notification::PrivacyModeState::PrvNotSupported,
                             )
                         } else {
                             match privacy_mode::turn_on_privacy(self.inner.id) {
@@ -1326,7 +1332,7 @@ impl Connection {
                                     if video_service::test_create_capturer(self.inner.id, 5_000) {
                                         video_service::set_privacy_mode_conn_id(self.inner.id);
                                         crate::common::make_privacy_mode_msg(
-                                            back_notification::PrivacyModeState::OnSucceeded,
+                                            back_notification::PrivacyModeState::PrvOnSucceeded,
                                         )
                                     } else {
                                         log::error!(
@@ -1335,12 +1341,12 @@ impl Connection {
                                         video_service::set_privacy_mode_conn_id(0);
                                         let _ = privacy_mode::turn_off_privacy(self.inner.id);
                                         crate::common::make_privacy_mode_msg(
-                                            back_notification::PrivacyModeState::OnFailed,
+                                            back_notification::PrivacyModeState::PrvOnFailed,
                                         )
                                     }
                                 }
                                 Ok(false) => crate::common::make_privacy_mode_msg(
-                                    back_notification::PrivacyModeState::OnFailedPlugin,
+                                    back_notification::PrivacyModeState::PrvOnFailedPlugin,
                                 ),
                                 Err(e) => {
                                     log::error!("Failed to turn on privacy mode. {}", e);
@@ -1348,7 +1354,7 @@ impl Connection {
                                         let _ = privacy_mode::turn_off_privacy(0);
                                     }
                                     crate::common::make_privacy_mode_msg(
-                                        back_notification::PrivacyModeState::OnFailed,
+                                        back_notification::PrivacyModeState::PrvOnFailed,
                                     )
                                 }
                             }
@@ -1358,7 +1364,7 @@ impl Connection {
                     BoolOption::No => {
                         let msg_out = if !video_service::is_privacy_mode_supported() {
                             crate::common::make_privacy_mode_msg(
-                                back_notification::PrivacyModeState::NotSupported,
+                                back_notification::PrivacyModeState::PrvNotSupported,
                             )
                         } else {
                             video_service::set_privacy_mode_conn_id(0);
@@ -1533,19 +1539,19 @@ mod privacy_mode {
             let res = turn_off_privacy(_conn_id, None);
             match res {
                 Ok(_) => crate::common::make_privacy_mode_msg(
-                    back_notification::PrivacyModeState::OffSucceeded,
+                    back_notification::PrivacyModeState::PrvOffSucceeded,
                 ),
                 Err(e) => {
                     log::error!("Failed to turn off privacy mode {}", e);
                     crate::common::make_privacy_mode_msg(
-                        back_notification::PrivacyModeState::OffFailed,
+                        back_notification::PrivacyModeState::PrvOffFailed,
                     )
                 }
             }
         }
         #[cfg(not(windows))]
         {
-            crate::common::make_privacy_mode_msg(back_notification::PrivacyModeState::OffFailed)
+            crate::common::make_privacy_mode_msg(back_notification::PrivacyModeState::PrvOffFailed)
         }
     }
 
