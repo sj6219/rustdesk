@@ -35,8 +35,11 @@ cd ~/rustdesk/flutter
 cp ../target/aarch64-linux-android/release/liblibrustdesk.so android/app/src/main/jniLibs/arm64-v8a/librustdesk.so
 flutter build apk --split-per-abi
 adb install  ~/rustdesk/flutter/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
-adb logcat | grep LOG_SERVICE
 
+cp target/aarch64-linux-android/release/liblibrustdesk.so /mnt/mac/Users/sjpark/rustdesk/flutter/android/app/src/main/jniLibs/arm64-v8a/
+cp flutter/lib/generated_bridge.dart /mnt/mac/Users/sjpark/rustdesk/flutter/lib/generated_bridge.dart
+
+adb logcat | grep LOG_SERVICE
 adb shell dumpsys package com.carriez.flutter_hbb
 
 # rustdesk
