@@ -464,6 +464,7 @@ impl Connection {
                         handle_mouse(&msg, id);
                     }
                     MessageInput::Key((mut msg, press)) => {
+                        // ======2.3
                         #[cfg(target_os = "macos")]
                         {
                             if let Some(key_event::Union::ControlKey(ck)) = msg.union {
@@ -858,6 +859,7 @@ impl Connection {
 
     #[inline]
     fn input_key(&self, msg: KeyEvent, press: bool) {
+        // ======2.2
         self.tx_input.send(MessageInput::Key((msg, press))).ok();
     }
 
@@ -1081,6 +1083,7 @@ impl Connection {
                     }
                 }
                 Some(message::Union::KeyEvent(me)) => {
+                    // ======2.1
                     #[cfg(not(any(target_os = "android", target_os = "ios")))]
                     if self.keyboard {
                         if is_enter(&me) {
