@@ -33,8 +33,8 @@ open -a Simulator --args -CurrentDeviceUDID 5D1C39DD-708B-41D3-B89A-3F0D9B8E42BF
 cargo ndk --platform 21 --target aarch64-linux-android build --release
 cd ~/rustdesk/flutter
 cp ../target/aarch64-linux-android/release/liblibrustdesk.so android/app/src/main/jniLibs/arm64-v8a/librustdesk.so
-flutter build apk --split-per-abi
-adb install  ~/rustdesk/flutter/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+flutter build apk --target-platform android-arm64
+adb install  ~/rustdesk/flutter/build/app/outputs/flutter-apk/app-release.apk
 
 cp target/aarch64-linux-android/release/liblibrustdesk.so /mnt/mac/Users/sjpark/rustdesk/flutter/android/app/src/main/jniLibs/arm64-v8a/
 cp flutter/lib/generated_bridge.dart /mnt/mac/Users/sjpark/rustdesk/flutter/lib/generated_bridge.dart
