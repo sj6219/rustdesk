@@ -40,6 +40,7 @@ export ANDROID_NDK_HOME=/Users/sjpark/Library/Android/sdk/ndk/22.0.7026061
 vcpkg install libvpx:arm64-android libyuv:arm64-android opus:arm64-android
 flutter/build_android_deps.sh
 
+objdump -T liblibrustdesk.so 
 sudo  mount -t drvfs '\\192.168.111.10\Macintosh HD' /mnt/mac
 adb logcat | grep LOG_SERVICE
 adb shell dumpsys package com.carriez.flutter_hbb
@@ -164,13 +165,5 @@ env CARGO_TARGET_AARCH64_LINUX_ANDROID_AR=/Users/sjpark/Library/Android/sdk/ndk/
 env CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=/Users/sjpark/Library/Android/sdk/ndk/22.0.7026061/toolchains/llvm/prebuilt/darwin-x86_64/bin/aarch64-linux-android21-clang \
 env BINDGEN_EXTRA_CLANG_ARGS_aarch64_linux_android="--target=arm64-apple-macos12.3 --sysroot=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX12.3.sdk -I/Users/sjpark/Library/Android/sdk/ndk/22.0.7026061/toolchains/llvm/prebuilt/darwin-x86_64/sysroot/" \
 cargo rustc --target aarch64-linux-android --lib --release
-
-env AR_aarch64-apple-darwin=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/ar \
-env CC_aarch64-apple-darwin=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang \
-env CXX_aarch64-apple-darwin=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang++ \
-env LD_aarch64-apple-darwin=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/ld \
-env CARGO_TARGET_AARCH64_APPLE_DARWIN_AR=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/err \
-env CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang \
-env CARGO_TARGET_AARCH64_APPLE_DARWIN_LD=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/ld \
  
 
