@@ -124,8 +124,6 @@ fn get_vpx_i420_stride(
 ) -> (usize, usize, usize, usize, usize, usize) {
     let mut img = Default::default();
     unsafe {
-        #[cfg(target_os="android")]
-        return (0,0,0,0,0,0);
         vpx_img_wrap(
             &mut img,
             vpx_img_fmt::VPX_IMG_FMT_I420,
