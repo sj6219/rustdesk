@@ -31,17 +31,11 @@ open -a Simulator --args -CurrentDeviceUDID 5D1C39DD-708B-41D3-B89A-3F0D9B8E42BF
 
 #android
 RUST_LOG=debug cargo ndk --platform 21 --target aarch64-linux-android build --release
-cargo-ndk rustc --target aarch64-linux-android --lib --release 
-cp target/aarch64-linux-android/release/liblibrustdesk.so flutter/android/app/src/main/jniLibs/arm64-v8a/librustdesk.so
+cp ~/rustdesk/target/aarch64-linux-android/release/liblibrustdesk.so ~/rustdesk/flutter/android/app/src/main/jniLibs/arm64-v8a/librustdesk.so
 cd ~/rustdesk/flutter
 flutter build apk --target-platform android-arm64
 adb install  ~/rustdesk/flutter/build/app/outputs/flutter-apk/app-release.apk
 
-export ANDROID_NDK_HOME=/Users/sjpark/Library/Android/sdk/ndk/22.0.7026061
-vcpkg install libvpx:arm64-android libyuv:arm64-android opus:arm64-android
-flutter/build_android_deps.sh
-
-objdump -T target/aarch64-linux-android/release/liblibrustdesk.so 
 sudo  mount -t drvfs '\\192.168.111.10\Macintosh HD' /mnt/mac
 adb logcat | grep LOG_SERVICE
 adb shell dumpsys package com.carriez.flutter_hbb
@@ -155,6 +149,7 @@ env CARGO_TARGET_AARCH64_LINUX_ANDROID_AR=/home/sjpark/android-ndk-r22b/toolchai
 env CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=/home/sjpark/android-ndk-r22b/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang \
 env BINDGEN_EXTRA_CLANG_ARGS_aarch64_linux_android=-I/home/sjpark/android-ndk-r22b/toolchains/llvm/prebuilt/linux-x86_64/sysroot/ \
 cargo rustc --target aarch64-linux-android --lib --release
+
 sudo apt install gcc-multilib
 sudo apt install make
 
@@ -168,5 +163,24 @@ env CARGO_TARGET_AARCH64_LINUX_ANDROID_AR=/Users/sjpark/Library/Android/sdk/ndk/
 env CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=/Users/sjpark/Library/Android/sdk/ndk/22.0.7026061/toolchains/llvm/prebuilt/darwin-x86_64/bin/aarch64-linux-android21-clang \
 env BINDGEN_EXTRA_CLANG_ARGS_aarch64_linux_android="--target=arm64-apple-macos12.3 --sysroot=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX12.3.sdk -I/Users/sjpark/Library/Android/sdk/ndk/22.0.7026061/toolchains/llvm/prebuilt/darwin-x86_64/sysroot/" \
 cargo rustc --target aarch64-linux-android --lib --release
+
+cargo-ndk rustc --target aarch64-linux-android --lib -- --cfg and_debug
+objdump -T ~/rustdesk/target/aarch64-linux-android/release/liblibrustdesk.so 
+
+export ANDROID_NDK_HOME=/Users/sjpark/Library/Android/sdk/ndk/22.0.7026061
+vcpkg install libvpx:arm64-android libyuv:arm64-android opus:arm64-android
+flutter/build_android_deps.sh
+
+/data/local/tmp/lldb-server platform --listen "*:10086" --server 
+adb forward tcp:10086 tcp:10086
+/Users/sjpark/Library/Android/sdk/ndk/22.0.7026061/toolchains/llvm/prebuilt/darwin-x86_64/bin/lldb
+platform select remote-android
+platform connect connect://emulator-5554:10086
+attach
+b connection.rs:624
+add-dsym /Users/sjpark/ndk-samples/hello-gl2/app/build/intermediates/merged_native_libs/debug/out/lib/arm64-v8a/libgl2jni.so
+b gl_code.cpp:151
+image dump symtab libgl2jni.so
+image lookup -r -n renderFrame
  
 

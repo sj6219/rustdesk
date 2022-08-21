@@ -95,7 +95,7 @@ impl EncoderApi for VpxEncoder {
     where
         Self: Sized,
     {
-        #[cfg(target_os="android")]
+        #[cfg(feature = "and_debug")]
         return Err(anyhow!("encoder type mismatch"));
         match cfg {
             crate::codec::EncoderCfg::VPX(config) => {
@@ -228,7 +228,7 @@ impl EncoderApi for VpxEncoder {
     fn set_bitrate(&mut self, bitrate: u32) -> ResultType<()> {
         let mut new_enc_cfg = unsafe { *self.ctx.config.enc.to_owned() };
         new_enc_cfg.rc_target_bitrate = bitrate;
-        #[cfg(target_os="android")]
+        #[cfg(feature = "and_debug")]
         return Ok(());
         call_vpx!(vpx_codec_enc_config_set(&mut self.ctx, &new_enc_cfg));
         return Ok(());
@@ -240,7 +240,7 @@ impl VpxEncoder {
         assert!(2 * data.len() >= 3 * self.width * self.height);
 
         let mut image = Default::default();
-        #[cfg(target_os="android")]
+        #[cfg(feature = "and_debug")]
         return Err(Error::BadPtr(String::default()));
         call_vpx_ptr!(vpx_img_wrap(
             &mut image,
@@ -268,7 +268,7 @@ impl VpxEncoder {
 
     /// Notify the encoder to return any pending packets
     pub fn flush(&mut self) -> Result<EncodeFrames> {
-        #[cfg(target_os="android")]
+        #[cfg(feature = "and_debug")]
         return Err(Error::BadPtr(String::default()));
         call_vpx!(vpx_codec_encode(
             &mut self.ctx,
@@ -310,7 +310,7 @@ impl VpxEncoder {
 
 impl Drop for VpxEncoder {
     fn drop(&mut self) {
-        #[cfg(target_os="android")]
+        #[cfg(feature = "and_debug")]
         return;
         unsafe {
             let result = vpx_codec_destroy(&mut self.ctx);
@@ -360,7 +360,7 @@ pub struct EncodeFrames<'a> {
 impl<'a> Iterator for EncodeFrames<'a> {
     type Item = EncodeFrame<'a>;
     fn next(&mut self) -> Option<Self::Item> {
-        #[cfg(target_os="android")]
+        #[cfg(feature = "and_debug")]
         return None;
         loop {
             unsafe {
@@ -392,7 +392,7 @@ impl VpxDecoder {
     pub fn new(config: VpxDecoderConfig) -> Result<Self> {
         // This is sound because `vpx_codec_ctx` is a repr(C) struct without any field that can
         // cause UB if uninitialized.
-        #[cfg(target_os="android")]
+        #[cfg(feature = "and_debug")]
         return Err(Error::BadPtr(String::default()));
         let i;
         if cfg!(feature = "VP8") {
@@ -453,7 +453,7 @@ impl VpxDecoder {
     ///
     /// It matches a call to `vpx_codec_decode`.
     pub fn decode(&mut self, data: &[u8]) -> Result<DecodeFrames> {
-        #[cfg(target_os="android")]
+        #[cfg(feature = "and_debug")]
         return Err(Error::BadPtr(String::default()));
         call_vpx!(vpx_codec_decode(
             &mut self.ctx,
@@ -471,7 +471,7 @@ impl VpxDecoder {
 
     /// Notify the decoder to return any pending frame
     pub fn flush(&mut self) -> Result<DecodeFrames> {
-        #[cfg(target_os="android")]
+        #[cfg(feature = "and_debug")]
         return Err(Error::BadPtr(String::default()));
         call_vpx!(vpx_codec_decode(
             &mut self.ctx,
@@ -489,7 +489,7 @@ impl VpxDecoder {
 
 impl Drop for VpxDecoder {
     fn drop(&mut self) {
-        #[cfg(target_os = "android")]
+        #[cfg(feature = "and_debug")]
         return;
         unsafe {
             let result = vpx_codec_destroy(&mut self.ctx);
@@ -508,7 +508,7 @@ pub struct DecodeFrames<'a> {
 impl<'a> Iterator for DecodeFrames<'a> {
     type Item = Image;
     fn next(&mut self) -> Option<Self::Item> {
-        #[cfg(target_os="android")] 
+        #[cfg(feature = "and_debug")] 
         return None;
         let img = unsafe { vpx_codec_get_frame(self.ctx, &mut self.iter) };
         if img.is_null() {
@@ -613,7 +613,7 @@ impl Image {
 
 impl Drop for Image {
     fn drop(&mut self) {
-        #[cfg(target_os="android")]
+        #[cfg(feature = "and_debug")]
         return;
         if !self.0.is_null() {
             unsafe { vpx_img_free(self.0) };
