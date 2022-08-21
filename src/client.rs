@@ -1099,6 +1099,7 @@ impl LoginConfigHandler {
     }
 
     pub fn handle_peer_info(&mut self, username: String, pi: PeerInfo) {
+        // :::::5.2
         if !pi.version.is_empty() {
             self.version = hbb_common::get_version_number(&pi.version);
         }

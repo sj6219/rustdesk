@@ -510,6 +510,7 @@ impl Interface for Session {
             ],
         );
         lc.handle_peer_info(username, pi);
+        // ::::::5.3
         let p = lc.should_auto_login();
         if !p.is_empty() {
             input_os_password(p, true, self.clone());
@@ -694,6 +695,7 @@ impl Connection {
                     self.session.handle_hash("", hash, peer).await;
                 }
                 Some(message::Union::LoginResponse(lr)) => match lr.union {
+                    // ::::::5.1
                     Some(login_response::Union::Error(err)) => {
                         if !self.session.handle_login_error(&err) {
                             return false;
