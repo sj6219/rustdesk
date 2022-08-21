@@ -690,6 +690,7 @@ impl Connection {
                     }
                 }
                 Some(message::Union::Hash(hash)) => {
+                    // ::::::3.1
                     self.session.handle_hash("", hash, peer).await;
                 }
                 Some(message::Union::LoginResponse(lr)) => match lr.union {
