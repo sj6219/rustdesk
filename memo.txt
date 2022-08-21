@@ -150,6 +150,8 @@ env CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=/home/sjpark/android-ndk-r22b/tool
 env BINDGEN_EXTRA_CLANG_ARGS_aarch64_linux_android=-I/home/sjpark/android-ndk-r22b/toolchains/llvm/prebuilt/linux-x86_64/sysroot/ \
 cargo rustc --target aarch64-linux-android --lib --release
 
+cp ~/rustdesk/target/aarch64-linux-android/debug/liblibrustdesk.so /mnt/mac/Users/sjpark/rustdesk/flutter/android/app/src/main/jniLibs/arm64-v8a/librustdesk.so
+
 sudo apt install gcc-multilib
 sudo apt install make
 
@@ -164,14 +166,14 @@ env CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=/Users/sjpark/Library/Android/sdk/
 env BINDGEN_EXTRA_CLANG_ARGS_aarch64_linux_android="--target=arm64-apple-macos12.3 --sysroot=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX12.3.sdk -I/Users/sjpark/Library/Android/sdk/ndk/22.0.7026061/toolchains/llvm/prebuilt/darwin-x86_64/sysroot/" \
 cargo rustc --target aarch64-linux-android --lib --release
 
-cargo-ndk rustc --target aarch64-linux-android --lib -- --cfg and_debug
+cargo-ndk rustc --target aarch64-linux-android --lib 
 objdump -T ~/rustdesk/target/aarch64-linux-android/release/liblibrustdesk.so 
 
 export ANDROID_NDK_HOME=/Users/sjpark/Library/Android/sdk/ndk/22.0.7026061
 vcpkg install libvpx:arm64-android libyuv:arm64-android opus:arm64-android
 flutter/build_android_deps.sh
 
-/data/local/tmp/lldb-server platform --listen "*:10086" --server 
+adb shell /data/local/tmp/lldb-server platform --listen "*:10086" --server 
 adb forward tcp:10086 tcp:10086
 /Users/sjpark/Library/Android/sdk/ndk/22.0.7026061/toolchains/llvm/prebuilt/darwin-x86_64/bin/lldb
 platform select remote-android
