@@ -11,7 +11,6 @@ edition = "2018"
 
 [features]
 wayland = ["gstreamer", "gstreamer-app", "gstreamer-video", "dbus", "tracing"]
-and_debug = []
 
 [dependencies]
 block = "0.1"
