@@ -142,7 +142,7 @@ env CC_aarch64-linux-android=/home/sjpark/android-ndk-r22b/toolchains/llvm/prebu
 env CXX_aarch64-linux-android=/home/sjpark/android-ndk-r22b/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang++ \
 env CARGO_TARGET_AARCH64_LINUX_ANDROID_AR=/home/sjpark/android-ndk-r22b/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android-ar \
 env CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=/home/sjpark/android-ndk-r22b/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang \
-env BINDGEN_EXTRA_CLANG_ARGS_aarch64_linux_android=-I/home/sjpark/android-ndk-r22b/toolchains/llvm/prebuilt/linux-x86_64/sysroot/ \
+env BINDGEN_EXTRA_CLANG_ARGS_aarch64_linux_android= \
 cargo rustc --target aarch64-linux-android --lib --release
 
 RUST_LOG=debug cargo ndk --platform 21 --target aarch64-linux-android build --release
@@ -161,12 +161,10 @@ env CC_aarch64-linux-android=/Users/sjpark/Library/Android/sdk/ndk/22.0.7026061/
 env CXX_aarch64-linux-android=/Users/sjpark/Library/Android/sdk/ndk/22.0.7026061/toolchains/llvm/prebuilt/darwin-x86_64/bin/aarch64-linux-android21-clang++ \
 env CARGO_TARGET_AARCH64_LINUX_ANDROID_AR=/Users/sjpark/Library/Android/sdk/ndk/22.0.7026061/toolchains/llvm/prebuilt/darwin-x86_64/bin/aarch64-linux-android-ar \
 env CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=/Users/sjpark/Library/Android/sdk/ndk/22.0.7026061/toolchains/llvm/prebuilt/darwin-x86_64/bin/aarch64-linux-android21-clang \
-env BINDGEN_EXTRA_CLANG_ARGS_aarch64_linux_android="--target=arm64-apple-macos12.3 --sysroot=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX12.3.sdk -I/Users/sjpark/Library/Android/sdk/ndk/22.0.7026061/toolchains/llvm/prebuilt/darwin-x86_64/sysroot/" \
+env BINDGEN_EXTRA_CLANG_ARGS_aarch64_linux_android="--target=arm64-apple-macos12.3 --sysroot=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX12.3.sdk" \
 cargo rustc --target aarch64-linux-android --lib --release
 
 objdump -T ~/rustdesk/target/aarch64-linux-android/release/liblibrustdesk.so 
-
-export ANDROID_NDK_HOME=/Users/sjpark/Library/Android/sdk/ndk/22.0.7026061
 
 adb shell /data/local/tmp/lldb-server platform --listen "*:10086" --server 
 adb forward tcp:10086 tcp:10086
