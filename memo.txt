@@ -167,7 +167,6 @@ cargo rustc --target aarch64-linux-android --lib --release
 objdump -T ~/rustdesk/target/aarch64-linux-android/release/liblibrustdesk.so 
 
 export ANDROID_NDK_HOME=/Users/sjpark/Library/Android/sdk/ndk/22.0.7026061
-flutter/build_android_deps.sh
 
 adb shell /data/local/tmp/lldb-server platform --listen "*:10086" --server 
 adb forward tcp:10086 tcp:10086
