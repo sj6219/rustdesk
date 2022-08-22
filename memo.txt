@@ -30,22 +30,13 @@ xcrun simctl list
 open -a Simulator --args -CurrentDeviceUDID 5D1C39DD-708B-41D3-B89A-3F0D9B8E42BF
 
 #android
-RUST_LOG=debug cargo ndk --platform 21 --target aarch64-linux-android build --release
-cp target/aarch64-linux-android/release/liblibrustdesk.so flutter/android/app/src/main/jniLibs/arm64-v8a/librustdesk.so
+cargo-ndk rustc --target aarch64-linux-android --lib --release
+cp ~/rustdesk/target/aarch64-linux-android/release/liblibrustdesk.so ~/rustdesk/flutter/android/app/src/main/jniLibs/arm64-v8a/librustdesk.so
 cd ~/rustdesk/flutter
 flutter build apk --target-platform android-arm64
 adb install  ~/rustdesk/flutter/build/app/outputs/flutter-apk/app-release.apk
 
-        #[cfg(target_os="android")]
-
-export ANDROID_NDK_HOME=/Users/sjpark/Library/Android/sdk/ndk/22.0.7026061
-vcpkg install libvpx:arm64-android libyuv:arm64-android opus:arm64-android
-flutter/build_android_deps.sh
-
-objdump -T target/aarch64-linux-android/release/liblibrustdesk.so 
-sudo  mount -t drvfs '\\192.168.111.10\Macintosh HD' /mnt/mac
 adb logcat | grep LOG_SERVICE
-adb shell dumpsys package com.carriez.flutter_hbb
 
 # rustdesk
 cd C:\Users\sjpark\Documents\rustdesk
@@ -53,7 +44,7 @@ set VCPKG_ROOT=C:\Users\sjpark\Documents\vcpkg
 set LIBCLANG_PATH=C:\Program Files\LLVM\bin
 
 # ring
-set path=C:\Program Files\LLVM\bin;C:\Strawberry\perl\bin\%path%; 
+set path=C:\Program Files\LLVM\bin;C:\Strawberry\perl\bin\;%path%; 
 .\target\tools\windows\nasm\nasm.exe
 set RING_PREGENERATE_ASM=1
 
@@ -69,9 +60,6 @@ winit = { git = "https://github.com/sj6219/winit", branch = "0.26.1_alpha" }
 quest = { git = "https://github.com/sj6219/quest", branch = "0.3.0_alpha" }
 quinn = { git = "https://github.com/sj6219/quinn", branch = "0.8.3_alpha", optional = true }
 sodiumoxide = { git = "https://github.com/sj6219/sodiumoxide", branch = "0.2.7_alpha" }
-
-
-
 
 name = "ring"
 version = "0.16.20"
@@ -157,6 +145,14 @@ env CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=/home/sjpark/android-ndk-r22b/tool
 env BINDGEN_EXTRA_CLANG_ARGS_aarch64_linux_android=-I/home/sjpark/android-ndk-r22b/toolchains/llvm/prebuilt/linux-x86_64/sysroot/ \
 cargo rustc --target aarch64-linux-android --lib --release
 
+RUST_LOG=debug cargo ndk --platform 21 --target aarch64-linux-android build --release
+sudo  mount -t drvfs '\\192.168.111.10\Macintosh HD' /mnt/mac
+cp ~/rustdesk/target/aarch64-linux-android/debug/liblibrustdesk.so /mnt/mac/Users/sjpark/rustdesk/flutter/android/app/src/main/jniLibs/arm64-v8a/librustdesk.so
+adb shell dumpsys package com.carriez.flutter_hbb
+
+sudo apt install gcc-multilib
+sudo apt install make
+
 env CARGO_NDK_CMAKE_TOOLCHAIN_PATH=/Users/sjpark/Library/Android/sdk/ndk/22.0.7026061/build/cmake/android.toolchain.cmake \
 env CARGO_NDK_ANDROID_PLATFORM=21 \
 env CARGO_NDK_ANDROID_TARGET="arm64-v8a" \
@@ -167,5 +163,21 @@ env CARGO_TARGET_AARCH64_LINUX_ANDROID_AR=/Users/sjpark/Library/Android/sdk/ndk/
 env CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=/Users/sjpark/Library/Android/sdk/ndk/22.0.7026061/toolchains/llvm/prebuilt/darwin-x86_64/bin/aarch64-linux-android21-clang \
 env BINDGEN_EXTRA_CLANG_ARGS_aarch64_linux_android="--target=arm64-apple-macos12.3 --sysroot=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX12.3.sdk -I/Users/sjpark/Library/Android/sdk/ndk/22.0.7026061/toolchains/llvm/prebuilt/darwin-x86_64/sysroot/" \
 cargo rustc --target aarch64-linux-android --lib --release
+
+objdump -T ~/rustdesk/target/aarch64-linux-android/release/liblibrustdesk.so 
+
+export ANDROID_NDK_HOME=/Users/sjpark/Library/Android/sdk/ndk/22.0.7026061
+flutter/build_android_deps.sh
+
+adb shell /data/local/tmp/lldb-server platform --listen "*:10086" --server 
+adb forward tcp:10086 tcp:10086
+/Users/sjpark/Library/Android/sdk/ndk/22.0.7026061/toolchains/llvm/prebuilt/darwin-x86_64/bin/lldb
+platform select remote-android
+platform connect connect://emulator-5554:10086
+attach
+b connection.rs:624
+add-dsym /Users/sjpark/ndk-samples/hello-gl2/app/build/intermediates/merged_native_libs/debug/out/lib/arm64-v8a/libgl2jni.so
+b gl_code.cpp:151
+
  
 
