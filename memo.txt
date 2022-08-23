@@ -166,6 +166,10 @@ cargo rustc --target aarch64-linux-android --lib --release
 
 objdump -T ~/rustdesk/target/aarch64-linux-android/release/liblibrustdesk.so 
 
+$ adb shell cat /data/local/tmp/lldb-server | run-as com.carriez.flutter_hbb sh -c 'cat > /data/data/com.carriez.flutter_hbb/lldb/bin/lldb-server && chmod 700 /data/data/com.carriez.flutter_hbb/lldb/bin/lldb-server'
+$ adb shell cat /data/local/tmp/start_lldb_server.sh | run-as com.carriez.flutter_hbb sh -c 'cat > /data/data/com.carriez.flutter_hbb/lldb/bin/start_lldb_server.sh && chmod 700 /data/data/com.carriez.flutter_hbb/lldb/bin/start_lldb_server.sh'
+Starting LLDB server: /data/data/com.carriez.flutter_hbb/lldb/bin/start_lldb_server.sh /data/data/com.carriez.flutter_hbb/lldb unix-abstract /com.carriez.flutter_hbb-0 platform-1661253182212.sock "lldb process:gdb-remote packets"
+
 adb shell /data/local/tmp/lldb-server platform --listen "*:10086" --server 
 adb forward tcp:10086 tcp:10086
 /Users/sjpark/Library/Android/sdk/ndk/22.0.7026061/toolchains/llvm/prebuilt/darwin-x86_64/bin/lldb
@@ -175,6 +179,5 @@ attach
 b connection.rs:624
 add-dsym /Users/sjpark/ndk-samples/hello-gl2/app/build/intermediates/merged_native_libs/debug/out/lib/arm64-v8a/libgl2jni.so
 b gl_code.cpp:151
-
  
 
