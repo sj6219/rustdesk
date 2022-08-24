@@ -695,14 +695,14 @@ impl Connection {
                     self.session.handle_hash("", hash, peer).await;
                 }
                 Some(message::Union::LoginResponse(lr)) => match lr.union {
-                    // ::::::5.1
                     Some(login_response::Union::Error(err)) => {
                         if !self.session.handle_login_error(&err) {
                             return false;
                         }
                     }
                     Some(login_response::Union::PeerInfo(pi)) => {
-                        self.session.handle_peer_info(pi);
+                    // ::::::5.1
+                    self.session.handle_peer_info(pi);
                     }
                     _ => {}
                 },

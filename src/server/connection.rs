@@ -619,6 +619,7 @@ impl Connection {
         }
         self.ip = addr.ip().to_string();
         let mut msg_out = Message::new();
+        // ::::::2.2
         msg_out.set_hash(self.hash.clone());
         self.send(msg_out).await;
         self.get_api_server();
@@ -761,6 +762,7 @@ impl Connection {
             }
         }
         let mut msg_out = Message::new();
+        // ::::::4.2
         msg_out.set_login_response(res);
         self.send(msg_out).await;
         if let Some((dir, show_hidden)) = self.file_transfer.clone() {
@@ -928,6 +930,7 @@ impl Connection {
 
     async fn on_message(&mut self, msg: Message) -> bool {
         if let Some(message::Union::LoginRequest(lr)) = msg.union {
+            // ::::::4.1
             self.lr = lr.clone();
             if let Some(o) = lr.option.as_ref() {
                 self.update_option(o).await;
