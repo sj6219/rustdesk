@@ -8,8 +8,6 @@
             "name": "Remote launch",
             "type": "lldb",
             "request": "custom",
-            //"program" : "${workspaceFolder}/target/debug/rustdesk",
-            //"processID" : "${command:pickProcess}",
             "initCommands": [
                 "platform select remote-android", // Execute `platform list` for a list of available remote platform plugins.
                 "platform connect connect://emulator-5554:10086",
