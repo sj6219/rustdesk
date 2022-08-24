@@ -10,16 +10,13 @@
             "request": "custom",
             "initCommands": [
                 "platform select remote-android", // Execute `platform list` for a list of available remote platform plugins.
-                "platform connect connect://emulator-5554:10086",
-                "attach 20718",
+                "platform connect connect://localhost:10086",
+                "attach 7124",
                 //"cont",
                 // "settings set target.inherit-env false", // See note below.
             ],
-            "stopOnEntry": true,
+            //"stopOnEntry": true,
             //"sourceMap": { "/home/" : "/Users/" }
-            "env": {
-            //    "PATH": "...", // See note below.
-            }
         }
     ]
 }

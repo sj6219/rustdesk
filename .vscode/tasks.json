@@ -3,23 +3,13 @@
 	"tasks": [
 		{
 			"label": "build",
-			"args": [
-				"rustc", "--target", "aarch64-linux-android", "--lib"
-			],
 			"type" : "shell",
-			"command": "cargo",
+			"command": "cargo ndk --platform 21 --target aarch64-linux-android rustc --lib && cp ~/rustdesk/target/aarch64-linux-android/debug/liblibrustdesk.so ~/rustdesk/flutter/android/app/src/main/jniLibs/arm64-v8a/librustdesk.so",
 			"options": {
 				"cwd": "${workspaceFolder}",
 				"env": { 
-					"CARGO_NDK_CMAKE_TOOLCHAIN_PATH" : "/Users/sjpark/Library/Android/sdk/ndk/22.0.7026061/build/cmake/android.toolchain.cmake",
-					"CARGO_NDK_ANDROID_PLATFORM" : "21",
-					"CARGO_NDK_ANDROID_TARGET" : "arm64-v8a",
-					"AR_aarch64-linux-android" : "/Users/sjpark/Library/Android/sdk/ndk/22.0.7026061/toolchains/llvm/prebuilt/darwin-x86_64/bin/aarch64-linux-android-ar",
-					"CC_aarch64-linux-android" : "/Users/sjpark/Library/Android/sdk/ndk/22.0.7026061/toolchains/llvm/prebuilt/darwin-x86_64/bin/aarch64-linux-android21-clang",
-					"CXX_aarch64-linux-android" : "/Users/sjpark/Library/Android/sdk/ndk/22.0.7026061/toolchains/llvm/prebuilt/darwin-x86_64/bin/aarch64-linux-android21-clang++",
-					"CARGO_TARGET_AARCH64_LINUX_ANDROID_AR" : "/Users/sjpark/Library/Android/sdk/ndk/22.0.7026061/toolchains/llvm/prebuilt/darwin-x86_64/bin/aarch64-linux-android-ar",
-					"CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER" : "/Users/sjpark/Library/Android/sdk/ndk/22.0.7026061/toolchains/llvm/prebuilt/darwin-x86_64/bin/aarch64-linux-android21-clang",
-					"BINDGEN_EXTRA_CLANG_ARGS_aarch64_linux_android" : "--target=arm64-apple-macos12.3 --sysroot=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX12.3.sdk",					
+					"BINDGEN_EXTRA_CLANG_ARGS_aarch64_linux_android" : "--target=arm64-apple-macos12.3 --sysroot=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX12.3.sdk",	
+					"RUST_LOG" : "debug",				
 				},
 			  },
 		},
