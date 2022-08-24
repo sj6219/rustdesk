@@ -1467,7 +1467,6 @@ impl Connection {
 
     #[inline]
     async fn send(&mut self, msg: Message) {
-        // :::::::2.3
         allow_err!(self.stream.send(&msg).await);
     }
 }

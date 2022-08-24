@@ -1182,6 +1182,7 @@ impl LoginConfigHandler {
             });
         }
         let mut msg_out = Message::new();
+        // ::::::3.2
         msg_out.set_login_request(lr);
         msg_out
     }
