@@ -7,9 +7,7 @@ rustup target add aarch64-pc-windows-msvc
 rustup target list
 	
 reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\AeDebug" /v Auto /t REG_DWORD /d 1 /f
-"C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\gflags.exe"
-Debugger: vsjitdebugger.exe
-Computer\HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\rustdesk.exe
+reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\rustdesk.exe" /v Debugger /t REG_SZ /d "vsjitdebugger.exe" /f
 
 #macos
 cp target/release/rustdesk ../Documents/RustDesk.app/Contents/MacOS/rustdesk 
