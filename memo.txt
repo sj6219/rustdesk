@@ -5,10 +5,10 @@ cargo build --release --target=aarch64-pc-windows-msvc -vv
 rustup update
 rustup target add aarch64-pc-windows-msvc
 rustup target list
-
+	
+reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\AeDebug" /v Auto /t REG_DWORD /d 1 /f
 "C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\gflags.exe"
-vsjitdebugger.exe
-waitForDebugger # android
+Debugger: vsjitdebugger.exe
 Computer\HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\rustdesk.exe
 
 #macos
@@ -30,14 +30,13 @@ xcrun simctl list
 open -a Simulator --args -CurrentDeviceUDID 5D1C39DD-708B-41D3-B89A-3F0D9B8E42BF
 
 #android
-BINDGEN_EXTRA_CLANG_ARGS_aarch64_linux_android="--target=arm64-apple-macos12.3 --sysroot=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX12.3.sdk" RUST_LOG=debug cargo ndk --platform 21 --target aarch64-linux-android rustc --lib --release
+cargo-ndk rustc --target aarch64-linux-android --lib --release
 cp ~/rustdesk/target/aarch64-linux-android/release/liblibrustdesk.so ~/rustdesk/flutter/android/app/src/main/jniLibs/arm64-v8a/librustdesk.so
 cd ~/rustdesk/flutter
 flutter build apk --target-platform android-arm64
 adb install  ~/rustdesk/flutter/build/app/outputs/flutter-apk/app-release.apk
 
 adb logcat | grep LOG_SERVICE
-adb emu kill 
 
 # rustdesk
 cd C:\Users\sjpark\Documents\rustdesk
@@ -146,6 +145,7 @@ env CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=/home/sjpark/android-ndk-r22b/tool
 env BINDGEN_EXTRA_CLANG_ARGS_aarch64_linux_android= \
 cargo rustc --target aarch64-linux-android --lib --release
 
+RUST_LOG=debug cargo ndk --platform 21 --target aarch64-linux-android build --release
 sudo  mount -t drvfs '\\192.168.111.10\Macintosh HD' /mnt/mac
 cp ~/rustdesk/target/aarch64-linux-android/debug/liblibrustdesk.so /mnt/mac/Users/sjpark/rustdesk/flutter/android/app/src/main/jniLibs/arm64-v8a/librustdesk.so
 adb shell dumpsys package com.carriez.flutter_hbb
@@ -166,22 +166,15 @@ cargo rustc --target aarch64-linux-android --lib --release
 
 objdump -T ~/rustdesk/target/aarch64-linux-android/release/liblibrustdesk.so 
 
-cat /Users/sjpark/Library/Android/sdk/ndk/22.0.7026061/toolchains/llvm/prebuilt/darwin-x86_64/lib64/clang/11.0.5/lib/linux/aarch64/lldb-server | adb shell sh -c 'cat > /data/local/tmp/lldb-server && chmod 755 /data/local/tmp/lldb-server'
-
-adb shell run-as com.carriez.flutter_hbb mkdir -p /data/data/com.carriez.flutter_hbb/lldb/bin/
-
-adb shell "cat /data/local/tmp/lldb-server | run-as com.carriez.flutter_hbb sh -c 'cat > /data/data/com.carriez.flutter_hbb/lldb/bin/lldb-server && chmod 755 /data/data/com.carriez.flutter_hbb/lldb/bin/lldb-server'"
-
-adb shell ps -ef | grep com.carriez.flutter_hbb
+adb shell /data/local/tmp/lldb-server platform --listen "*:10086" --server 
 adb forward tcp:10086 tcp:10086
-adb shell run-as com.carriez.flutter_hbb /data/data/com.carriez.flutter_hbb/lldb/bin/lldb-server platform --listen "*:10086" --server 
-
 /Users/sjpark/Library/Android/sdk/ndk/22.0.7026061/toolchains/llvm/prebuilt/darwin-x86_64/bin/lldb
 platform select remote-android
-platform connect connect://localhost:10086
+platform connect connect://emulator-5554:10086
 attach
 b connection.rs:624
 add-dsym /Users/sjpark/ndk-samples/hello-gl2/app/build/intermediates/merged_native_libs/debug/out/lib/arm64-v8a/libgl2jni.so
 b gl_code.cpp:151
+
  
 
