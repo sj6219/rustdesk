@@ -17,7 +17,6 @@ env_logger = "0.9"
 socket2 = { version = "0.3", features = ["reuseport"] }
 zstd = "0.9"
 quinn = {version = "0.8", optional = true }
-#quinn = { git = "https://github.com/sj6219/quinn", branch = "0.8.3_alpha", optional = true }
 anyhow = "1.0"
 futures-util = "0.3"
 directories-next = "2.0"
@@ -29,9 +28,6 @@ confy = { git = "https://github.com/open-trade/confy" }
 dirs-next = "2.0"
 filetime = "0.2"
 sodiumoxide = "0.2"
-#sodiumoxide = { git = "https://github.com/sj6219/sodiumoxide", branch = "0.2.7_alpha" }
-#sodiumoxide = { path = "../../../sodiumoxide" }
-
 regex = "1.4"
 tokio-socks = { git = "https://github.com/open-trade/tokio-socks" }
 chrono = "0.4"
