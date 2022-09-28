@@ -44,8 +44,8 @@ lazy_static = "1.4"
 sha2 = "0.10"
 repng = "0.2"
 libc = "0.2"
-#parity-tokio-ipc = { git = "https://github.com/open-trade/parity-tokio-ipc" }
-parity-tokio-ipc = { git = "https://github.com/sj6219/parity-tokio-ipc", branch = "0.7.3_alpha" }
+parity-tokio-ipc = { git = "https://github.com/open-trade/parity-tokio-ipc" }
+#parity-tokio-ipc = { git = "https://github.com/sj6219/parity-tokio-ipc", branch = "0.7.3_alpha" }
 flexi_logger = { version = "0.22", features = ["async", "use_chrono_for_offset"] }
 runas = "0.2"
 #magnum-opus = { git = "https://github.com/SoLongAndThanksForAllThePizza/magnum-opus" }
@@ -68,8 +68,8 @@ errno = "0.2.8"
 rdev = { git = "https://github.com/asur4s/rdev" }
 
 [target.'cfg(not(target_os = "linux"))'.dependencies]
-#reqwest = { version = "0.11", features = ["json", "rustls-tls"], default-features=false }
-reqwest = { git = "https://github.com/sj6219/reqwest", branch = "0.11.11_alpha", features = ["json", "rustls-tls"], default-features=false }
+reqwest = { version = "0.11", features = ["json", "rustls-tls"], default-features=false }
+#reqwest = { git = "https://github.com/sj6219/reqwest", branch = "0.11.11_alpha", features = ["json", "rustls-tls"], default-features=false }
 
 [target.'cfg(not(any(target_os = "android", target_os = "linux")))'.dependencies]
 cpal = "0.13.5"
@@ -88,10 +88,10 @@ system_shutdown = "3.0.0"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 #systray = { git = "https://github.com/open-trade/systray-rs" }
-#trayicon = { git = "https://github.com/open-trade/trayicon-rs", features = ["winit"] }
-trayicon = { git = "https://github.com/sj6219/trayicon-rs", branch = "0.1.3-1_alpha", features = ["winit"] }
-#winit = "0.26"
-winit = { git = "https://github.com/sj6219/winit", branch = "0.26.1_alpha" }
+trayicon = { git = "https://github.com/open-trade/trayicon-rs", features = ["winit"] }
+#trayicon = { git = "https://github.com/sj6219/trayicon-rs", branch = "0.1.3-1_alpha", features = ["winit"] }
+winit = "0.26"
+#winit = { git = "https://github.com/sj6219/winit", branch = "0.26.1_alpha" }
 
 winapi = { version = "0.3", features = ["winuser"] }
 winreg = "0.10"
@@ -160,3 +160,9 @@ codegen-units = 1
 panic = 'abort'
 strip = true
 #opt-level = 'z' # only have smaller size after strip
+
+[patch.crates-io]
+ring = { git = "https://github.com/sj6219/ring", branch = "0.16.20_alpha" }
+winapi = { git = "https://github.com/sj6219/winapi-rs", branch = "0.2.8_alpha" }
+winit = { git = "https://github.com/sj6219/winit", branch = "0.26.1_alpha" }
+sodiumoxide = { git = "https://github.com/sj6219/sodiumoxide", branch = "0.2.7_alpha" }
