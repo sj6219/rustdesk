@@ -5,14 +5,14 @@ use crate::clipboard_file::*;
 use crate::common::update_clipboard;
 use crate::video_service;
 #[cfg(any(target_os = "android", target_os = "ios"))]
-use crate::{common::MOBILE_INFO2, mobile::connection_manager::start_channel};
+use crate::{common::DEVICE_NAME, flutter::connection_manager::start_channel};
 use crate::{ipc, VERSION};
 use hbb_common::{
     config::Config,
     fs,
     fs::can_enable_overwrite_detection,
     futures::{SinkExt, StreamExt},
-    get_version_number,
+    get_time, get_version_number,
     message_proto::{option_message::BoolOption, permission_info::Permission},
     password_security as password, sleep, timeout,
     tokio::{
@@ -81,6 +81,7 @@ pub struct Connection {
     audio: bool,
     file: bool,
     restart: bool,
+    recording: bool,
     last_test_delay: i64,
     lock_after_session_end: bool,
     show_remote_cursor: bool, // by peer
@@ -169,6 +170,7 @@ impl Connection {
             audio: Config::get_option("enable-audio").is_empty(),
             file: Config::get_option("enable-file-transfer").is_empty(),
             restart: Config::get_option("enable-remote-restart").is_empty(),
+            recording: Config::get_option("enable-record-session").is_empty(),
             last_test_delay: 0,
             lock_after_session_end: false,
             show_remote_cursor: false,
@@ -209,6 +211,9 @@ impl Connection {
         }
         if !conn.restart {
             conn.send_permission(Permission::Restart, false).await;
+        }
+        if !conn.recording {
+            conn.send_permission(Permission::Recording, false).await;
         }
         let mut test_delay_timer =
             time::interval_at(Instant::now() + TEST_DELAY_TIMEOUT, TEST_DELAY_TIMEOUT);
@@ -290,6 +295,9 @@ impl Connection {
                             } else if &name == "restart" {
                                 conn.restart = enabled;
                                 conn.send_permission(Permission::Restart, enabled).await;
+                            } else if &name == "recording" {
+                                conn.recording = enabled;
+                                conn.send_permission(Permission::Recording, enabled).await;
                             }
                         }
                         ipc::Data::RawMessage(bytes) => {
@@ -397,7 +405,7 @@ impl Connection {
                         conn.on_close("Timeout", true).await;
                         break;
                     }
-                    let time = crate::get_time();
+                    let time = get_time();
                     if time > 0 && conn.last_test_delay == 0 {
                         conn.last_test_delay = time;
                         let mut msg_out = Message::new();
@@ -448,11 +456,12 @@ impl Connection {
                         handle_mouse(&msg, id);
                     }
                     MessageInput::Key((mut msg, press)) => {
-                        if press {
+                        // todo: press and down have similar meanings.
+                        if press && msg.mode.unwrap() == KeyboardMode::Legacy {
                             msg.down = true;
                         }
                         handle_key(&msg);
-                        if press {
+                        if press && msg.mode.unwrap() == KeyboardMode::Legacy {
                             msg.down = false;
                             handle_key(&msg);
                         }
@@ -632,7 +641,7 @@ impl Connection {
         let mut pi = PeerInfo {
             username: username.clone(),
             conn_id: self.inner.id,
-            version: crate::VERSION.to_owned(),
+            version: VERSION.to_owned(),
             ..Default::default()
         };
 
@@ -643,7 +652,7 @@ impl Connection {
         }
         #[cfg(target_os = "android")]
         {
-            pi.hostname = MOBILE_INFO2.lock().unwrap().clone();
+            pi.hostname = DEVICE_NAME.lock().unwrap().clone();
             pi.platform = "Android".into();
         }
         #[cfg(feature = "hwcodec")]
@@ -776,6 +785,7 @@ impl Connection {
             file: self.file,
             file_transfer_enabled: self.file_transfer_enabled(),
             restart: self.restart,
+            recording: self.recording,
         });
     }
 
@@ -920,16 +930,22 @@ impl Connection {
                     self.file_transfer = Some((ft.dir, ft.show_hidden));
                 }
                 Some(login_request::Union::PortForward(mut pf)) => {
-                    if !Config::get_option("enable-tunnel").is_empty() {
-                        self.send_login_error("No permission of IP tunneling").await;
-                        sleep(1.).await;
-                        return false;
-                    }
                     let mut is_rdp = false;
                     if pf.host == "RDP" && pf.port == 0 {
                         pf.host = "localhost".to_owned();
                         pf.port = 3389;
                         is_rdp = true;
+                    }
+                    if is_rdp && !Config::get_option("enable-rdp").is_empty()
+                        || !is_rdp && !Config::get_option("enable-tunnel").is_empty()
+                    {
+                        if is_rdp {
+                            self.send_login_error("No permission of RDP").await;
+                        } else {
+                            self.send_login_error("No permission of IP tunneling").await;
+                        }
+                        sleep(1.).await;
+                        return false;
                     }
                     if pf.host.is_empty() {
                         pf.host = "localhost".to_owned();
@@ -949,6 +965,7 @@ impl Connection {
                                 addr
                             ))
                             .await;
+                            return false;
                         }
                     }
                 }
@@ -975,7 +992,7 @@ impl Connection {
                     .get(&self.ip)
                     .map(|x| x.clone())
                     .unwrap_or((0, 0, 0));
-                let time = (crate::get_time() / 60_000) as i32;
+                let time = (get_time() / 60_000) as i32;
                 if failure.2 > 30 {
                     self.send_login_error("Too many wrong password attempts")
                         .await;
@@ -1014,7 +1031,7 @@ impl Connection {
                 self.inner.send(msg_out.into());
             } else {
                 self.last_test_delay = 0;
-                let new_delay = (crate::get_time() - t.time) as u32;
+                let new_delay = (get_time() - t.time) as u32;
                 video_service::VIDEO_QOS
                     .lock()
                     .unwrap()
@@ -1030,9 +1047,9 @@ impl Connection {
                     #[cfg(not(any(target_os = "android", target_os = "ios")))]
                     if self.keyboard {
                         if is_left_up(&me) {
-                            CLICK_TIME.store(crate::get_time(), Ordering::SeqCst);
+                            CLICK_TIME.store(get_time(), Ordering::SeqCst);
                         } else {
-                            MOUSE_MOVE_TIME.store(crate::get_time(), Ordering::SeqCst);
+                            MOUSE_MOVE_TIME.store(get_time(), Ordering::SeqCst);
                         }
                         self.input_mouse(me, self.inner.id());
                     }
@@ -1041,7 +1058,7 @@ impl Connection {
                     #[cfg(not(any(target_os = "android", target_os = "ios")))]
                     if self.keyboard {
                         if is_enter(&me) {
-                            CLICK_TIME.store(crate::get_time(), Ordering::SeqCst);
+                            CLICK_TIME.store(get_time(), Ordering::SeqCst);
                         }
                         // handle all down as press
                         // fix unexpected repeating key on remote linux, seems also fix abnormal alt/shift, which

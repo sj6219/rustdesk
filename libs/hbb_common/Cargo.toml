@@ -24,7 +24,6 @@ directories-next = "2.0"
 rand = "0.8"
 serde_derive = "1.0"
 serde = "1.0"
-serde_with = "1.14.0"
 lazy_static = "1.4"
 confy = { git = "https://github.com/open-trade/confy" }
 dirs-next = "2.0"
@@ -35,6 +34,7 @@ sodiumoxide = { git = "https://github.com/sj6219/sodiumoxide", branch = "0.2.7_a
 
 regex = "1.4"
 tokio-socks = { git = "https://github.com/open-trade/tokio-socks" }
+chrono = "0.4"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 mac_address = "1.1"
