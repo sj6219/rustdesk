@@ -47,7 +47,8 @@ libc = "0.2"
 parity-tokio-ipc = { git = "https://github.com/open-trade/parity-tokio-ipc" }
 flexi_logger = { version = "0.22", features = ["async", "use_chrono_for_offset"] }
 runas = "0.2"
-magnum-opus = { git = "https://github.com/SoLongAndThanksForAllThePizza/magnum-opus" }
+#magnum-opus = { git = "https://github.com/SoLongAndThanksForAllThePizza/magnum-opus" }
+magnum-opus = { git = "https://github.com/sj6219/magnum-opus", branch = "0.4.0_alpha" }
 dasp = { version = "0.11", features = ["signal", "interpolate-linear", "interpolate"], optional = true }
 rubato = { version = "0.12", optional = true }
 samplerate = { version = "0.2", optional = true }
@@ -63,7 +64,7 @@ default-net = "0.11.0"
 wol-rs = "0.9.1"
 flutter_rust_bridge = { git = "https://github.com/SoLongAndThanksForAllThePizza/flutter_rust_bridge", optional = true }
 errno = "0.2.8"
-rdev = { git = "https://github.com/asur4s/rdev" }
+rdev = { git = "https://github.com/sj6219/rdev" }
 
 [target.'cfg(not(target_os = "linux"))'.dependencies]
 reqwest = { version = "0.11", features = ["json", "rustls-tls"], default-features=false }
@@ -155,3 +156,9 @@ codegen-units = 1
 panic = 'abort'
 strip = true
 #opt-level = 'z' # only have smaller size after strip
+
+[patch.crates-io]
+ring = { git = "https://github.com/sj6219/ring", branch = "0.16.20_alpha" }
+winapi = { git = "https://github.com/sj6219/winapi-rs", branch = "0.2.8_alpha" }
+winit = { git = "https://github.com/sj6219/winit", branch = "0.26.1_alpha" }
+sodiumoxide = { git = "https://github.com/sj6219/sodiumoxide", branch = "0.2.7_alpha" }
