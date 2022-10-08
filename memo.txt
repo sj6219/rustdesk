@@ -14,7 +14,7 @@ cp target/release/rustdesk ../Documents/RustDesk.app/Contents/MacOS/rustdesk
 codesign -s "5B58CCDA9F9CA53B3EAC8437A9F18C5CE54A1F2F" --force --options runtime  ../Documents/RustDesk.app/Contents/MacOS/*
 codesign -s "5B58CCDA9F9CA53B3EAC8437A9F18C5CE54A1F2F" --force --options runtime  ../Documents/RustDesk.app
 rm ../Documents/RustDesk.dmg
-create-dmg --window-pos 0 0 --window-size 800 300 --app-drop-link 500 30 ../Documents/RustDesk.dmg ../Documents/RustDesk.app
+create-dmg  --window-size 1000 400  --app-drop-link 500 180 ../Documents/RustDesk.dmg ../Documents/RustDesk.app
 codesign -s "5B58CCDA9F9CA53B3EAC8437A9F18C5CE54A1F2F" --force --options runtime ../Documents/RustDesk.dmg
 rcodesign notarize --api-issuer 69a6de71-2a59-47e3-e053-5b8c7c11a4d1 --api-key 3Y4FWB23RH --staple ../Documents/rustdesk.dmg
 
@@ -183,4 +183,3 @@ b connection.rs:624
 add-dsym /Users/sjpark/ndk-samples/hello-gl2/app/build/intermediates/merged_native_libs/debug/out/lib/arm64-v8a/libgl2jni.so
 b gl_code.cpp:151
  
-
