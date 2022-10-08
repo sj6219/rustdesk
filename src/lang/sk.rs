@@ -153,6 +153,8 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Action", "Akcia"),
         ("Add", "Pridať"),
         ("Local Port", "Lokálny port"),
+        ("Local Address", ""),
+        ("Change Local Port", ""),
         ("setup_server_tip", "Pre zrýchlenie pripojenia si nainštalujte svoj vlastný server"),
         ("Too short, at least 6 characters.", "Príliš krátke, vyžaduje sa aspoň 6 znakov."),
         ("The confirmation is not identical.", "Potvrdenie nie je zhodné."),
@@ -360,5 +362,9 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Enable LAN Discovery", ""),
         ("Deny LAN Discovery", ""),
         ("Write a message", ""),
+        ("Prompt", ""),
+        ("elevation_prompt", ""),
+        ("uac_warning", ""),
+        ("elevated_foreground_window_warning", ""),
     ].iter().cloned().collect();
 }

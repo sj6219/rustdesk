@@ -1319,7 +1319,7 @@ impl LoginConfigHandler {
         self.conn_id = pi.conn_id;
         // no matter if change, for update file time
         self.save_config(config);
-        #[cfg(feature = "hwcodec")]
+        #[cfg(any(feature = "hwcodec", feature = "mediacodec"))]
         {
             self.supported_encoding = Some((pi.encoding.h264, pi.encoding.h265));
         }
@@ -1354,7 +1354,11 @@ impl LoginConfigHandler {
             username: self.id.clone(),
             password: password.into(),
             my_id,
-            my_name: crate::username(),
+            my_name: if cfg!(windows) {
+                crate::platform::get_active_username()
+            } else {
+                crate::username()
+            },
             option: self.get_option_message(true).into(),
             session_id: self.session_id,
             version: crate::VERSION.to_string(),

@@ -153,6 +153,8 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Action", "操作"),
         ("Add", "追加"),
         ("Local Port", "ローカルのポート"),
+        ("Local Address", ""),
+        ("Change Local Port", ""),
         ("setup_server_tip", "接続をより速くするには、自分のサーバーをセットアップしてください"),
         ("Too short, at least 6 characters.", "短すぎます。最低6文字です。"),
         ("The confirmation is not identical.", "確認用と一致しません。"),
@@ -360,5 +362,9 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Enable LAN Discovery", ""),
         ("Deny LAN Discovery", ""),
         ("Write a message", ""),
+        ("Prompt", ""),
+        ("elevation_prompt", ""),
+        ("uac_warning", ""),
+        ("elevated_foreground_window_warning", ""),
     ].iter().cloned().collect();
 }

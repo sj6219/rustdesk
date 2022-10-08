@@ -756,6 +756,21 @@ pub fn has_hwcodec() -> bool {
 }
 
 #[inline]
+pub fn is_release() -> bool {
+    #[cfg(not(debug_assertions))]
+    return true;
+    #[cfg(debug_assertions)]
+    return false;
+}
+
+#[inline]
+pub fn is_root() -> bool {
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    return crate::platform::is_root();
+    false
+}
+
+#[inline]
 pub fn check_super_user_permission() -> bool {
     #[cfg(any(windows, target_os = "linux"))]
     return crate::platform::check_super_user_permission().unwrap_or(false);

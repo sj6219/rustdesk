@@ -153,6 +153,8 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Action", "Рandling"),
         ("Add", "Tilføj"),
         ("Local Port", "Lokal Port"),
+        ("Local Address", ""),
+        ("Change Local Port", ""),
         ("setup_server_tip", "For en hurtigere forbindelse skal du indstille din egen forbindelsesserver"),
         ("Too short, at least 6 characters.", "For kort, mindst 6 tegn."),
         ("The confirmation is not identical.", "Bekræftelsen er ikke identisk."),
@@ -360,5 +362,9 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Enable LAN Discovery", ""),
         ("Deny LAN Discovery", ""),
         ("Write a message", ""),
+        ("Prompt", ""),
+        ("elevation_prompt", ""),
+        ("uac_warning", ""),
+        ("elevated_foreground_window_warning", ""),
     ].iter().cloned().collect();
 }

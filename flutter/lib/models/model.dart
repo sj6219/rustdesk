@@ -118,7 +118,7 @@ class FfiModel with ChangeNotifier {
     } else {
       final icon =
           '${secure == true ? 'secure' : 'insecure'}${direct == true ? '' : '_relay'}';
-      return SvgPicture.asset('assets/$icon.png', width: 48, height: 48);
+      return SvgPicture.asset('assets/$icon.svg', width: 48, height: 48);
     }
   }
 
@@ -268,9 +268,12 @@ class FfiModel with ChangeNotifier {
     if (isPeerAndroid) {
       _touchMode = true;
       if (parent.target != null &&
+          parent.target!.connType == ConnType.defaultConn &&
           parent.target!.ffiModel.permissions['keyboard'] != false) {
-        Timer(const Duration(milliseconds: 100),
-            parent.target!.dialogManager.showMobileActionsOverlay);
+        Timer(
+            const Duration(milliseconds: 100),
+            () => parent.target!.dialogManager
+                .showMobileActionsOverlay(ffi: parent.target!));
       }
     } else {
       _touchMode =
@@ -295,7 +298,7 @@ class FfiModel with ChangeNotifier {
       if (_pi.currentDisplay < _pi.displays.length) {
         _display = _pi.displays[_pi.currentDisplay];
       }
-      if (displays.length > 0) {
+      if (displays.isNotEmpty) {
         parent.target?.dialogManager.showLoading(
             translate('Connected, waiting for image...'),
             onCancel: closeConnection);
@@ -338,7 +341,7 @@ class ImageModel with ChangeNotifier {
 
   ImageModel(this.parent);
 
-  onRgba(Uint8List rgba, double tabBarHeight) {
+  onRgba(Uint8List rgba) {
     if (_waitForImage) {
       _waitForImage = false;
       parent.target?.dialogManager.dismissAll();
@@ -352,14 +355,14 @@ class ImageModel with ChangeNotifier {
       if (parent.target?.id != pid) return;
       try {
         // my throw exception, because the listener maybe already dispose
-        update(image, tabBarHeight);
+        update(image);
       } catch (e) {
         debugPrint('update image: $e');
       }
     });
   }
 
-  update(ui.Image? image, double tabBarHeight) async {
+  update(ui.Image? image) async {
     if (_image == null && image != null) {
       if (isWebDesktop || isDesktop) {
         await parent.target?.canvasModel.updateViewStyle();
@@ -367,7 +370,7 @@ class ImageModel with ChangeNotifier {
       } else {
         final size = MediaQueryData.fromWindow(ui.window).size;
         final canvasWidth = size.width;
-        final canvasHeight = size.height - tabBarHeight;
+        final canvasHeight = size.height;
         final xscale = canvasWidth / image.width;
         final yscale = canvasHeight / image.height;
         parent.target?.canvasModel.scale = min(xscale, yscale);
@@ -469,6 +472,8 @@ class CanvasModel with ChangeNotifier {
   double _scale = 1.0;
   // the tabbar over the image
   double tabBarHeight = 0.0;
+  // the window border's width
+  double windowBorderWidth = 0.0;
   // remote id
   String id = '';
   // scroll offset x percent
@@ -556,7 +561,8 @@ class CanvasModel with ChangeNotifier {
 
   Size get size {
     final size = MediaQueryData.fromWindow(ui.window).size;
-    return Size(size.width, size.height - tabBarHeight);
+    return Size(size.width - windowBorderWidth * 2,
+        size.height - tabBarHeight - windowBorderWidth * 2);
   }
 
   moveDesktopMouse(double x, double y) {
@@ -1046,9 +1052,7 @@ class FFI {
 
   /// Start with the given [id]. Only transfer file if [isFileTransfer], only port forward if [isPortForward].
   void start(String id,
-      {bool isFileTransfer = false,
-      bool isPortForward = false,
-      double tabBarHeight = 0.0}) {
+      {bool isFileTransfer = false, bool isPortForward = false}) {
     assert(!(isFileTransfer && isPortForward), 'more than one connect type');
     if (isFileTransfer) {
       connType = ConnType.fileTransfer;
@@ -1077,7 +1081,7 @@ class FFI {
             debugPrint('json.decode fail1(): $e, ${message.field0}');
           }
         } else if (message is Rgba) {
-          imageModel.onRgba(message.field0, tabBarHeight);
+          imageModel.onRgba(message.field0);
         }
       }
     }();
@@ -1102,7 +1106,7 @@ class FFI {
     }
     bind.sessionClose(id: id);
     id = '';
-    imageModel.update(null, 0.0);
+    imageModel.update(null);
     cursorModel.clear();
     ffiModel.clear();
     canvasModel.clear();

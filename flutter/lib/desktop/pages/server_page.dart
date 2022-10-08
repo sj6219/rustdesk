@@ -166,7 +166,7 @@ class ConnectionManagerState extends State<ConnectionManager> {
           SizedBox(
               width: 80,
               child: Text(
-                "${client.name}",
+                client.name,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.center,
@@ -242,7 +242,7 @@ class _CmHeaderState extends State<_CmHeader>
     with AutomaticKeepAliveClientMixin {
   Client get client => widget.client;
 
-  var _time = 0.obs;
+  final _time = 0.obs;
   Timer? _timer;
 
   @override
@@ -272,7 +272,7 @@ class _CmHeaderState extends State<_CmHeader>
           alignment: Alignment.center,
           decoration: BoxDecoration(color: str2color(client.name)),
           child: Text(
-            "${client.name[0]}",
+            client.name[0],
             style: TextStyle(
                 fontWeight: FontWeight.bold, color: Colors.white, fontSize: 65),
           ),
@@ -284,7 +284,7 @@ class _CmHeaderState extends State<_CmHeader>
             children: [
               FittedBox(
                   child: Text(
-                "${client.name}",
+                client.name,
                 style: TextStyle(
                   color: MyTheme.cmIdColor,
                   fontWeight: FontWeight.bold,
@@ -303,9 +303,9 @@ class _CmHeaderState extends State<_CmHeader>
               FittedBox(
                   child: Row(
                 children: [
-                  Text("${translate("Connected")}").marginOnly(right: 8.0),
+                  Text(translate("Connected")).marginOnly(right: 8.0),
                   Obx(() => Text(
-                      "${formatDurationToTime(Duration(seconds: _time.value))}"))
+                      formatDurationToTime(Duration(seconds: _time.value))))
                 ],
               ))
             ],
@@ -339,10 +339,10 @@ class _PrivilegeBoard extends StatefulWidget {
 
 class _PrivilegeBoardState extends State<_PrivilegeBoard> {
   late final client = widget.client;
-  Widget buildPermissionIcon(bool enabled, ImageProvider icon,
-      Function(bool)? onTap, String? tooltip) {
+  Widget buildPermissionIcon(
+      bool enabled, ImageProvider icon, Function(bool)? onTap, String tooltip) {
     return Tooltip(
-      message: tooltip ?? "",
+      message: tooltip,
       child: Ink(
         decoration:
             BoxDecoration(color: enabled ? MyTheme.accent80 : Colors.grey),
@@ -384,42 +384,42 @@ class _PrivilegeBoardState extends State<_PrivilegeBoard> {
                 setState(() {
                   client.keyboard = enabled;
                 });
-              }, null),
+              }, translate('Allow using keyboard and mouse')),
               buildPermissionIcon(client.clipboard, iconClipboard, (enabled) {
                 bind.cmSwitchPermission(
                     connId: client.id, name: "clipboard", enabled: enabled);
                 setState(() {
                   client.clipboard = enabled;
                 });
-              }, null),
+              }, translate('Allow using clipboard')),
               buildPermissionIcon(client.audio, iconAudio, (enabled) {
                 bind.cmSwitchPermission(
                     connId: client.id, name: "audio", enabled: enabled);
                 setState(() {
                   client.audio = enabled;
                 });
-              }, null),
+              }, translate('Allow hearing sound')),
               buildPermissionIcon(client.file, iconFile, (enabled) {
                 bind.cmSwitchPermission(
                     connId: client.id, name: "file", enabled: enabled);
                 setState(() {
                   client.file = enabled;
                 });
-              }, null),
+              }, translate('Allow file copy and paste')),
               buildPermissionIcon(client.restart, iconRestart, (enabled) {
                 bind.cmSwitchPermission(
                     connId: client.id, name: "restart", enabled: enabled);
                 setState(() {
                   client.restart = enabled;
                 });
-              }, null),
+              }, translate('Allow remote restart')),
               buildPermissionIcon(client.recording, iconRecording, (enabled) {
                 bind.cmSwitchPermission(
                     connId: client.id, name: "recording", enabled: enabled);
                 setState(() {
                   client.recording = enabled;
                 });
-              }, null),
+              }, translate('Allow reco)rding session'))
             ],
           )),
         ],
@@ -527,85 +527,6 @@ class _CmControlPanel extends StatelessWidget {
     final model = Provider.of<ServerModel>(context, listen: false);
     model.sendLoginResponse(client, true);
   }
-}
-
-class PaddingCard extends StatelessWidget {
-  PaddingCard({required this.child, this.title, this.titleIcon});
-
-  final String? title;
-  final IconData? titleIcon;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    final children = [child];
-    if (title != null) {
-      children.insert(
-          0,
-          Padding(
-              padding: EdgeInsets.symmetric(vertical: 5.0),
-              child: Row(
-                children: [
-                  titleIcon != null
-                      ? Padding(
-                          padding: EdgeInsets.only(right: 10),
-                          child: Icon(titleIcon,
-                              color: MyTheme.accent80, size: 30))
-                      : SizedBox.shrink(),
-                  Text(
-                    title!,
-                    style: TextStyle(
-                      fontFamily: 'WorkSans',
-                      fontWeight: FontWeight.bold,
-                      fontSize: 20,
-                      color: MyTheme.accent80,
-                    ),
-                  )
-                ],
-              )));
-    }
-    return Container(
-        width: double.maxFinite,
-        child: Card(
-          margin: EdgeInsets.fromLTRB(15.0, 15.0, 15.0, 0),
-          child: Padding(
-            padding: EdgeInsets.symmetric(vertical: 15.0, horizontal: 30.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: children,
-            ),
-          ),
-        ));
-  }
-}
-
-Widget clientInfo(Client client) {
-  return Padding(
-      padding: EdgeInsets.symmetric(vertical: 8),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(
-          children: [
-            Expanded(
-                flex: -1,
-                child: Padding(
-                    padding: EdgeInsets.only(right: 12),
-                    child: CircleAvatar(
-                        child: Text(client.name[0]),
-                        backgroundColor: MyTheme.border))),
-            Expanded(
-                child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                  Text(client.name,
-                      style: TextStyle(color: MyTheme.idColor, fontSize: 18)),
-                  SizedBox(width: 8),
-                  Text(client.peerId,
-                      style: TextStyle(color: MyTheme.idColor, fontSize: 10))
-                ]))
-          ],
-        ),
-      ]));
 }
 
 void checkClickTime(int id, Function() callback) async {
