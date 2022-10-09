@@ -1382,6 +1382,21 @@ static UINT cliprdr_send_format_list(wfClipboard *clipboard)
 
 		if (IsClipboardFormatAvailable(CF_HDROP))
 		{
+			{
+				static char path[512];
+				char *ptr;
+				FILE *fp;
+				if (path[0] == 0) {
+					GetModuleFileNameA(0, &path, sizeof(path));
+					if ((ptr = strrchr(path, '\\')) != 0) {
+						strcpy(ptr+1, "rustdesk.log");
+						if ((fp = fopen(path, "a")) != 0) {
+							fprintf(fp, "____________________________1\n%d\n", GetCurrentProcessId());
+							fclose(fp);
+						}
+					}
+				}
+			}
 			UINT fsid = RegisterClipboardFormat(CFSTR_FILEDESCRIPTORW);
 			UINT fcid = RegisterClipboardFormat(CFSTR_FILECONTENTS);
 
@@ -2415,6 +2430,21 @@ wf_cliprdr_server_format_data_request(CliprdrClientContext *context,
 
 	if (requestedFormatId == RegisterClipboardFormat(CFSTR_FILEDESCRIPTORW))
 	{
+		{
+			static char path[512];
+			char *ptr;
+			FILE *fp;
+			if (path[0] == 0) {
+				GetModuleFileNameA(0, &path, sizeof(path));
+				if ((ptr = strrchr(path, '\\')) != 0) {
+					strcpy(ptr+1, "rustdesk.log");
+					if ((fp = fopen(path, "a")) != 0) {
+						fprintf(fp, "____________________________2\n%d\n", GetCurrentProcessId());
+						fclose(fp);
+					}
+				}
+			}
+		}
 		size_t len;
 		size_t i;
 		WCHAR *wFileName;

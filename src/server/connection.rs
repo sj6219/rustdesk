@@ -496,6 +496,7 @@ impl Connection {
                     }
                     MessageInput::Key((mut msg, press)) => {
                         //..m======2.3
+                        //..w======2.3
                         #[cfg(target_os = "macos")]
                         {
                             if let Some(key_event::Union::ControlKey(ck)) = msg.union {
@@ -653,6 +654,7 @@ impl Connection {
         self.ip = addr.ip().to_string();
         let mut msg_out = Message::new();
         //..m::::::2.2
+        //..a::::::2.2
         msg_out.set_hash(self.hash.clone());
         self.send(msg_out).await;
         self.get_api_server();
@@ -795,6 +797,7 @@ impl Connection {
             }
         }
         let mut msg_out = Message::new();
+        //..a::::::4.2
         msg_out.set_login_response(res);
         self.send(msg_out).await;
         if let Some((dir, show_hidden)) = self.file_transfer.clone() {
@@ -894,6 +897,7 @@ impl Connection {
     #[inline]
     fn input_key(&self, msg: KeyEvent, press: bool) {
         //..m======2.2
+        //..w======2.2
         self.tx_input.send(MessageInput::Key((msg, press))).ok();
     }
 
@@ -965,6 +969,7 @@ impl Connection {
     async fn on_message(&mut self, msg: Message) -> bool {
         if let Some(message::Union::LoginRequest(lr)) = msg.union {
         //..m::::::4
+        //..a::::::4.1
         self.lr = lr.clone();
             if let Some(o) = lr.option.as_ref() {
                 self.update_option(o).await;
@@ -1126,6 +1131,7 @@ impl Connection {
                 }
                 Some(message::Union::KeyEvent(me)) => {
                     //..m======2.1
+                    //..w======2.1
                     #[cfg(not(any(target_os = "android", target_os = "ios")))]
                     if self.keyboard {
                         if is_enter(&me) {
@@ -1156,6 +1162,8 @@ impl Connection {
                 }
                 Some(message::Union::Clipboard(cb)) =>
                 {
+                	//..w%%%%%%%2.1
+                	//..a%%%%%%%2.1
                     #[cfg(not(target_os = "ios"))]
                     if self.clipboard {
                         update_clipboard(cb, None);
