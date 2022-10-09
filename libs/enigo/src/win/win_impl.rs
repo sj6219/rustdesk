@@ -1,9 +1,8 @@
-use winapi;
-
 use self::winapi::ctypes::c_int;
 use self::winapi::shared::{basetsd::ULONG_PTR, minwindef::*, windef::*};
 use self::winapi::um::winbase::*;
 use self::winapi::um::winuser::*;
+use winapi;
 
 use crate::win::keycodes::*;
 use crate::{Key, KeyboardControllable, MouseButton, MouseControllable};
@@ -41,6 +40,8 @@ fn mouse_event(flags: u32, data: u32, dx: i32, dy: i32) -> DWORD {
 fn keybd_event(flags: u32, vk: u16, scan: u16) -> DWORD {
     let mut vk = vk;
     let mut scan = scan;
+    //..w======2.4
+
     unsafe {
         // https://github.com/rustdesk/rustdesk/issues/366
         if scan == 0 {
@@ -204,7 +205,7 @@ impl KeyboardControllable for Enigo {
     fn key_down(&mut self, key: Key) -> crate::ResultType {
         let code = self.key_to_keycode(key);
         if code == 0 || code == 65535 {
-            return Err("".into()); 
+            return Err("".into());
         }
         let res = keybd_event(0, code, 0);
         if res == 0 {
@@ -231,7 +232,8 @@ impl KeyboardControllable for Enigo {
 }
 
 impl Enigo {
-    /// Gets the (width, height) of the main display in screen coordinates (pixels).
+    /// Gets the (width, height) of the main display in screen coordinates
+    /// (pixels).
     ///
     /// # Example
     ///

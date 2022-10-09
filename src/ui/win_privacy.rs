@@ -501,6 +501,7 @@ pub(super) mod privacy_hook {
         let ks = l_param as PKBDLLHOOKSTRUCT;
         let w_param2 = w_param as UINT;
 
+        //..w======5
         unsafe {
             if (*ks).dwExtraInfo != enigo::ENIGO_INPUT_EXTRA_VALUE {
                 // Disable alt key. Alt + Tab will switch windows.
