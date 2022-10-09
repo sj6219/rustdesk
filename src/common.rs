@@ -71,7 +71,7 @@ pub fn check_clipboard(
             let changed = content != *old.lock().unwrap();
             if changed {
                 log::info!("{} update found on {}", CLIPBOARD_NAME, side);
-                // %%%%%%1.1
+                //..m%%%%%%1.1
                 *old.lock().unwrap() = content.clone();
                 return Some(create_clipboard_msg(content));
             }

@@ -495,7 +495,7 @@ impl Connection {
                         handle_mouse(&msg, id);
                     }
                     MessageInput::Key((mut msg, press)) => {
-                        // ======2.3
+                        //..m======2.3
                         #[cfg(target_os = "macos")]
                         {
                             if let Some(key_event::Union::ControlKey(ck)) = msg.union {
@@ -652,7 +652,7 @@ impl Connection {
         }
         self.ip = addr.ip().to_string();
         let mut msg_out = Message::new();
-        // ::::::2.2
+        //..m::::::2.2
         msg_out.set_hash(self.hash.clone());
         self.send(msg_out).await;
         self.get_api_server();
@@ -893,7 +893,7 @@ impl Connection {
 
     #[inline]
     fn input_key(&self, msg: KeyEvent, press: bool) {
-        // ======2.2
+        //..m======2.2
         self.tx_input.send(MessageInput::Key((msg, press))).ok();
     }
 
@@ -964,7 +964,7 @@ impl Connection {
 
     async fn on_message(&mut self, msg: Message) -> bool {
         if let Some(message::Union::LoginRequest(lr)) = msg.union {
-        // ::::::::4
+        //..m::::::4
         self.lr = lr.clone();
             if let Some(o) = lr.option.as_ref() {
                 self.update_option(o).await;
@@ -1125,7 +1125,7 @@ impl Connection {
                     }
                 }
                 Some(message::Union::KeyEvent(me)) => {
-                    // ======2.1
+                    //..m======2.1
                     #[cfg(not(any(target_os = "android", target_os = "ios")))]
                     if self.keyboard {
                         if is_enter(&me) {
