@@ -70,7 +70,7 @@ pub fn check_clipboard(
         if content.len() < 2_000_000 && !content.is_empty() {
             let changed = content != *old.lock().unwrap();
             if changed {
-                // %%%%%%%1.1
+                //..w%%%%%%%1.1
                 log::info!("{} update found on {}", CLIPBOARD_NAME, side);
                 //..m%%%%%%1.1
                 *old.lock().unwrap() = content.clone();
@@ -108,7 +108,7 @@ pub fn update_clipboard(clipboard: Clipboard, old: Option<&Arc<Mutex<String>>>) 
                 let side = if old.is_none() { "host" } else { "client" };
                 let old = if let Some(old) = old { old } else { &CONTENT };
                 *old.lock().unwrap() = content.clone();
-                // %%%%%%2.2
+                //..w%%%%%%2.2
                 allow_err!(ctx.set_text(content));
                 log::debug!("{} updated on {}", CLIPBOARD_NAME, side);
             }
