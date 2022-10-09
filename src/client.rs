@@ -182,6 +182,7 @@ impl Client {
         }
         let (mut rendezvous_server, servers, contained) = crate::get_rendezvous_server(1_000).await;
         //..m::::::1.1
+        //..a::::::1.1
         let mut socket =
             socket_client::connect_tcp(&*rendezvous_server, any_addr, RENDEZVOUS_TIMEOUT).await;
         debug_assert!(!servers.contains(&rendezvous_server));
@@ -1292,6 +1293,7 @@ impl LoginConfigHandler {
     /// * `username` - The name of the peer.
     /// * `pi` - The peer info.
     pub fn handle_peer_info(&mut self, pi: &PeerInfo) {
+        //..a::::::5.2
         if !pi.version.is_empty() {
             self.version = hbb_common::get_version_number(&pi.version);
         }
@@ -1381,6 +1383,7 @@ impl LoginConfigHandler {
 
         let mut msg_out = Message::new();
         //..m::::::3.2
+        //..a::::::3.2
         msg_out.set_login_request(lr);
         msg_out
     }
