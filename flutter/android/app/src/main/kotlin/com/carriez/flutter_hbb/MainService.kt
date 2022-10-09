@@ -46,6 +46,7 @@ import android.content.ClipboardManager
 import android.content.ClipData
 import java.util.Timer
 import java.util.TimerTask
+//import android.content.ClipboardManager.OnPrimaryClipChangedListener
 
 const val EXTRA_MP_DATA = "mp_intent"
 const val INIT_SERVICE = "init_service"
@@ -70,7 +71,7 @@ const val AUDIO_ENCODING = AudioFormat.ENCODING_PCM_FLOAT //  ENCODING_OPUS need
 const val AUDIO_SAMPLE_RATE = 48000
 const val AUDIO_CHANNEL_MASK = AudioFormat.CHANNEL_IN_STEREO
 
-class MainService : Service() {
+class MainService : Service() /* , ClipboardManager.OnPrimaryClipChangedListener */ {
 
     init {
         System.loadLibrary("rustdesk")
@@ -155,6 +156,14 @@ class MainService : Service() {
     private val wakeLock: PowerManager.WakeLock by lazy { powerManager.newWakeLock(PowerManager.ACQUIRE_CAUSES_WAKEUP or PowerManager.SCREEN_BRIGHT_WAKE_LOCK or PowerManager.ON_AFTER_RELEASE, "rustdesk:wakelock")}
     private val clipboardManager: ClipboardManager by lazy { applicationContext.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager }
     private var timerTask: Timer? = null
+    // override fun   onPrimaryClipChanged() {
+    //     Log.d(logTag, "Clipboard===")
+    //     val clip : ClipData? = clipboardManager.getPrimaryClip();
+    //     if (clip != null && clip.getItemCount() > 0) {
+    //         val str : String = clip.getItemAt(0).coerceToText(this).toString();
+    //             Log.d(logTag, "Clipboard:$str")
+    // }
+    
     // jvm call rust
     private external fun init(ctx: Context)
     private external fun startServer()
@@ -346,6 +355,7 @@ class MainService : Service() {
         if (isStart) {
             return true
         }
+        //clipboardManager.addPrimaryClipChangedListener(this)
         if (mediaProjection == null) {
             Log.w(logTag, "startCapture fail,mediaProjection is null")
             return false
@@ -407,6 +417,7 @@ class MainService : Service() {
         audioRecorder?.release()
         audioRecorder = null
         minBufferSize = 0
+        //clipboardManager.removePrimaryClipChangedListener(this)
     }
 
     fun destroy() {
