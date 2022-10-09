@@ -1382,6 +1382,7 @@ static UINT cliprdr_send_format_list(wfClipboard *clipboard)
 
 		if (IsClipboardFormatAvailable(CF_HDROP))
 		{
+    		#[cfg(debug_assertions)]
 			{
 				static char path[512];
 				char *ptr;
