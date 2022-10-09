@@ -278,6 +278,8 @@ impl<T: InvokeUiSession> Session<T> {
         // mode: legacy(0), map(1), translate(2), auto(3)
         evt.mode = keyboard_mode.into();
         let mut msg_out = Message::new();
+        //..m=====1.4
+
         msg_out.set_key_event(evt);
         self.send(Data::Message(msg_out));
     }
@@ -438,6 +440,7 @@ impl<T: InvokeUiSession> Session<T> {
 
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     fn legacy_keyboard_mode(&self, down_or_up: bool, key: RdevKey, evt: Event) {
+        //..m
         // legacy mode(0): Generate characters locally, look for keycode on other side.
         let peer = self.peer_platform();
         let is_win = peer == "Windows";
@@ -559,8 +562,24 @@ impl<T: InvokeUiSession> Session<T> {
             RdevKey::Pause => Some(ControlKey::Pause),
             _ => None,
         };
+
+        //..
+        #[cfg(target_os = "macos")]
+        let (ctrl, command) = (command, ctrl);
+
         let mut key_event = KeyEvent::new();
         if let Some(k) = control_key {
+            //..
+            #[cfg(target_os = "macos")]
+            let k = match k {
+                ControlKey::Control => ControlKey::Meta,
+                ControlKey::Meta => ControlKey::Control,
+                ControlKey::RControl => ControlKey::RWin,
+                ControlKey::RWin => ControlKey::RControl,
+                ControlKey::Alt => ControlKey::RAlt,
+                ControlKey::RAlt => ControlKey::Alt,
+                _ => k,
+            };
             key_event.set_control_key(k);
         } else {
             let mut chr = match evt.name {
@@ -646,6 +665,7 @@ impl<T: InvokeUiSession> Session<T> {
         if down_or_up == true {
             key_event.down = true;
         }
+        //..m=====1.3
         self.send_key_event(key_event, KeyboardMode::Legacy)
     }
 
@@ -673,6 +693,7 @@ impl<T: InvokeUiSession> Session<T> {
             KeyboardMode::Legacy =>
             {
                 #[cfg(not(any(target_os = "android", target_os = "ios")))]
+                //..m======1.2
                 self.legacy_keyboard_mode(down_or_up, key, evt)
             }
             KeyboardMode::Translate => {
@@ -1238,6 +1259,7 @@ impl<T: InvokeUiSession> Session<T> {
             }
 
             let func = move |evt: Event| {
+                //..m=====1.1
                 if !IS_IN.load(Ordering::SeqCst) || !SERVER_KEYBOARD_ENABLED.load(Ordering::SeqCst)
                 {
                     return;
