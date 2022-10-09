@@ -181,6 +181,7 @@ impl Client {
             ));
         }
         let (mut rendezvous_server, servers, contained) = crate::get_rendezvous_server(1_000).await;
+        //..m::::::1.1
         let mut socket =
             socket_client::connect_tcp(&*rendezvous_server, any_addr, RENDEZVOUS_TIMEOUT).await;
         debug_assert!(!servers.contains(&rendezvous_server));
@@ -1379,6 +1380,7 @@ impl LoginConfigHandler {
         }
 
         let mut msg_out = Message::new();
+        //..m::::::3.2
         msg_out.set_login_request(lr);
         msg_out
     }
@@ -1551,6 +1553,7 @@ pub fn send_mouse(
             hbb_common::protobuf::EnumOrUnknown::new(ck)
         }).collect();
     }
+    //..m======3.2
     msg_out.set_mouse_event(mouse_event);
     interface.send(Data::Message(msg_out));
 }

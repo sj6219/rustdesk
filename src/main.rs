@@ -1,6 +1,6 @@
 // Specify the Windows subsystem to eliminate console window.
 // Requires Rust 1.18.
-#![windows_subsystem = "windows"]
+//#![windows_subsystem = "windows"]
 
 use librustdesk::*;
 
@@ -14,6 +14,27 @@ fn main() {
 
 #[cfg(not(any(target_os = "android", target_os = "ios", feature = "cli")))]
 fn main() {
+	//..m======0	
+    {
+        use std::io::Write;
+
+        println!("======================0");
+        std::io::stdout().flush().unwrap();
+        
+        //platform::macos::is_can_screen_recording(false);
+    }
+    {
+        use std::io::Write;
+
+        let mut path = std::env::current_exe().unwrap_or_default();
+        path.pop();
+
+        if let Ok(mut file) = std::fs::OpenOptions::new().write(true).create(true).append(true).open(&format!(
+            "{}/rustdesk.log", path.to_str().unwrap_or_default())) {
+            writeln!(&mut file, "======================0\n{}\n", std::process::id()).unwrap();
+        }
+    }
+
     if let Some(args) = crate::core_main::core_main().as_mut() {
         ui::start(args);
     }
