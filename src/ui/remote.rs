@@ -552,6 +552,7 @@ impl SciterSession {
     }
 
     fn get_key_event(&self, down_or_up: i32, name: &str, code: i32) -> Option<KeyEvent> {
+		//..w======3
         let mut key_event = KeyEvent::new();
         if down_or_up == 2 {
             /* windows send both keyup/keydown and keychar, so here we avoid keychar

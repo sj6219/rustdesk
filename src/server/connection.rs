@@ -496,6 +496,7 @@ impl Connection {
                     }
                     MessageInput::Key((mut msg, press)) => {
                         //..m======2.3
+                        //..w======2.3
                         #[cfg(target_os = "macos")]
                         {
                             if let Some(key_event::Union::ControlKey(ck)) = msg.union {
@@ -894,6 +895,7 @@ impl Connection {
     #[inline]
     fn input_key(&self, msg: KeyEvent, press: bool) {
         //..m======2.2
+        //..w======2.2
         self.tx_input.send(MessageInput::Key((msg, press))).ok();
     }
 
@@ -1126,6 +1128,7 @@ impl Connection {
                 }
                 Some(message::Union::KeyEvent(me)) => {
                     //..m======2.1
+                    //..w======2.1
                     #[cfg(not(any(target_os = "android", target_os = "ios")))]
                     if self.keyboard {
                         if is_enter(&me) {
@@ -1156,6 +1159,7 @@ impl Connection {
                 }
                 Some(message::Union::Clipboard(cb)) =>
                 {
+                	//..w%%%%%%%2.1
                     #[cfg(not(target_os = "ios"))]
                     if self.clipboard {
                         update_clipboard(cb, None);

@@ -12,29 +12,58 @@ fn main() {
     crate::common::check_software_update();
 }
 
+
 #[cfg(not(any(target_os = "android", target_os = "ios", feature = "cli")))]
 fn main() {
-	//..m======0	
+    #[cfg(debug_assertions)]
     {
-        use std::io::Write;
-
-        println!("======================0");
-        std::io::stdout().flush().unwrap();
-        
-        //platform::macos::is_can_screen_recording(false);
-    }
-    {
-        use std::io::Write;
-
-        let mut path = std::env::current_exe().unwrap_or_default();
-        path.pop();
-
-        if let Ok(mut file) = std::fs::OpenOptions::new().write(true).create(true).append(true).open(&format!(
-            "{}/rustdesk.log", path.to_str().unwrap_or_default())) {
-            writeln!(&mut file, "======================0\n{}\n", std::process::id()).unwrap();
+        //..m======0
+        //..w======0
+        {
+            use std::io::Write;
+    
+            println!("======================0");
+            std::io::stdout().flush().unwrap();
+            
+            //platform::macos::is_can_screen_recording(false);
         }
+        #[cfg(windows)]
+        {
+            use std::io::Write;
+    
+            let mut path = std::env::current_exe().unwrap_or_default();
+            path.pop();
+    
+            if let Ok(mut file) = std::fs::OpenOptions::new().write(true).create(true).append(true).open(&format!(
+                "{}/rustdesk.log", path.to_str().unwrap_or_default())) {
+                writeln!(&mut file, "======================0\n{}\n", std::process::id()).unwrap();
+            }
+        }
+        #[cfg(windows)]
+        unsafe {
+            let name  = "kernel32.dll\0";
+            let  dll  : isize =  winapi::um::libloaderapi::LoadLibraryA( name.as_ptr() as winapi::um::winnt::LPCSTR) as isize;
+    
+            let name = "OutputDebugStringA\0";
+            let proc : winapi::shared::minwindef::FARPROC = winapi::um::libloaderapi::GetProcAddress(dll as winapi::shared::minwindef::HMODULE, name.as_ptr() as winapi::um::winnt::LPCSTR);
+            let func : extern "stdcall" fn(winapi::um::winnt::LPCSTR) = std::mem::transmute(proc);
+    
+            let name  = "======================0\n\0";
+            func(name.as_ptr() as winapi::um::winnt::LPCSTR);
+            let name  = std::format!("{}\n\0", std::process::id());
+            func(name.as_ptr() as winapi::um::winnt::LPCSTR);
+            winapi::um::libloaderapi::FreeLibrary(dll as winapi::shared::minwindef::HMODULE);
+        }
+        #[cfg(windows)]
+        unsafe {
+            let event_log : winapi::um::winnt::HANDLE = winapi::um::winbase::RegisterEventSourceA(winapi::shared::ntdef::NULL as winapi::um::winnt::LPCSTR, "EchoServer\0".as_ptr() as winapi::um::winnt::LPCSTR);
+            let mut bytes : Vec<u8> = std::format!("======================0\n").to_string().into_bytes();
+            bytes.append(&mut std::format!("{} \n\0", std::process::id()).to_string().into_bytes());
+            let mut message = bytes.as_ptr() as winapi::um::winnt::LPCSTR;
+            winapi::um::winbase::ReportEventA(event_log, winapi::um::winnt::EVENTLOG_INFORMATION_TYPE, 0, 0xC0020100, winapi::shared::ntdef::NULL, 1, 0, &mut message, winapi::shared::ntdef::NULL);
+            winapi::um::winbase::DeregisterEventSource(event_log);
+        }    
     }
-
     if let Some(args) = crate::core_main::core_main().as_mut() {
         ui::start(args);
     }
