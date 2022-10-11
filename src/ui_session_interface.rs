@@ -704,6 +704,9 @@ impl<T: InvokeUiSession> Session<T> {
             _ => key,
         };
 
+        #[cfg(target_os = "macos")]
+        let mode = KeyboardMode::Legacy;
+
         match mode {
             KeyboardMode::Map => {
                 if down_or_up == true {
