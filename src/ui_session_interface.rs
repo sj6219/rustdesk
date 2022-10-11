@@ -590,17 +590,6 @@ impl<T: InvokeUiSession> Session<T> {
 
         let mut key_event = KeyEvent::new();
         if let Some(k) = control_key {
-            //..
-            #[cfg(target_os = "macos")]
-            let k = match k {
-                ControlKey::Control => ControlKey::Meta,
-                ControlKey::Meta => ControlKey::Control,
-                ControlKey::RControl => ControlKey::RWin,
-                ControlKey::RWin => ControlKey::RControl,
-                ControlKey::Alt => ControlKey::RAlt,
-                ControlKey::RAlt => ControlKey::Alt,
-                _ => k,
-            };
             key_event.set_control_key(k);
         } else {
             let mut chr = match evt.name {
@@ -702,6 +691,18 @@ impl<T: InvokeUiSession> Session<T> {
 
         #[cfg(not(windows))]
         let key = self.convert_numpad_keys(key);
+
+        //..
+        #[cfg(target_os = "macos")]
+        let key = match key {
+            RdevKey::ControlLeft => RdevKey::MetaLeft,
+            RdevKey::MetaLeft => RdevKey::ControlLeft,
+            RdevKey::ControlRight => RdevKey::MetaRight,
+            RdevKey::MetaRight => RdevKey::ControlRight,
+            RdevKey::Alt => RdevKey::AltGr,
+            RdevKey::AltGr => RdevKey::Alt,
+            _ => key,
+        };
 
         match mode {
             KeyboardMode::Map => {
