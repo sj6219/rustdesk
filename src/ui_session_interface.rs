@@ -6,6 +6,7 @@ use crate::client::{
     load_config, send_mouse, start_video_audio_threads, FileManager, Key, LoginConfigHandler,
     QualityStatus, KEY_MAP, SERVER_KEYBOARD_ENABLED,
 };
+use crate::common::IS_X11;
 use crate::{client::Data, client::Interface};
 use async_trait::async_trait;
 use hbb_common::config::{Config, LocalConfig, PeerConfig};
@@ -13,7 +14,7 @@ use hbb_common::rendezvous_proto::ConnType;
 use hbb_common::tokio::{self, sync::mpsc};
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 use rdev::Keyboard as RdevKeyboard;
-use rdev::{Event, EventType::*, Key as RdevKey, KeyboardState};
+use rdev::{Event, EventType, EventType::*, Key as RdevKey, KeyboardState};
 
 use hbb_common::{allow_err, message_proto::*};
 use hbb_common::{fs, get_version_number, log, Stream};
@@ -25,7 +26,9 @@ use std::sync::{Arc, Mutex, RwLock};
 /// IS_IN KEYBOARD_HOOKED sciter only
 pub static IS_IN: AtomicBool = AtomicBool::new(false);
 pub static KEYBOARD_HOOKED: AtomicBool = AtomicBool::new(true);
-
+pub static HOTKEY_HOOK_ENABLED: AtomicBool = AtomicBool::new(false);
+#[cfg(target_os = "linux")]
+use rdev::IS_GRAB;
 #[cfg(windows)]
 static mut IS_ALT_GR: bool = false;
 
@@ -36,6 +39,21 @@ lazy_static::lazy_static! {
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 lazy_static::lazy_static! {
     static ref KEYBOARD: Arc<Mutex<RdevKeyboard>> = Arc::new(Mutex::new(RdevKeyboard::new().unwrap()));
+}
+
+lazy_static::lazy_static! {
+    static ref MUTEX_SPECIAL_KEYS: Mutex<HashMap<RdevKey, bool>> = {
+        let mut m = HashMap::new();
+        m.insert(RdevKey::ShiftLeft, false);
+        m.insert(RdevKey::ShiftRight, false);
+        m.insert(RdevKey::ControlLeft, false);
+        m.insert(RdevKey::ControlRight, false);
+        m.insert(RdevKey::Alt, false);
+        m.insert(RdevKey::AltGr, false);
+        m.insert(RdevKey::MetaLeft, false);
+        m.insert(RdevKey::MetaRight, false);
+        Mutex::new(m)
+    };
 }
 
 #[derive(Clone, Default)]
@@ -63,13 +81,11 @@ impl<T: InvokeUiSession> Session<T> {
     }
 
     pub fn get_keyboard_mode(&self) -> String {
-        return std::env::var("KEYBOARD_MODE")
-            .unwrap_or(String::from("legacy"))
-            .to_lowercase();
+        global_get_keyboard_mode()
     }
 
     pub fn save_keyboard_mode(&self, value: String) {
-        std::env::set_var("KEYBOARD_MODE", value);
+        global_save_keyboard_mode(value);
     }
 
     pub fn save_view_style(&mut self, value: String) {
@@ -146,7 +162,12 @@ impl<T: InvokeUiSession> Session<T> {
             let decoder = scrap::codec::Decoder::video_codec_state(&self.id);
             let mut h264 = decoder.score_h264 > 0;
             let mut h265 = decoder.score_h265 > 0;
-            let (encoding_264, encoding_265) = self.lc.read().unwrap().supported_encoding.unwrap_or_default();
+            let (encoding_264, encoding_265) = self
+                .lc
+                .read()
+                .unwrap()
+                .supported_encoding
+                .unwrap_or_default();
             h264 = h264 && encoding_264;
             h265 = h265 && encoding_265;
             return (h264, h265);
@@ -569,17 +590,6 @@ impl<T: InvokeUiSession> Session<T> {
 
         let mut key_event = KeyEvent::new();
         if let Some(k) = control_key {
-            //..
-            #[cfg(target_os = "macos")]
-            let k = match k {
-                ControlKey::Control => ControlKey::Meta,
-                ControlKey::Meta => ControlKey::Control,
-                ControlKey::RControl => ControlKey::RWin,
-                ControlKey::RWin => ControlKey::RControl,
-                ControlKey::Alt => ControlKey::RAlt,
-                ControlKey::RAlt => ControlKey::Alt,
-                _ => k,
-            };
             key_event.set_control_key(k);
         } else {
             let mut chr = match evt.name {
@@ -641,6 +651,7 @@ impl<T: InvokeUiSession> Session<T> {
                     RdevKey::Quote => '\'',
                     RdevKey::LeftBracket => '[',
                     RdevKey::RightBracket => ']',
+                    RdevKey::Slash => '/',
                     RdevKey::BackSlash => '\\',
                     RdevKey::Minus => '-',
                     RdevKey::Equal => '=',
@@ -680,6 +691,18 @@ impl<T: InvokeUiSession> Session<T> {
 
         #[cfg(not(windows))]
         let key = self.convert_numpad_keys(key);
+
+        //..
+        #[cfg(target_os = "macos")]
+        let key = match key {
+            RdevKey::ControlLeft => RdevKey::MetaLeft,
+            RdevKey::MetaLeft => RdevKey::ControlLeft,
+            RdevKey::ControlRight => RdevKey::MetaRight,
+            RdevKey::MetaRight => RdevKey::ControlRight,
+            RdevKey::Alt => RdevKey::AltGr,
+            RdevKey::AltGr => RdevKey::Alt,
+            _ => key,
+        };
 
         match mode {
             KeyboardMode::Map => {
@@ -767,12 +790,24 @@ impl<T: InvokeUiSession> Session<T> {
     }
 
     pub fn enter(&self) {
+        HOTKEY_HOOK_ENABLED.store(true, Ordering::SeqCst);
+        #[cfg(target_os = "linux")]
+        unsafe {
+            IS_GRAB.store(true, Ordering::SeqCst);
+        }
+
         #[cfg(windows)]
         crate::platform::windows::stop_system_key_propagate(true);
         IS_IN.store(true, Ordering::SeqCst);
     }
 
     pub fn leave(&self) {
+        HOTKEY_HOOK_ENABLED.store(false, Ordering::SeqCst);
+        #[cfg(target_os = "linux")]
+        unsafe {
+            IS_GRAB.store(false, Ordering::SeqCst);
+        }
+
         for key in TO_RELEASE.lock().unwrap().iter() {
             self.map_keyboard_mode(false, *key, None)
         }
@@ -886,26 +921,18 @@ impl<T: InvokeUiSession> Session<T> {
                         ControlKey::Numpad9 => ControlKey::PageUp,
                         _ => key,
                     }
-                }else{
+                } else {
                     key
                 };
                 key_event.set_control_key(key.clone());
             }
             Key::_Raw(raw) => {
-                if raw > 'z' as u32 || raw < 'a' as u32 {
-                    key_event.set_unicode(raw);
-                    // TODO
-                    // if down_or_up == 0 {
-                    //     // ignore up, avoiding trigger twice
-                    //     return;
-                    // }
-                    // down_or_up = 1; // if press, turn into down for avoiding trigger twice on server side
-                } else {
-                    // to make ctrl+c works on windows
-                    key_event.set_chr(raw);
-                }
+                key_event.set_chr(raw);
             }
         }
+
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        let (alt, ctrl, shift, command) = get_all_hotkey_state(alt, ctrl, shift, command);
 
         self.legacy_modifiers(&mut key_event, alt, ctrl, shift, command);
         if v == 1 {
@@ -935,6 +962,9 @@ impl<T: InvokeUiSession> Session<T> {
                 command = true;
             }
         }
+
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        let (alt, ctrl, shift, command) = get_all_hotkey_state(alt, ctrl, shift, command);
 
         send_mouse(mask, x, y, alt, ctrl, shift, command, self);
         // on macos, ctrl + left button down = right button down, up won't emit, so we need to
@@ -1185,8 +1215,11 @@ impl<T: InvokeUiSession> Interface for Session<T> {
                 crate::platform::windows::add_recent_document(&path);
             }
         }
+
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         self.start_keyboard_hook();
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        self.start_hotkey_grab();
     }
 
     async fn handle_hash(&mut self, pass: &str, hash: Hash, peer: &mut Stream) {
@@ -1229,11 +1262,103 @@ impl<T: InvokeUiSession> Interface for Session<T> {
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 impl<T: InvokeUiSession> Session<T> {
+    fn handle_hot_key_event(&self, event: Event) {
+        // keyboard long press
+        match event.event_type {
+            EventType::KeyPress(k) => {
+                if MUTEX_SPECIAL_KEYS.lock().unwrap().contains_key(&k) {
+                    if *MUTEX_SPECIAL_KEYS.lock().unwrap().get(&k).unwrap() {
+                        return;
+                    }
+                    MUTEX_SPECIAL_KEYS.lock().unwrap().insert(k, true);
+                }
+            }
+            EventType::KeyRelease(k) => {
+                if MUTEX_SPECIAL_KEYS.lock().unwrap().contains_key(&k) {
+                    MUTEX_SPECIAL_KEYS.lock().unwrap().insert(k, false);
+                }
+            }
+            _ => return,
+        };
+
+        // keyboard short press
+        match event.event_type {
+            EventType::KeyPress(key) => {
+                self.key_down_or_up(true, key, event);
+            }
+            EventType::KeyRelease(key) => {
+                self.key_down_or_up(false, key, event);
+            }
+            _ => {}
+        }
+    }
+
+    fn start_hotkey_grab(&self) {
+        #[cfg(target_os = "linux")]
+        if !*IS_X11.lock().unwrap() {
+            return;
+        }
+        if self.is_port_forward() || self.is_file_transfer() {
+            return;
+        }
+        let me = self.clone();
+
+        log::info!("hotkey grabing");
+        std::thread::spawn(move || {
+            std::env::set_var("KEYBOARD_ONLY", "y");
+
+            let func = move |event: Event| {
+                #[cfg(any(target_os = "windows", target_os = "macos"))]
+                if !HOTKEY_HOOK_ENABLED.load(Ordering::SeqCst) {
+                    return Some(event);
+                };
+                match event.event_type {
+                    EventType::KeyPress(_key) | EventType::KeyRelease(_key) => {
+                        #[cfg(any(target_os = "windows", target_os = "macos"))]
+                        if MUTEX_SPECIAL_KEYS.lock().unwrap().contains_key(&_key) {
+                            me.handle_hot_key_event(event);
+                            return None;
+                        } else {
+                            return Some(event);
+                        }
+
+                        #[cfg(target_os = "linux")]
+                        me.handle_hot_key_event(event);
+
+                        None
+                    }
+                    _ => Some(event),
+                }
+            };
+
+            #[cfg(target_os = "linux")]
+            {
+                use rdev::GRABED_KEYS;
+                GRABED_KEYS.lock().unwrap().insert(RdevKey::ShiftLeft);
+                GRABED_KEYS.lock().unwrap().insert(RdevKey::ShiftRight);
+                GRABED_KEYS.lock().unwrap().insert(RdevKey::ControlLeft);
+                GRABED_KEYS.lock().unwrap().insert(RdevKey::ControlRight);
+                GRABED_KEYS.lock().unwrap().insert(RdevKey::Alt);
+                GRABED_KEYS.lock().unwrap().insert(RdevKey::AltGr);
+                GRABED_KEYS.lock().unwrap().insert(RdevKey::MetaLeft);
+                GRABED_KEYS.lock().unwrap().insert(RdevKey::MetaRight);
+            }
+            if let Err(error) = rdev::grab(func) {
+                log::error!("Error: {:?}", error)
+            }
+        });
+    }
+
     fn start_keyboard_hook(&self) {
         if self.is_port_forward() || self.is_file_transfer() {
             return;
         }
         if !KEYBOARD_HOOKED.load(Ordering::SeqCst) {
+            return;
+        }
+        // rdev::grab and rdev::listen use the same api on macOS
+        #[cfg(target_os = "macos")]
+        if HOTKEY_HOOK_ENABLED.load(Ordering::SeqCst) {
             return;
         }
         log::info!("keyboard hooked");
@@ -1243,20 +1368,6 @@ impl<T: InvokeUiSession> Session<T> {
         std::thread::spawn(move || {
             // This will block.
             std::env::set_var("KEYBOARD_ONLY", "y");
-            lazy_static::lazy_static! {
-                static ref MUTEX_SPECIAL_KEYS: Mutex<HashMap<RdevKey, bool>> = {
-                    let mut m = HashMap::new();
-                    m.insert(RdevKey::ShiftLeft, false);
-                    m.insert(RdevKey::ShiftRight, false);
-                    m.insert(RdevKey::ControlLeft, false);
-                    m.insert(RdevKey::ControlRight, false);
-                    m.insert(RdevKey::Alt, false);
-                    m.insert(RdevKey::AltGr, false);
-                    m.insert(RdevKey::MetaLeft, false);
-                    m.insert(RdevKey::MetaRight, false);
-                    Mutex::new(m)
-                };
-            }
 
             let func = move |evt: Event| {
                 //..m=====1.1
@@ -1442,4 +1553,35 @@ async fn start_one_port_forward<T: InvokeUiSession>(
 async fn send_note(url: String, id: String, conn_id: i32, note: String) {
     let body = serde_json::json!({ "id": id, "Id": conn_id, "note": note });
     allow_err!(crate::post_request(url, body.to_string(), "").await);
+}
+
+fn get_hotkey_state(key: RdevKey) -> bool {
+    *MUTEX_SPECIAL_KEYS.lock().unwrap().get(&key).unwrap()
+}
+
+fn get_all_hotkey_state(
+    alt: bool,
+    ctrl: bool,
+    shift: bool,
+    command: bool,
+) -> (bool, bool, bool, bool) {
+    let ctrl =
+        get_hotkey_state(RdevKey::ControlLeft) || get_hotkey_state(RdevKey::ControlRight) || ctrl;
+    let shift =
+        get_hotkey_state(RdevKey::ShiftLeft) || get_hotkey_state(RdevKey::ShiftRight) || shift;
+    let command =
+        get_hotkey_state(RdevKey::MetaLeft) || get_hotkey_state(RdevKey::MetaRight) || command;
+    let alt = get_hotkey_state(RdevKey::Alt) || get_hotkey_state(RdevKey::AltGr) || alt;
+
+    (alt, ctrl, shift, command)
+}
+
+pub fn global_get_keyboard_mode() -> String {
+    return std::env::var("KEYBOARD_MODE")
+        .unwrap_or(String::from("map"))
+        .to_lowercase();
+}
+
+pub fn global_save_keyboard_mode(value: String) {
+    std::env::set_var("KEYBOARD_MODE", value);
 }
