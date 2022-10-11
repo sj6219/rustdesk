@@ -704,9 +704,6 @@ impl<T: InvokeUiSession> Session<T> {
             _ => key,
         };
 
-        //..
-        let mode = KeyboardMode::Legacy;
-
         match mode {
             KeyboardMode::Map => {
                 if down_or_up == true {
