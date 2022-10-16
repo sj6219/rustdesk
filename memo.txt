@@ -1,6 +1,6 @@
 #windows
 %comspec% /k "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsamd64_arm64.bat" 
-cargo build --release --target=aarch64-pc-windows-msvc -vv 
+cargo build --release --features inline --target=aarch64-pc-windows-msvc -vv 
 
 rustup update
 rustup target add aarch64-pc-windows-msvc
