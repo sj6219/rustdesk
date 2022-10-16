@@ -19,7 +19,7 @@
                     "kind": "bin"
                 }
             },
-            //"args": [],
+            "args": [],
             "args": ["--connect", "192.168.111.8"],
             "cwd": "${workspaceFolder}"
         },
