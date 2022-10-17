@@ -466,12 +466,14 @@ impl<T: InvokeUiSession> Session<T> {
         let peer = self.peer_platform();
         let is_win = peer == "Windows";
 
-        let alt = get_key_state(enigo::Key::Alt);
+        //let alt = get_key_state(enigo::Key::Alt);
+        let alt = get_hotkey_state(RdevKey::Alt);
         #[cfg(windows)]
         let ctrl = {
             let mut tmp =
-                get_key_state(enigo::Key::Control) || get_key_state(enigo::Key::RightControl);
-            unsafe {
+                //get_key_state(enigo::Key::Control) || get_key_state(enigo::Key::RightControl);
+                get_hotkey_state(RdevKey::ControlLeft) || get_hotkey_state(RdevKey::ControlRight);
+                unsafe {
                 if IS_ALT_GR {
                     if alt || key == RdevKey::AltGr {
                         if tmp {
@@ -486,9 +488,11 @@ impl<T: InvokeUiSession> Session<T> {
         };
         #[cfg(not(windows))]
         let ctrl = get_key_state(enigo::Key::Control) || get_key_state(enigo::Key::RightControl);
-        let shift = get_key_state(enigo::Key::Shift) || get_key_state(enigo::Key::RightShift);
+        //let shift = get_key_state(enigo::Key::Shift) || get_key_state(enigo::Key::RightShift);
+        let shift = get_hotkey_state(RdevKey::ShiftLeft) || get_hotkey_state(RdevKey::ShiftRight);
         #[cfg(windows)]
-        let command = crate::platform::windows::get_win_key_state();
+        //let command = crate::platform::windows::get_win_key_state();
+        let command = get_hotkey_state(RdevKey::MetaLeft);
         #[cfg(not(windows))]
         let command = get_key_state(enigo::Key::Meta);
         let control_key = match key {
