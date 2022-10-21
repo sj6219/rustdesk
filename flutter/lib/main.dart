@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:flutter/material.dart';
@@ -13,6 +14,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:get/get.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:uni_links_desktop/uni_links_desktop.dart';
 import 'package:window_manager/window_manager.dart';
 
 // import 'package:window_manager/window_manager.dart';
@@ -89,6 +91,8 @@ Future<void> initEnv(String appType) async {
 }
 
 void runMainApp(bool startService) async {
+  // register uni links
+  initUniLinks();
   await initEnv(kAppTypeMain);
   // trigger connection status updater
   await bind.mainCheckConnectStatus();
@@ -194,13 +198,10 @@ void runPortForwardScreen(Map<String, dynamic> argument) async {
 }
 
 void runConnectionManagerScreen() async {
+  await initEnv(kAppTypeMain);
   // initialize window
   WindowOptions windowOptions =
       getHiddenTitleBarWindowOptions(size: kConnectionManagerWindowSize);
-  // ensure initial window size to be changed
-  await windowManager.setSize(kConnectionManagerWindowSize);
-  await Future.wait(
-      [windowManager.setAlignment(Alignment.topRight), initEnv(kAppTypeMain)]);
   runApp(GetMaterialApp(
       debugShowCheckedModeBanner: false,
       theme: MyTheme.lightTheme,
@@ -215,10 +216,16 @@ void runConnectionManagerScreen() async {
       home: const DesktopServerPage(),
       builder: _keepScaleBuilder()));
   windowManager.waitUntilReadyToShow(windowOptions, () async {
-    windowManager.show();
-    windowManager.focus();
-    windowManager.setOpacity(1);
-    windowManager.setAlignment(Alignment.topRight); // ensure
+    await windowManager.show();
+    // ensure initial window size to be changed
+    await windowManager.setSize(kConnectionManagerWindowSize);
+    await Future.wait([
+      windowManager.setAlignment(Alignment.topRight),
+      windowManager.focus(),
+      windowManager.setOpacity(1)
+    ]);
+    // ensure
+    windowManager.setAlignment(Alignment.topRight);
   });
 }
 

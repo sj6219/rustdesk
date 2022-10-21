@@ -1,10 +1,13 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 
 import 'package:desktop_drop/desktop_drop.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_breadcrumb/flutter_breadcrumb.dart';
-import 'package:flutter_hbb/mobile/pages/file_manager_page.dart';
+import 'package:flutter_hbb/desktop/widgets/tabbar_widget.dart';
 import 'package:flutter_hbb/models/file_model.dart';
 import 'package:get/get.dart';
 import 'package:provider/provider.dart';
@@ -44,14 +47,18 @@ class _FileManagerPageState extends State<FileManagerPage>
 
   final _locationStatusLocal = LocationStatus.bread.obs;
   final _locationStatusRemote = LocationStatus.bread.obs;
-  final FocusNode _locationNodeLocal =
-      FocusNode(debugLabel: "locationNodeLocal");
-  final FocusNode _locationNodeRemote =
-      FocusNode(debugLabel: "locationNodeRemote");
+  final _locationNodeLocal = FocusNode(debugLabel: "locationNodeLocal");
+  final _locationNodeRemote = FocusNode(debugLabel: "locationNodeRemote");
+  final _locationBarKeyLocal = GlobalKey(debugLabel: "locationBarKeyLocal");
+  final _locationBarKeyRemote = GlobalKey(debugLabel: "locationBarKeyRemote");
   final _searchTextLocal = "".obs;
   final _searchTextRemote = "".obs;
   final _breadCrumbScrollerLocal = ScrollController();
   final _breadCrumbScrollerRemote = ScrollController();
+
+  /// [_lastClickTime], [_lastClickEntry] help to handle double click
+  int _lastClickTime = DateTime.now().millisecondsSinceEpoch;
+  Entry? _lastClickEntry;
 
   final _dropMaskVisible = false.obs; // TODO impl drop mask
 
@@ -59,11 +66,15 @@ class _FileManagerPageState extends State<FileManagerPage>
     return isLocal ? _breadCrumbScrollerLocal : _breadCrumbScrollerRemote;
   }
 
+  GlobalKey getLocationBarKey(bool isLocal) {
+    return isLocal ? _locationBarKeyLocal : _locationBarKeyRemote;
+  }
+
   late FFI _ffi;
 
   FileModel get model => _ffi.fileModel;
 
-  SelectedItems getSelectedItem(bool isLocal) {
+  SelectedItems getSelectedItems(bool isLocal) {
     return isLocal ? _localSelectedItems : _remoteSelectedItems;
   }
 
@@ -129,7 +140,7 @@ class _FileManagerPageState extends State<FileManagerPage>
   Widget menu({bool isLocal = false}) {
     var menuPos = RelativeRect.fill;
 
-    final items = [
+    final List<MenuEntryBase<String>> items = [
       MenuEntrySwitch<String>(
         switchType: SwitchType.scheckbox,
         text: translate("Show Hidden Files"),
@@ -142,6 +153,18 @@ class _FileManagerPageState extends State<FileManagerPage>
         padding: kDesktopMenuPadding,
         dismissOnClicked: true,
       ),
+      MenuEntryButton(
+          childBuilder: (style) => Text(translate("Select All"), style: style),
+          proc: () => setState(() => getSelectedItems(isLocal)
+              .selectAll(model.getCurrentDir(isLocal).entries)),
+          padding: kDesktopMenuPadding,
+          dismissOnClicked: true),
+      MenuEntryButton(
+          childBuilder: (style) =>
+              Text(translate("Unselect All"), style: style),
+          proc: () => setState(() => getSelectedItems(isLocal).clear()),
+          padding: kDesktopMenuPadding,
+          dismissOnClicked: true)
     ];
 
     return Listener(
@@ -171,22 +194,6 @@ class _FileManagerPageState extends State<FileManagerPage>
   }
 
   Widget body({bool isLocal = false}) {
-    final fd = model.getCurrentDir(isLocal);
-    final entries = fd.entries;
-    final sortIndex = (SortBy style) {
-      switch (style) {
-        case SortBy.Name:
-          return 0;
-        case SortBy.Type:
-          return 0;
-        case SortBy.Modified:
-          return 1;
-        case SortBy.Size:
-          return 2;
-      }
-    }(model.getSortStyle(isLocal));
-    final sortAscending =
-        isLocal ? model.localSortAscending : model.remoteSortAscending;
     return Container(
       decoration: BoxDecoration(border: Border.all(color: Colors.black26)),
       margin: const EdgeInsets.all(16.0),
@@ -208,126 +215,7 @@ class _FileManagerPageState extends State<FileManagerPage>
               Expanded(
                 child: SingleChildScrollView(
                   controller: ScrollController(),
-                  child: ObxValue<RxString>(
-                    (searchText) {
-                      final filteredEntries = searchText.isNotEmpty
-                          ? entries.where((element) {
-                              return element.name.contains(searchText.value);
-                            }).toList(growable: false)
-                          : entries;
-                      return DataTable(
-                        key: ValueKey(isLocal ? 0 : 1),
-                        showCheckboxColumn: true,
-                        dataRowHeight: 25,
-                        headingRowHeight: 30,
-                        horizontalMargin: 8,
-                        columnSpacing: 8,
-                        showBottomBorder: true,
-                        sortColumnIndex: sortIndex,
-                        sortAscending: sortAscending,
-                        columns: [
-                          DataColumn(
-                              label: Text(
-                                translate("Name"),
-                              ).marginSymmetric(horizontal: 4),
-                              onSort: (columnIndex, ascending) {
-                                model.changeSortStyle(SortBy.Name,
-                                    isLocal: isLocal, ascending: ascending);
-                              }),
-                          DataColumn(
-                              label: Text(
-                                translate("Modified"),
-                              ),
-                              onSort: (columnIndex, ascending) {
-                                model.changeSortStyle(SortBy.Modified,
-                                    isLocal: isLocal, ascending: ascending);
-                              }),
-                          DataColumn(
-                              label: Text(translate("Size")),
-                              onSort: (columnIndex, ascending) {
-                                model.changeSortStyle(SortBy.Size,
-                                    isLocal: isLocal, ascending: ascending);
-                              }),
-                        ],
-                        rows: filteredEntries.map((entry) {
-                          final sizeStr = entry.isFile
-                              ? readableFileSize(entry.size.toDouble())
-                              : "";
-                          return DataRow(
-                              key: ValueKey(entry.name),
-                              onSelectChanged: (s) {
-                                if (s != null) {
-                                  if (s) {
-                                    getSelectedItem(isLocal)
-                                        .add(isLocal, entry);
-                                  } else {
-                                    getSelectedItem(isLocal).remove(entry);
-                                  }
-                                  setState(() {});
-                                }
-                              },
-                              selected:
-                                  getSelectedItem(isLocal).contains(entry),
-                              cells: [
-                                DataCell(
-                                    Container(
-                                        width: 180,
-                                        child: Tooltip(
-                                          message: entry.name,
-                                          child: Row(children: [
-                                            Icon(
-                                              entry.isFile
-                                                  ? Icons.feed_outlined
-                                                  : Icons.folder,
-                                              size: 20,
-                                              color: Theme.of(context)
-                                                  .iconTheme
-                                                  .color
-                                                  ?.withOpacity(0.7),
-                                            ).marginSymmetric(horizontal: 2),
-                                            Expanded(
-                                                child: Text(entry.name,
-                                                    overflow:
-                                                        TextOverflow.ellipsis))
-                                          ]),
-                                        )), onTap: () {
-                                  if (entry.isDirectory) {
-                                    openDirectory(entry.path, isLocal: isLocal);
-                                    if (isLocal) {
-                                      _localSelectedItems.clear();
-                                    } else {
-                                      _remoteSelectedItems.clear();
-                                    }
-                                  } else {
-                                    // Perform file-related tasks.
-                                    final selectedItems =
-                                        getSelectedItem(isLocal);
-                                    if (selectedItems.contains(entry)) {
-                                      selectedItems.remove(entry);
-                                    } else {
-                                      selectedItems.add(isLocal, entry);
-                                    }
-                                    setState(() {});
-                                  }
-                                }),
-                                DataCell(FittedBox(
-                                    child: Text(
-                                  "${entry.lastModified().toString().replaceAll(".000", "")}   ",
-                                  style: TextStyle(
-                                      fontSize: 12, color: MyTheme.darkGray),
-                                ))),
-                                DataCell(Text(
-                                  sizeStr,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                      fontSize: 10, color: MyTheme.darkGray),
-                                )),
-                              ]);
-                        }).toList(growable: false),
-                      );
-                    },
-                    isLocal ? _searchTextLocal : _searchTextRemote,
-                  ),
+                  child: _buildDataTable(context, isLocal),
                 ),
               )
             ],
@@ -335,6 +223,194 @@ class _FileManagerPageState extends State<FileManagerPage>
         ]),
       ),
     );
+  }
+
+  Widget _buildDataTable(BuildContext context, bool isLocal) {
+    final fd = model.getCurrentDir(isLocal);
+    final entries = fd.entries;
+    final sortIndex = (SortBy style) {
+      switch (style) {
+        case SortBy.name:
+          return 0;
+        case SortBy.type:
+          return 0;
+        case SortBy.modified:
+          return 1;
+        case SortBy.size:
+          return 2;
+      }
+    }(model.getSortStyle(isLocal));
+    final sortAscending =
+        isLocal ? model.localSortAscending : model.remoteSortAscending;
+
+    return ObxValue<RxString>(
+      (searchText) {
+        final filteredEntries = searchText.isNotEmpty
+            ? entries.where((element) {
+                return element.name.contains(searchText.value);
+              }).toList(growable: false)
+            : entries;
+        return DataTable(
+          key: ValueKey(isLocal ? 0 : 1),
+          showCheckboxColumn: false,
+          dataRowHeight: 25,
+          headingRowHeight: 30,
+          horizontalMargin: 8,
+          columnSpacing: 8,
+          showBottomBorder: true,
+          sortColumnIndex: sortIndex,
+          sortAscending: sortAscending,
+          columns: [
+            DataColumn(
+                label: Text(
+                  translate("Name"),
+                ).marginSymmetric(horizontal: 4),
+                onSort: (columnIndex, ascending) {
+                  model.changeSortStyle(SortBy.name,
+                      isLocal: isLocal, ascending: ascending);
+                }),
+            DataColumn(
+                label: Text(
+                  translate("Modified"),
+                ),
+                onSort: (columnIndex, ascending) {
+                  model.changeSortStyle(SortBy.modified,
+                      isLocal: isLocal, ascending: ascending);
+                }),
+            DataColumn(
+                label: Text(translate("Size")),
+                onSort: (columnIndex, ascending) {
+                  model.changeSortStyle(SortBy.size,
+                      isLocal: isLocal, ascending: ascending);
+                }),
+          ],
+          rows: filteredEntries.map((entry) {
+            final sizeStr =
+                entry.isFile ? readableFileSize(entry.size.toDouble()) : "";
+            final lastModifiedStr = entry.isDrive
+                ? " "
+                : "${entry.lastModified().toString().replaceAll(".000", "")}   ";
+            return DataRow(
+                key: ValueKey(entry.name),
+                onSelectChanged: (s) {
+                  _onSelectedChanged(getSelectedItems(isLocal), filteredEntries,
+                      entry, isLocal);
+                },
+                selected: getSelectedItems(isLocal).contains(entry),
+                cells: [
+                  DataCell(
+                    Container(
+                        width: 200,
+                        child: Tooltip(
+                          waitDuration: Duration(milliseconds: 500),
+                          message: entry.name,
+                          child: Row(children: [
+                            entry.isDrive
+                                ? Image(
+                                        image: iconHardDrive,
+                                        fit: BoxFit.scaleDown,
+                                        color: Theme.of(context)
+                                            .iconTheme
+                                            .color
+                                            ?.withOpacity(0.7))
+                                    .paddingAll(4)
+                                : Icon(
+                                    entry.isFile
+                                        ? Icons.feed_outlined
+                                        : Icons.folder,
+                                    size: 20,
+                                    color: Theme.of(context)
+                                        .iconTheme
+                                        .color
+                                        ?.withOpacity(0.7),
+                                  ).marginSymmetric(horizontal: 2),
+                            Expanded(
+                                child: Text(entry.name,
+                                    overflow: TextOverflow.ellipsis))
+                          ]),
+                        )),
+                    onTap: () {
+                      final items = getSelectedItems(isLocal);
+
+                      // handle double click
+                      if (_checkDoubleClick(entry)) {
+                        openDirectory(entry.path, isLocal: isLocal);
+                        items.clear();
+                        return;
+                      }
+                      _onSelectedChanged(
+                          items, filteredEntries, entry, isLocal);
+                    },
+                  ),
+                  DataCell(FittedBox(
+                      child: Tooltip(
+                          waitDuration: Duration(milliseconds: 500),
+                          message: lastModifiedStr,
+                          child: Text(
+                            lastModifiedStr,
+                            style: TextStyle(
+                                fontSize: 12, color: MyTheme.darkGray),
+                          )))),
+                  DataCell(Tooltip(
+                      waitDuration: Duration(milliseconds: 500),
+                      message: sizeStr,
+                      child: Text(
+                        sizeStr,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 10, color: MyTheme.darkGray),
+                      ))),
+                ]);
+          }).toList(growable: false),
+        );
+      },
+      isLocal ? _searchTextLocal : _searchTextRemote,
+    );
+  }
+
+  void _onSelectedChanged(SelectedItems selectedItems, List<Entry> entries,
+      Entry entry, bool isLocal) {
+    final isCtrlDown = RawKeyboard.instance.keysPressed
+        .contains(LogicalKeyboardKey.controlLeft);
+    final isShiftDown =
+        RawKeyboard.instance.keysPressed.contains(LogicalKeyboardKey.shiftLeft);
+    if (isCtrlDown) {
+      if (selectedItems.contains(entry)) {
+        selectedItems.remove(entry);
+      } else {
+        selectedItems.add(isLocal, entry);
+      }
+    } else if (isShiftDown) {
+      final List<int> indexGroup = [];
+      for (var selected in selectedItems.items) {
+        indexGroup.add(entries.indexOf(selected));
+      }
+      indexGroup.add(entries.indexOf(entry));
+      indexGroup.removeWhere((e) => e == -1);
+      final maxIndex = indexGroup.reduce(max);
+      final minIndex = indexGroup.reduce(min);
+      selectedItems.clear();
+      entries
+          .getRange(minIndex, maxIndex + 1)
+          .forEach((e) => selectedItems.add(isLocal, e));
+    } else {
+      selectedItems.clear();
+      selectedItems.add(isLocal, entry);
+    }
+    setState(() {});
+  }
+
+  bool _checkDoubleClick(Entry entry) {
+    final current = DateTime.now().millisecondsSinceEpoch;
+    final elapsed = current - _lastClickTime;
+    _lastClickTime = current;
+    if (_lastClickEntry == entry) {
+      if (elapsed < kDesktopDoubleClickTimeMilli) {
+        return true;
+      }
+    } else {
+      _lastClickEntry = entry;
+    }
+    return false;
   }
 
   /// transfer status list
@@ -369,6 +445,7 @@ class _FileManagerPageState extends State<FileManagerPage>
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Tooltip(
+                                  waitDuration: Duration(milliseconds: 500),
                                   message: item.jobName,
                                   child: Text(
                                     item.jobName,
@@ -409,7 +486,7 @@ class _FileManagerPageState extends State<FileManagerPage>
                                   icon: const Icon(Icons.restart_alt_rounded)),
                             ),
                             IconButton(
-                              icon: const Icon(Icons.delete),
+                              icon: const Icon(Icons.delete_forever_outlined),
                               splashRadius: 20,
                               onPressed: () {
                                 model.jobTable.removeAt(index);
@@ -439,6 +516,7 @@ class _FileManagerPageState extends State<FileManagerPage>
     final locationStatus =
         isLocal ? _locationStatusLocal : _locationStatusRemote;
     final locationFocus = isLocal ? _locationNodeLocal : _locationNodeRemote;
+    final selectedItems = getSelectedItems(isLocal);
     return Container(
         child: Column(
       children: [
@@ -477,16 +555,10 @@ class _FileManagerPageState extends State<FileManagerPage>
             Row(
               children: [
                 IconButton(
-                  onPressed: () {
-                    model.goHome(isLocal: isLocal);
-                  },
-                  icon: const Icon(Icons.home_outlined),
-                  splashRadius: 20,
-                ),
-                IconButton(
                   icon: const Icon(Icons.arrow_back),
                   splashRadius: 20,
                   onPressed: () {
+                    selectedItems.clear();
                     model.goBack(isLocal: isLocal);
                   },
                 ),
@@ -494,6 +566,7 @@ class _FileManagerPageState extends State<FileManagerPage>
                   icon: const Icon(Icons.arrow_upward),
                   splashRadius: 20,
                   onPressed: () {
+                    selectedItems.clear();
                     model.goToParentDirectory(isLocal: isLocal);
                   },
                 ),
@@ -562,6 +635,7 @@ class _FileManagerPageState extends State<FileManagerPage>
             }),
             IconButton(
                 onPressed: () {
+                  breadCrumbScrollToEnd(isLocal);
                   model.refresh(isLocal: isLocal);
                 },
                 splashRadius: 20,
@@ -576,6 +650,13 @@ class _FileManagerPageState extends State<FileManagerPage>
                 mainAxisAlignment:
                     isLocal ? MainAxisAlignment.start : MainAxisAlignment.end,
                 children: [
+                  IconButton(
+                    onPressed: () {
+                      model.goHome(isLocal: isLocal);
+                    },
+                    icon: const Icon(Icons.home_outlined),
+                    splashRadius: 20,
+                  ),
                   IconButton(
                       onPressed: () {
                         final name = TextEditingController();
@@ -626,13 +707,13 @@ class _FileManagerPageState extends State<FileManagerPage>
                       splashRadius: 20,
                       icon: const Icon(Icons.create_new_folder_outlined)),
                   IconButton(
-                      onPressed: () async {
-                        final items = isLocal
-                            ? _localSelectedItems
-                            : _remoteSelectedItems;
-                        await (model.removeAction(items, isLocal: isLocal));
-                        items.clear();
-                      },
+                      onPressed: validItems(selectedItems)
+                          ? () async {
+                              await (model.removeAction(selectedItems,
+                                  isLocal: isLocal));
+                              selectedItems.clear();
+                            }
+                          : null,
                       splashRadius: 20,
                       icon: const Icon(Icons.delete_forever_outlined)),
                   menu(isLocal: isLocal),
@@ -640,11 +721,12 @@ class _FileManagerPageState extends State<FileManagerPage>
               ),
             ),
             TextButton.icon(
-                onPressed: () {
-                  final items = getSelectedItem(isLocal);
-                  model.sendFiles(items, isRemote: !isLocal);
-                  items.clear();
-                },
+                onPressed: validItems(selectedItems)
+                    ? () {
+                        model.sendFiles(selectedItems, isRemote: !isLocal);
+                        selectedItems.clear();
+                      }
+                    : null,
                 icon: Transform.rotate(
                   angle: isLocal ? 0 : pi,
                   child: const Icon(
@@ -658,6 +740,14 @@ class _FileManagerPageState extends State<FileManagerPage>
         ).marginOnly(top: 8.0)
       ],
     ));
+  }
+
+  bool validItems(SelectedItems items) {
+    if (items.length > 0) {
+      // exclude DirDrive type
+      return items.items.any((item) => !item.isDrive);
+    }
+    return false;
   }
 
   @override
@@ -695,33 +785,118 @@ class _FileManagerPageState extends State<FileManagerPage>
       }
       openDirectory(path, isLocal: isLocal);
     });
-    breadCrumbScrollToEnd(isLocal);
+    final locationBarKey = getLocationBarKey(isLocal);
+
     return items.isEmpty
         ? Offstage()
-        : Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-            Expanded(
-                child: BreadCrumb(
-              items: items,
-              divider: Text("/").paddingSymmetric(horizontal: 4.0),
-              overflow: ScrollableOverflow(
-                  controller: getBreadCrumbScrollController(isLocal)),
-            )),
-            DropdownButton<String>(
-                isDense: true,
-                underline: Offstage(),
-                items: [
-                  // TODO: favourite
-                  DropdownMenuItem(
-                    child: Text('/'),
-                    value: '/',
-                  )
-                ],
-                onChanged: (path) {
-                  if (path is String && path.isNotEmpty) {
-                    openDirectory(path, isLocal: isLocal);
-                  }
-                })
-          ]);
+        : Row(
+            key: locationBarKey,
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+                Expanded(
+                    child: Listener(
+                        // handle mouse wheel
+                        onPointerSignal: (e) {
+                          if (e is PointerScrollEvent) {
+                            final sc = getBreadCrumbScrollController(isLocal);
+                            sc.jumpTo(sc.offset + e.scrollDelta.dy / 4);
+                          }
+                        },
+                        child: BreadCrumb(
+                          items: items,
+                          divider: Text("/",
+                              style: TextStyle(
+                                  color: Theme.of(context).hintColor)),
+                          overflow: ScrollableOverflow(
+                              controller:
+                                  getBreadCrumbScrollController(isLocal)),
+                        ))),
+                ActionIcon(
+                  message: "",
+                  icon: Icons.arrow_drop_down,
+                  onTap: () async {
+                    final renderBox = locationBarKey.currentContext
+                        ?.findRenderObject() as RenderBox;
+                    locationBarKey.currentContext?.size;
+
+                    final size = renderBox.size;
+                    final offset = renderBox.localToGlobal(Offset.zero);
+
+                    final x = offset.dx;
+                    final y = offset.dy + size.height + 1;
+
+                    final peerPlatform = (await bind.sessionGetPlatform(
+                            id: _ffi.id, isRemote: !isLocal))
+                        .toLowerCase();
+                    final List<MenuEntryBase> menuItems = [
+                      MenuEntryButton(
+                          childBuilder: (TextStyle? style) => Text(
+                                '/',
+                                style: style,
+                              ),
+                          proc: () {
+                            openDirectory('/', isLocal: isLocal);
+                          },
+                          dismissOnClicked: true),
+                      MenuEntryDivider()
+                    ];
+                    if (peerPlatform == "windows") {
+                      var loadingTag = "";
+                      if (!isLocal) {
+                        loadingTag = _ffi.dialogManager.showLoading("Waiting");
+                      }
+                      try {
+                        final fd =
+                            await model.fetchDirectory("/", isLocal, isLocal);
+                        for (var entry in fd.entries) {
+                          menuItems.add(MenuEntryButton(
+                              childBuilder: (TextStyle? style) =>
+                                  Row(children: [
+                                    Image(
+                                        image: iconHardDrive,
+                                        fit: BoxFit.scaleDown,
+                                        color: Theme.of(context)
+                                            .iconTheme
+                                            .color
+                                            ?.withOpacity(0.7)),
+                                    SizedBox(width: 10),
+                                    Text(
+                                      entry.name,
+                                      style: style,
+                                    )
+                                  ]),
+                              proc: () {
+                                openDirectory(entry.name, isLocal: isLocal);
+                              },
+                              dismissOnClicked: true));
+                        }
+                      } finally {
+                        if (!isLocal) {
+                          _ffi.dialogManager.dismissByTag(loadingTag);
+                        }
+                      }
+                    }
+                    menuItems.add(MenuEntryDivider());
+                    mod_menu.showMenu(
+                        context: context,
+                        position: RelativeRect.fromLTRB(x, y, x, y),
+                        elevation: 4,
+                        items: menuItems
+                            .map((e) => e.build(
+                                context,
+                                MenuConfig(
+                                    commonColor:
+                                        CustomPopupMenuTheme.commonColor,
+                                    height: CustomPopupMenuTheme.height,
+                                    dividerHeight:
+                                        CustomPopupMenuTheme.dividerHeight,
+                                    boxWidth: size.width)))
+                            .expand((i) => i)
+                            .toList());
+                  },
+                  iconSize: 20,
+                )
+              ]);
   }
 
   List<BreadCrumbItem> getPathBreadCrumbItems(
@@ -731,10 +906,11 @@ class _FileManagerPageState extends State<FileManagerPage>
     final breadCrumbList = List<BreadCrumbItem>.empty(growable: true);
     breadCrumbList.addAll(list.asMap().entries.map((e) => BreadCrumbItem(
         content: TextButton(
-            child: Text(e.value),
-            style:
-                ButtonStyle(minimumSize: MaterialStateProperty.all(Size(0, 0))),
-            onPressed: () => onPressed(list.sublist(0, e.key + 1))))));
+                child: Text(e.value),
+                style: ButtonStyle(
+                    minimumSize: MaterialStateProperty.all(Size(0, 0))),
+                onPressed: () => onPressed(list.sublist(0, e.key + 1)))
+            .marginSymmetric(horizontal: 4))));
     return breadCrumbList;
   }
 
@@ -787,8 +963,10 @@ class _FileManagerPageState extends State<FileManagerPage>
 
   onSearchText(String searchText, bool isLocal) {
     if (isLocal) {
+      _localSelectedItems.clear();
       _searchTextLocal.value = searchText;
     } else {
+      _remoteSelectedItems.clear();
       _searchTextRemote.value = searchText;
     }
   }
