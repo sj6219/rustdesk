@@ -37,6 +37,7 @@ class _DesktopHomePageState extends State<DesktopHomePage>
   @override
   bool get wantKeepAlive => true;
   var updateUrl = '';
+  StreamSubscription? _uniLinksSubscription;
 
   @override
   void onWindowClose() async {
@@ -414,7 +415,7 @@ class _DesktopHomePageState extends State<DesktopHomePage>
       final root = await bind.mainIsRoot();
       final release = await bind.mainIsRelease();
       if (Platform.isWindows && release && !installed && !root) {
-        msgBox('custom-elevation-nocancel', 'Prompt', 'elevation_prompt',
+        msgBox('custom-elevation-nocancel', 'Prompt', 'elevation_prompt', '',
             gFFI.dialogManager);
       }
     });
@@ -455,12 +456,14 @@ class _DesktopHomePageState extends State<DesktopHomePage>
     Future.delayed(Duration.zero, () {
       checkArguments();
     });
+    _uniLinksSubscription = listenUniLinks();
   }
 
   @override
   void dispose() {
     trayManager.removeListener(this);
     windowManager.removeListener(this);
+    _uniLinksSubscription?.cancel();
     super.dispose();
   }
 }
