@@ -58,16 +58,17 @@ fn keybd_event(flags: u32, vk: u16, scan: u16) -> DWORD {
     }
     let mut input = INPUT {
         type_: INPUT_KEYBOARD,
-        u: unsafe {
-            transmute_copy(&KEYBDINPUT {
+        u: Default::default(),
+    };
+    unsafe {
+    	*input.u.ki_mut() = KEYBDINPUT {
                 wVk: vk,
                 wScan: scan,
                 dwFlags: flags,
                 time: 0,
                 dwExtraInfo: ENIGO_INPUT_EXTRA_VALUE,
-            })
-        },
-    };
+                };
+    }
     unsafe { SendInput(1, &mut input as LPINPUT, size_of::<INPUT>() as c_int) }
 }
 
