@@ -167,12 +167,12 @@ impl Connection {
             port_forward_address: "".to_owned(),
             tx_to_cm,
             authorized: false,
-            keyboard: Config::get_option("enable-keyboard").is_empty(),
-            clipboard: Config::get_option("enable-clipboard").is_empty(),
-            audio: Config::get_option("enable-audio").is_empty(),
-            file: Config::get_option("enable-file-transfer").is_empty(),
-            restart: Config::get_option("enable-remote-restart").is_empty(),
-            recording: Config::get_option("enable-record-session").is_empty(),
+            keyboard: Connection::permission("enable-keyboard"),
+            clipboard: Connection::permission("enable-clipboard"),
+            audio: Connection::permission("enable-audio"),
+            file: Connection::permission("enable-file-transfer"),
+            restart: Connection::permission("enable-remote-restart"),
+            recording: Connection::permission("enable-record-session"),
             last_test_delay: 0,
             lock_after_session_end: false,
             show_remote_cursor: false,
@@ -713,7 +713,6 @@ impl Connection {
         #[allow(unused_mut)]
         let mut username = crate::platform::get_active_username();
         let mut res = LoginResponse::new();
-
         let mut pi = PeerInfo {
             username: username.clone(),
             conn_id: self.inner.id,
@@ -790,9 +789,13 @@ impl Connection {
             res.set_peer_info(pi);
         } else {
             try_activate_screen();
+            if let Some(msg_out) = super::video_service::is_inited_msg() {
+                self.send(msg_out).await;
+            }
+
             match super::video_service::get_displays().await {
                 Err(err) => {
-                    res.set_error(format!("X11 error: {}", err));
+                    res.set_error(format!("{}", err));
                 }
                 Ok((current, displays)) => {
                     pi.displays = displays.into();
@@ -972,6 +975,20 @@ impl Connection {
         false
     }
 
+    pub fn permission(enable_prefix_option: &str) -> bool {
+        #[cfg(feature = "flutter")]
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        {
+            let access_mode = Config::get_option("access-mode");
+            if access_mode == "full" {
+                return true;
+            } else if access_mode == "view" {
+                return false;
+            }
+        }
+        return Config::get_option(enable_prefix_option).is_empty();
+    }
+
     async fn on_message(&mut self, msg: Message) -> bool {
         if let Some(message::Union::LoginRequest(lr)) = msg.union {
         //..m::::::4
@@ -1002,7 +1019,7 @@ impl Connection {
             }
             match lr.union {
                 Some(login_request::Union::FileTransfer(ft)) => {
-                    if !Config::get_option("enable-file-transfer").is_empty() {
+                    if !Connection::permission("enable-file-transfer") {
                         self.send_login_error("No permission of file transfer")
                             .await;
                         sleep(1.).await;
@@ -1017,8 +1034,8 @@ impl Connection {
                         pf.port = 3389;
                         is_rdp = true;
                     }
-                    if is_rdp && !Config::get_option("enable-rdp").is_empty()
-                        || !is_rdp && !Config::get_option("enable-tunnel").is_empty()
+                    if is_rdp && !Connection::permission("enable-rdp")
+                        || !is_rdp && !Connection::permission("enable-tunnel")
                     {
                         if is_rdp {
                             self.send_login_error("No permission of RDP").await;
@@ -1355,16 +1372,25 @@ impl Connection {
                 if o.custom_image_quality > 0 {
                     image_quality = o.custom_image_quality;
                 } else {
-                    image_quality = ImageQuality::Balanced.value();
+                    image_quality = -1;
                 }
             } else {
                 image_quality = q.value();
             }
+            if image_quality > 0 {
+                video_service::VIDEO_QOS
+                    .lock()
+                    .unwrap()
+                    .update_image_quality(image_quality);
+            }
+        }
+        if o.custom_fps > 0 {
             video_service::VIDEO_QOS
                 .lock()
                 .unwrap()
-                .update_image_quality(image_quality);
+                .update_user_fps(o.custom_fps as _);
         }
+
         if let Ok(q) = o.lock_after_session_end.enum_value() {
             if q != BoolOption::NotSet {
                 self.lock_after_session_end = q == BoolOption::Yes;
@@ -1553,7 +1579,14 @@ async fn start_ipc(
         if crate::platform::is_root() {
             let mut res = Ok(None);
             for _ in 0..10 {
-                res = crate::platform::run_as_user("--cm");
+                #[cfg(not(target_os = "linux"))]
+                {
+                    res = crate::platform::run_as_user("--cm");
+                }
+                #[cfg(target_os = "linux")]
+                {
+                    res = crate::platform::run_as_user("--cm", None);
+                }
                 if res.is_ok() {
                     break;
                 }
