@@ -17,7 +17,6 @@ fn main() {
     common::global_clean();
 }
 
-
 #[cfg(not(any(target_os = "android", target_os = "ios", feature = "cli")))]
 fn main() {
     #[cfg(debug_assertions)]
@@ -73,7 +72,6 @@ fn main() {
     if !common::global_init() {
         return;
     }
-
     if let Some(args) = crate::core_main::core_main().as_mut() {
         ui::start(args);
     }
