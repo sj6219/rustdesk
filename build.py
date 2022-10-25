@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import os
+import pathlib
 import platform
 import zipfile
 import urllib.request
@@ -12,6 +13,7 @@ windows = platform.platform().startswith('Windows')
 osx = platform.platform().startswith('Darwin') or platform.platform().startswith("macOS")
 hbb_name = 'rustdesk' + ('.exe' if windows else '')
 exe_path = 'target/release/' + hbb_name
+flutter_win_target_dir = 'flutter/build/windows/runner/Release/'
 
 
 def get_version():
@@ -25,23 +27,23 @@ def get_version():
 def parse_rc_features(feature):
     available_features = {
         'IddDriver': {
-            'zip_url': 'https://github.com/fufesou/RustDeskIddDriver/releases/download/v0.1/RustDeskIddDriver_x64.zip',
-            'checksum_url': 'https://github.com/fufesou/RustDeskIddDriver/releases/download/v0.1'
-                            '/RustDeskIddDriver_x64.zip.checksum_md5',
+            'zip_url': 'https://github.com/fufesou/RustDeskIddDriver/releases/download/v0.1/RustDeskIddDriver_x64_pic_en.zip',
+            'checksum_url': 'https://github.com/fufesou/RustDeskTempTopMostWindow/releases/download/v0.1/checksum_md5',
         },
         'PrivacyMode': {
             'zip_url': 'https://github.com/fufesou/RustDeskTempTopMostWindow/releases/download/v0.1'
-                       '/TempTopMostWindow_x64.zip',
-            'checksum_url': 'https://github.com/fufesou/RustDeskTempTopMostWindow/releases/download/v0.1'
-                            '/TempTopMostWindow_x64.zip.checksum_md5',
+                       '/TempTopMostWindow_x64_pic_en.zip',
+            'checksum_url': 'https://github.com/fufesou/RustDeskTempTopMostWindow/releases/download/v0.1/checksum_md5',
         }
     }
     apply_features = {}
     if not feature:
-        return apply_features
-    elif isinstance(feature, str) and feature.upper() == 'ALL':
+        feature = []
+    if isinstance(feature, str) and feature.upper() == 'ALL':
         return available_features
     elif isinstance(feature, list):
+        # force add PrivacyMode
+        feature.append('PrivacyMode')
         for feat in feature:
             if isinstance(feat, str) and feat.upper() == 'ALL':
                 return available_features
@@ -71,7 +73,8 @@ def make_parser():
     parser.add_argument(
         '--hwcodec',
         action='store_true',
-        help='Enable feature hwcodec' + ('' if windows or osx else ', need libva-dev, libvdpau-dev.')
+        help='Enable feature hwcodec' + (
+            '' if windows or osx else ', need libva-dev, libvdpau-dev.')
     )
     parser.add_argument(
         '--portable',
@@ -81,39 +84,101 @@ def make_parser():
     return parser
 
 
+# Generate build script for docker
+#
+# it assumes all build dependencies are installed in environments
+# Note: do not use it in bare metal, or may break build environments
+def generate_build_script_for_docker():
+    with open("/tmp/build.sh", "w") as f:
+        f.write('''
+            #!/bin/bash
+            # environment
+            export CPATH="$(clang -v 2>&1 | grep "Selected GCC installation: " | cut -d' ' -f4-)/include"
+            # flutter
+            pushd /opt
+            wget https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_3.0.5-stable.tar.xz
+            tar -xvf flutter_linux_3.0.5-stable.tar.xz
+            export PATH=`pwd`/flutter/bin:$PATH
+            popd
+            # flutter_rust_bridge
+            dart pub global activate ffigen --version 5.0.1
+            pushd /tmp && git clone https://github.com/SoLongAndThanksForAllThePizza/flutter_rust_bridge --depth=1 && popd
+            pushd /tmp/flutter_rust_bridge/frb_codegen && cargo install --path . && popd
+            pushd flutter && flutter pub get && popd
+            ~/.cargo/bin/flutter_rust_bridge_codegen --rust-input ./src/flutter_ffi.rs --dart-output ./flutter/lib/generated_bridge.dart
+            # install vcpkg
+            pushd /opt
+            export VCPKG_ROOT=`pwd`/vcpkg
+            git clone https://github.com/microsoft/vcpkg
+            vcpkg/bootstrap-vcpkg.sh
+            vcpkg/vcpkg install libvpx libyuv opus
+            popd
+            # build rustdesk
+            ./build.py --flutter --hwcodec
+        ''')
+    os.system("chmod +x /tmp/build.sh")
+    os.system("bash /tmp/build.sh")
+
 def download_extract_features(features, res_dir):
+    proxy = ''
+
+    def req(url):
+        if not proxy:
+            return url
+        else:
+            r = urllib.request.Request(url)
+            r.set_proxy(proxy, 'http')
+            r.set_proxy(proxy, 'https')
+            return r
+
     for (feat, feat_info) in features.items():
         print(f'{feat} download begin')
-        checksum_md5_response = urllib.request.urlopen(feat_info['checksum_url'])
-        checksum_md5 = checksum_md5_response.read().decode('utf-8').split()[0]
         download_filename = feat_info['zip_url'].split('/')[-1]
-        filename, _headers = urllib.request.urlretrieve(feat_info['zip_url'], download_filename)
-        md5 = hashlib.md5(open(filename, 'rb').read()).hexdigest()
-        if checksum_md5 != md5:
-            raise Exception(f'{feat} download failed')
-        print(f'{feat} download end. extract bein')
-        zip_file = zipfile.ZipFile(filename)
-        zip_list = zip_file.namelist()
-        for f in zip_list:
-            zip_file.extract(f, res_dir)
-        zip_file.close()
-        os.remove(download_filename)
-        print(f'{feat} extract end')
+        checksum_md5_response = urllib.request.urlopen(req(feat_info['checksum_url']))
+        for line in checksum_md5_response.read().decode('utf-8').splitlines():
+            if line.split()[1] == download_filename:
+                checksum_md5 = line.split()[0]
+                filename, _headers = urllib.request.urlretrieve(feat_info['zip_url'],
+                                                                download_filename)
+                md5 = hashlib.md5(open(filename, 'rb').read()).hexdigest()
+                if checksum_md5 != md5:
+                    raise Exception(f'{feat} download failed')
+                print(f'{feat} download end. extract bein')
+                zip_file = zipfile.ZipFile(filename)
+                zip_list = zip_file.namelist()
+                for f in zip_list:
+                    zip_file.extract(f, res_dir)
+                zip_file.close()
+                os.remove(download_filename)
+                print(f'{feat} extract end')
 
 
 def get_rc_features(args):
+    flutter = args.flutter
     features = parse_rc_features(args.feature)
-    if features:
-        print(f'Build with features {list(features.keys())}')
-        res_dir = 'resources'
-        if os.path.isdir(res_dir) and not os.path.islink(res_dir):
-            shutil.rmtree(res_dir)
-        elif os.path.exists(res_dir):
-            raise Exception(f'Find file {res_dir}, not a directory')
-        os.makedirs(res_dir, exist_ok=True)
-        download_extract_features(features, res_dir)
-    return ['with_rc'] if features else []
-    
+    if not features:
+        return []
+
+    print(f'Build with features {list(features.keys())}')
+    res_dir = 'resources'
+    if os.path.isdir(res_dir) and not os.path.islink(res_dir):
+        shutil.rmtree(res_dir)
+    elif os.path.exists(res_dir):
+        raise Exception(f'Find file {res_dir}, not a directory')
+    os.makedirs(res_dir, exist_ok=True)
+    download_extract_features(features, res_dir)
+    if flutter:
+        os.makedirs(flutter_win_target_dir, exist_ok=True)
+        for f in pathlib.Path(res_dir).iterdir():
+            print(f'{f}')
+            if f.is_file():
+                shutil.copy2(f, flutter_win_target_dir)
+            else:
+                shutil.copytree(f, f'{flutter_win_target_dir}{f.stem}')
+        return []
+    else:
+        return ['with_rc']
+
 
 def get_features(args):
     features = ['inline']
@@ -125,6 +190,7 @@ def get_features(args):
         features.append('flutter')
     print("features:", features)
     return features
+
 
 def generate_control_file(version):
     control_file_path = "../res/DEBIAN/control"
@@ -143,10 +209,16 @@ Description: A remote control software.
     file.write(content)
     file.close()
 
-def build_flutter_deb(version):
-    os.system('cargo build --features default,flutter --lib --release')
+
+def ffi_bindgen_function_refactor():
     # workaround ffigen
-    os.system('sed -i "s/ffi.NativeFunction<ffi.Bool Function(DartPort/ffi.NativeFunction<ffi.Uint8 Function(DartPort/g" flutter/lib/generated_bridge.dart')
+    os.system(
+        'sed -i "s/ffi.NativeFunction<ffi.Bool Function(DartPort/ffi.NativeFunction<ffi.Uint8 Function(DartPort/g" flutter/lib/generated_bridge.dart')
+
+
+def build_flutter_deb(version, features):
+    os.system(f'cargo build --features {features} --lib --release')
+    ffi_bindgen_function_refactor()
     os.chdir('flutter')
     os.system('dpkg-deb -R rustdesk.deb tmpdeb')
     os.system('flutter build linux --release')
@@ -169,7 +241,8 @@ def build_flutter_deb(version):
         'cp ../res/rustdesk-link.desktop tmpdeb/usr/share/applications/rustdesk-link.desktop')
     os.system(
         'cp ../res/com.rustdesk.RustDesk.policy tmpdeb/usr/share/polkit-1/actions/')
-    os.system("echo \"#!/bin/sh\" >> tmpdeb/usr/share/rustdesk/files/polkit && chmod a+x tmpdeb/usr/share/rustdesk/files/polkit")
+    os.system(
+        "echo \"#!/bin/sh\" >> tmpdeb/usr/share/rustdesk/files/polkit && chmod a+x tmpdeb/usr/share/rustdesk/files/polkit")
 
     os.system('mkdir -p tmpdeb/DEBIAN')
     generate_control_file(version)
@@ -183,36 +256,41 @@ def build_flutter_deb(version):
     os.chdir("..")
 
 
-def build_flutter_arch_manjaro():
+def build_flutter_arch_manjaro(version, features):
+    os.system(f'cargo build --features {features} --lib --release')
+    ffi_bindgen_function_refactor()
     os.chdir('flutter')
     os.system('flutter build linux --release')
-    os.system('strip build/linux/x64/release/liblibrustdesk.so')
-    os.chdir('..')
-    os.system('HBB=`pwd` FLUTTER=1 makepkg -f')
+    os.system('strip build/linux/x64/release/bundle/lib/librustdesk.so')
+    os.chdir('../res')
+    os.system('HBB=`pwd`/.. FLUTTER=1 makepkg -f')
 
-def build_flutter_windows(version):
-    os.system("cargo build --lib --features flutter --release")
+
+def build_flutter_windows(version, features):
+    os.system(f'cargo build --features {features} --lib --release')
     os.chdir('flutter')
-    os.system("flutter build windows --release")
+    os.system('flutter build windows --release')
     os.chdir('..')
-    os.chdir("libs/portable")
-    os.system("pip3 install -r requirements.txt")
-    os.system("python3 .\\generate.py -f ..\\..\\flutter\\build\\windows\\runner\Release\ -o . -e ..\\..\\flutter\\build\\windows\\runner\\Release\\rustdesk.exe")
-    os.chdir("../..")
-    if os.path.exists("./rustdesk_portable.exe"):
-        os.replace("./target/release/rustdesk-portable-packer.exe", "./rustdesk_portable.exe")
+    os.chdir('libs/portable')
+    os.system('pip3 install -r requirements.txt')
+    os.system(
+        f'python3 ./generate.py -f ../../{flutter_win_target_dir} -o . -e ../../{flutter_win_target_dir}/rustdesk.exe')
+    os.chdir('../..')
+    if os.path.exists('./rustdesk_portable.exe'):
+        os.replace('./target/release/rustdesk-portable-packer.exe', './rustdesk_portable.exe')
     else:
-        os.rename("./target/release/rustdesk-portable-packer.exe", "./rustdesk_portable.exe")
-    print(f"output location: {os.path.abspath(os.curdir)}/rustdesk_portable.exe")
-    os.system(f"cp -rf ./rustdesk_portable.exe ./rustdesk-{version}-install.exe")
-    print(f"output location: {os.path.abspath(os.curdir)}/rustdesk-{version}-install.exe")
+        os.rename('./target/release/rustdesk-portable-packer.exe', './rustdesk_portable.exe')
+    print(f'output location: {os.path.abspath(os.curdir)}/rustdesk_portable.exe')
+    os.rename('./rustdesk_portable.exe', f'./rustdesk-{version}-install.exe')
+    print(f'output location: {os.path.abspath(os.curdir)}/rustdesk-{version}-install.exe')
+
 
 def main():
     parser = make_parser()
     args = parser.parse_args()
 
-    os.system("cp Cargo.toml Cargo.toml.bk")
-    os.system("cp src/main.rs src/main.rs.bk")
+    shutil.copy2('Cargo.toml', 'Cargo.toml.bk')
+    shutil.copy2('src/main.rs', 'src/main.rs.bk')
     if windows:
         txt = open('src/main.rs', encoding='utf8').read()
         with open('src/main.rs', 'wt', encoding='utf8') as fh:
@@ -223,51 +301,56 @@ def main():
     if os.path.isfile('/usr/bin/pacman'):
         os.system('git checkout src/ui/common.tis')
     version = get_version()
-    features = ",".join(get_features(args))
+    features = ','.join(get_features(args))
     flutter = args.flutter
     os.system('python3 res/inline-sciter.py')
     portable = args.portable
     if windows:
         if flutter:
-            build_flutter_windows(version)
+            build_flutter_windows(version, features)
             return
         os.system('cargo build --release --features ' + features)
         # os.system('upx.exe target/release/rustdesk.exe')
         os.system('mv target/release/rustdesk.exe target/release/RustDesk.exe')
         pa = os.environ.get('P')
         if pa:
-            os.system(f'signtool sign /a /v /p {pa} /debug /f .\\cert.pfx /t http://timestamp.digicert.com  '
-                      'target\\release\\rustdesk.exe')
+            os.system(
+                f'signtool sign /a /v /p {pa} /debug /f .\\cert.pfx /t http://timestamp.digicert.com  '
+                'target\\release\\rustdesk.exe')
         else:
             print('Not signed')
         os.system(f'cp -rf target/release/RustDesk.exe rustdesk-{version}-win7-install.exe')
     elif os.path.isfile('/usr/bin/pacman'):
         # pacman -S -needed base-devel
-        os.system("sed -i 's/pkgver=.*/pkgver=%s/g' PKGBUILD" % version)
+        os.system("sed -i 's/pkgver=.*/pkgver=%s/g' res/PKGBUILD" % version)
         if flutter:
-            build_flutter_arch_manjaro()
+            build_flutter_arch_manjaro(version, features)
         else:
             os.system('cargo build --release --features ' + features)
             os.system('git checkout src/ui/common.tis')
             os.system('strip target/release/rustdesk')
             os.system('ln -s res/pacman_install && ln -s res/PKGBUILD')
             os.system('HBB=`pwd` makepkg -f')
-        os.system('mv rustdesk-%s-0-x86_64.pkg.tar.zst rustdesk-%s-manjaro-arch.pkg.tar.zst' % (version, version))
+        os.system('mv rustdesk-%s-0-x86_64.pkg.tar.zst rustdesk-%s-manjaro-arch.pkg.tar.zst' % (
+        version, version))
         # pacman -U ./rustdesk.pkg.tar.zst
     elif os.path.isfile('/usr/bin/yum'):
         os.system('cargo build --release --features ' + features)
         os.system('strip target/release/rustdesk')
         os.system("sed -i 's/Version:    .*/Version:    %s/g' res/rpm.spec" % version)
         os.system('HBB=`pwd` rpmbuild -ba res/rpm.spec')
-        os.system('mv $HOME/rpmbuild/RPMS/x86_64/rustdesk-%s-0.x86_64.rpm ./rustdesk-%s-fedora28-centos8.rpm' % (
-            version, version))
+        os.system(
+            'mv $HOME/rpmbuild/RPMS/x86_64/rustdesk-%s-0.x86_64.rpm ./rustdesk-%s-fedora28-centos8.rpm' % (
+                version, version))
         # yum localinstall rustdesk.rpm
     elif os.path.isfile('/usr/bin/zypper'):
         os.system('cargo build --release --features ' + features)
         os.system('strip target/release/rustdesk')
         os.system("sed -i 's/Version:    .*/Version:    %s/g' res/rpm-suse.spec" % version)
         os.system('HBB=`pwd` rpmbuild -ba res/rpm-suse.spec')
-        os.system('mv $HOME/rpmbuild/RPMS/x86_64/rustdesk-%s-0.x86_64.rpm ./rustdesk-%s-suse.rpm' % (version, version))
+        os.system(
+            'mv $HOME/rpmbuild/RPMS/x86_64/rustdesk-%s-0.x86_64.rpm ./rustdesk-%s-suse.rpm' % (
+            version, version))
         # yum localinstall rustdesk.rpm
     else:
         os.system('cargo bundle --release --features ' + features)
@@ -278,7 +361,7 @@ def main():
             else:
                 os.system(
                     'mv target/release/bundle/deb/rustdesk*.deb ./flutter/rustdesk.deb')
-                build_flutter_deb(version)
+                build_flutter_deb(version, features)
         else:
             if osx:
                 os.system(
