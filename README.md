@@ -23,6 +23,8 @@ RustDesk welcomes contribution from everyone. See [`docs/CONTRIBUTING.md`](docs/
 
 [**BINARY DOWNLOAD**](https://github.com/rustdesk/rustdesk/releases)
 
+[**NIGHTLY BUILD**](https://github.com/rustdesk/rustdesk/releases/tag/nightly)
+
 [<img src="https://fdroid.gitlab.io/artwork/badge/get-it-on.png"
     alt="Get it on F-Droid"
     height="80">](https://f-droid.org/en/packages/com.carriez.flutter_hbb)
@@ -70,6 +72,11 @@ sudo apt install -y zip g++ gcc git curl wget nasm yasm libgtk-3-dev clang libxc
         libclang-dev ninja-build libayatana-appindicator3-1 libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libayatana-appindicator3-dev
 ```
 
+### openSUSE Tumbleweed 
+
+```sh
+sudo zypper install gcc-c++ git curl wget nasm yasm gcc gtk3-devel clang libxcb-devel libXfixes-devel cmake alsa-lib-devel gstreamer-devel gstreamer-plugins-base-devel xdotool-devel
+```
 ### Fedora 28 (CentOS 8)
 
 ```sh
