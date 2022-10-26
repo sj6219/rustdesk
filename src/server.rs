@@ -27,9 +27,11 @@ cfg_if::cfg_if! {
 if #[cfg(not(any(target_os = "android", target_os = "ios")))] {
 mod clipboard_service;
 #[cfg(target_os = "linux")]
-mod wayland;
+pub(crate) mod wayland;
 #[cfg(target_os = "linux")]
 pub mod uinput;
+#[cfg(target_os = "linux")]
+pub mod dbus;
 pub mod input_service;
 } else {
 mod clipboard_service {

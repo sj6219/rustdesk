@@ -190,7 +190,8 @@ pub async fn set_uinput() -> ResultType<()> {
     let mouse = super::uinput::client::UInputMouse::new().await?;
     log::info!("UInput mouse created");
 
-    let mut en = ENIGO.lock().unwrap();
+    let xxx = ENIGO.lock();
+    let mut en = xxx.unwrap();
     en.set_uinput_keyboard(Some(Box::new(keyboard)));
     en.set_uinput_mouse(Some(Box::new(mouse)));
     Ok(())
@@ -604,6 +605,10 @@ fn rdev_key_down_or_up(key: RdevKey, down_or_up: bool) {
         false => EventType::KeyRelease(key),
     };
     let delay = std::time::Duration::from_millis(20);
+    //..w======2.
+    #[cfg(debug_assertions)]
+    log::error!("rdev {:?}", &event_type);
+
     match simulate(&event_type) {
         Ok(()) => (),
         Err(_simulate_error) => {

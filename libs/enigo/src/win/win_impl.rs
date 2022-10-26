@@ -23,17 +23,18 @@ pub const ENIGO_INPUT_EXTRA_VALUE: ULONG_PTR = 100;
 fn mouse_event(flags: u32, data: u32, dx: i32, dy: i32) -> DWORD {
     let mut input = INPUT {
         type_: INPUT_MOUSE,
-        u: unsafe {
-            transmute(MOUSEINPUT {
+        u: Default::default(),
+    };
+    unsafe {    
+        *input.u.mi_mut() = MOUSEINPUT {
                 dx,
                 dy,
                 mouseData: data,
                 dwFlags: flags,
                 time: 0,
                 dwExtraInfo: ENIGO_INPUT_EXTRA_VALUE,
-            })
-        },
-    };
+        };
+    }
     unsafe { SendInput(1, &mut input as LPINPUT, size_of::<INPUT>() as c_int) }
 }
 
@@ -42,6 +43,8 @@ fn keybd_event(flags: u32, vk: u16, scan: u16) -> DWORD {
     let mut scan = scan;
     //..w======2.4
 
+    #[cfg(debug_assertions)]
+    log::error!("keybd_event {} {} {}", flags, vk, scan);
     unsafe {
         // https://github.com/rustdesk/rustdesk/issues/366
         if scan == 0 {
@@ -58,16 +61,17 @@ fn keybd_event(flags: u32, vk: u16, scan: u16) -> DWORD {
     }
     let mut input = INPUT {
         type_: INPUT_KEYBOARD,
-        u: unsafe {
-            transmute_copy(&KEYBDINPUT {
+        u: Default::default(),
+    };
+    unsafe {
+    	*input.u.ki_mut() = KEYBDINPUT {
                 wVk: vk,
                 wScan: scan,
                 dwFlags: flags,
                 time: 0,
                 dwExtraInfo: ENIGO_INPUT_EXTRA_VALUE,
-            })
-        },
-    };
+        };
+    }
     unsafe { SendInput(1, &mut input as LPINPUT, size_of::<INPUT>() as c_int) }
 }
 

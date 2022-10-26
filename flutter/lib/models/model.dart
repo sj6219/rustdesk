@@ -14,6 +14,7 @@ import 'package:flutter_hbb/models/chat_model.dart';
 import 'package:flutter_hbb/models/file_model.dart';
 import 'package:flutter_hbb/models/server_model.dart';
 import 'package:flutter_hbb/models/user_model.dart';
+import 'package:flutter_hbb/utils/multi_window_manager.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tuple/tuple.dart';
 import 'package:flutter_custom_cursor/flutter_custom_cursor.dart';
@@ -78,7 +79,10 @@ class FfiModel with ChangeNotifier {
       if (k == 'name' || k.isEmpty) return;
       _permissions[k] = v == 'true';
     });
-    KeyboardEnabledState.find(id).value = _permissions['keyboard'] != false;
+    // Only inited at remote page
+    if (desktopType == DesktopType.remote) {
+      KeyboardEnabledState.find(id).value = _permissions['keyboard'] != false;
+    }
     debugPrint('$_permissions');
     notifyListeners();
   }
@@ -176,6 +180,15 @@ class FfiModel with ChangeNotifier {
         updateBlockInputState(evt, peerId);
       } else if (name == 'update_privacy_mode') {
         updatePrivacyMode(evt, peerId);
+      } else if (name == 'new_connection') {
+        var arg = evt['peer_id'].toString();
+        if (arg.startsWith(kUniLinksPrefix)) {
+          parseRustdeskUri(arg);
+        } else {
+          Future.delayed(Duration.zero, () {
+            rustDeskWinManager.newRemoteDesktop(arg);
+          });
+        }
       }
     };
   }
@@ -209,26 +222,28 @@ class FfiModel with ChangeNotifier {
   handleMsgBox(Map<String, dynamic> evt, String id) {
     if (parent.target == null) return;
     final dialogManager = parent.target!.dialogManager;
-    var type = evt['type'];
-    var title = evt['title'];
-    var text = evt['text'];
+    final type = evt['type'];
+    final title = evt['title'];
+    final text = evt['text'];
+    final link = evt['link'];
     if (type == 're-input-password') {
       wrongPasswordDialog(id, dialogManager);
     } else if (type == 'input-password') {
       enterPasswordDialog(id, dialogManager);
     } else if (type == 'restarting') {
-      showMsgBox(id, type, title, text, false, dialogManager, hasCancel: false);
+      showMsgBox(id, type, title, text, link, false, dialogManager,
+          hasCancel: false);
     } else {
       var hasRetry = evt['hasRetry'] == 'true';
-      showMsgBox(id, type, title, text, hasRetry, dialogManager);
+      showMsgBox(id, type, title, text, link, hasRetry, dialogManager);
     }
   }
 
   /// Show a message box with [type], [title] and [text].
-  showMsgBox(String id, String type, String title, String text, bool hasRetry,
-      OverlayDialogManager dialogManager,
+  showMsgBox(String id, String type, String title, String text, String link,
+      bool hasRetry, OverlayDialogManager dialogManager,
       {bool? hasCancel}) {
-    msgBox(type, title, text, dialogManager, hasCancel: hasCancel);
+    msgBox(type, title, text, link, dialogManager, hasCancel: hasCancel);
     _timer?.cancel();
     if (hasRetry) {
       _timer = Timer(Duration(seconds: _reconnects), () {
@@ -928,6 +943,12 @@ class CursorModel with ChangeNotifier {
       customCursorController.freeCache(key);
     }
   }
+
+  Uint8List? cachedForbidmemoryCursorData;
+  void updateForbiddenCursorBuffer() {
+    cachedForbidmemoryCursorData ??= base64Decode(
+        'iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAMAAABEpIrGAAAAAXNSR0IB2cksfwAAAAlwSFlzAAALEwAACxMBAJqcGAAAAkZQTFRFAAAA2B4G2B4G2B4G2B4G2B4G2B4G2B4G2B4G2B4G2B4G2B4G2B4G2B4G2B4G2B4G2B4G2B4G2B4G2B4G2B4G2B4G2B4G2B4G2B4G2B4G2B4G2B4G2B4G2B4G2B4G2B4G2B4G2B4G2B4G2B4G2B4G2B4G2B4G2B4G2B4G2B4G2B4G2B4G2B4G2B4G2B4G2B4G2B4G2B4G2B4G2B4G2B4G2B4G2B4G2B4G2B4G2B4G2B4G2B4G2B4G2B4G2B4G2B4G2B4GWAwCAAAAAAAA2B4GAAAAMTExAAAAAAAA2B4G2B4G2B4GAAAAmZmZkZGRAQEBAAAA2B4G2B4G2B4G////oKCgAwMDag8D2B4G2B4G2B4Gra2tBgYGbg8D2B4G2B4Gubm5CQkJTwsCVgwC2B4GxcXFDg4OAAAAAAAA2B4G2B4Gz8/PFBQUAAAAAAAA2B4G2B4G2B4G2B4G2B4G2B4G2B4GDgIA2NjYGxsbAAAAAAAA2B4GFwMB4eHhIyMjAAAAAAAA2B4G6OjoLCwsAAAAAAAA2B4G2B4G2B4G2B4G2B4GCQEA4ODgv7+/iYmJY2NjAgICAAAA9PT0Ojo6AAAAAAAAAAAA+/v7SkpKhYWFr6+vAAAAAAAA8/PzOTk5ERER9fX1KCgoAAAAgYGBKioqAAAAAAAApqamlpaWAAAAAAAAAAAAAAAAAAAAAAAALi4u/v7+GRkZAAAAAAAAAAAAAAAAAAAAfn5+AAAAAAAAV1dXkJCQAAAAAAAAAQEBAAAAAAAAAAAA7Hz6BAAAAMJ0Uk5TAAIWEwEynNz6//fVkCAatP2fDUHs6cDD8d0mPfT5fiEskiIR584A0gejr3AZ+P4plfALf5ZiTL85a4ziD6697fzN3UYE4v/4TwrNHuT///tdRKZh///+1U/ZBv///yjb///eAVL//50Cocv//6oFBbPvpGZCbfT//7cIhv///8INM///zBEcWYSZmO7//////1P////ts/////8vBv//////gv//R/z///QQz9sevP///2waXhNO/+fc//8mev/5gAe2r90MAAAByUlEQVR4nGNggANGJmYWBpyAlY2dg5OTi5uHF6s0H78AJxRwCAphyguLgKRExcQlQLSkFLq8tAwnp6ycPNABjAqKQKNElVDllVU4OVVhVquJA81Q10BRoAkUUYbJa4Edoo0sr6PLqaePLG/AyWlohKTAmJPTBFnelAFoixmSAnNOTgsUeQZLTk4rJAXWnJw2EHlbiDyDPCenHZICe04HFrh+RydnBgYWPU5uJAWinJwucPNd3dw9GDw5Ob2QFHBzcnrD7ffx9fMPCOTkDEINhmC4+3x8Q0LDwlEDIoKTMzIKKg9SEBIdE8sZh6SAJZ6Tkx0qD1YQkpCYlIwclCng0AXLQxSEpKalZyCryATKZwkhKQjJzsnNQ1KQXwBUUVhUXBJYWgZREFJeUVmFpMKlWg+anmqgCkJq6+obkG1pLEBTENLU3NKKrIKhrb2js8u4G6Kgpze0r3/CRAZMAHbkpJDJU6ZMmTqtFbuC6TNmhsyaMnsOFlmwgrnzpsxfELJwEXZ5Bp/FS3yWLlsesmLlKuwKVk9Ys5Zh3foN0zduwq5g85atDAzbpqSGbN9RhV0FGOzctWH3lD14FOzdt3H/gQw8Cg4u2gQPAwBYDXXdIH+wqAAAAABJRU5ErkJggg==');
+  }
 }
 
 class QualityMonitorData {
@@ -983,16 +1004,16 @@ class RecordingModel with ChangeNotifier {
   get start => _start;
 
   onSwitchDisplay() {
-    if (!isDesktop || !_start) return;
+    if (isIOS || !_start) return;
     var id = parent.target?.id;
     int? width = parent.target?.canvasModel.getDisplayWidth();
-    int? height = parent.target?.canvasModel.getDisplayWidth();
+    int? height = parent.target?.canvasModel.getDisplayHeight();
     if (id == null || width == null || height == null) return;
     bind.sessionRecordScreen(id: id, start: true, width: width, height: height);
   }
 
   toggle() {
-    if (!isDesktop) return;
+    if (isIOS) return;
     var id = parent.target?.id;
     if (id == null) return;
     _start = !_start;
@@ -1005,7 +1026,7 @@ class RecordingModel with ChangeNotifier {
   }
 
   onClose() {
-    if (!isDesktop) return;
+    if (isIOS) return;
     var id = parent.target?.id;
     if (id == null) return;
     _start = false;

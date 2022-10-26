@@ -134,6 +134,11 @@ impl<T: InvokeUiSession> Session<T> {
         }
     }
 
+    pub fn set_custom_fps(&mut self, custom_fps: i32) {
+        let msg = self.lc.write().unwrap().set_custom_fps(custom_fps);
+        self.send(Data::Message(msg));
+    }
+
     pub fn get_remember(&self) -> bool {
         self.lc.read().unwrap().remember
     }
@@ -302,6 +307,8 @@ impl<T: InvokeUiSession> Session<T> {
         //..m=====1.4
 
         msg_out.set_key_event(evt);
+        #[cfg(debug_assertions)]
+        log::error!("send_key_event {:?}", msg_out);
         self.send(Data::Message(msg_out));
     }
 
@@ -466,12 +473,14 @@ impl<T: InvokeUiSession> Session<T> {
         let peer = self.peer_platform();
         let is_win = peer == "Windows";
 
-        let alt = get_key_state(enigo::Key::Alt);
+        //let alt = get_key_state(enigo::Key::Alt);
+        let alt = get_hotkey_state(RdevKey::Alt);
         #[cfg(windows)]
         let ctrl = {
             let mut tmp =
-                get_key_state(enigo::Key::Control) || get_key_state(enigo::Key::RightControl);
-            unsafe {
+                //get_key_state(enigo::Key::Control) || get_key_state(enigo::Key::RightControl);
+                get_hotkey_state(RdevKey::ControlLeft) || get_hotkey_state(RdevKey::ControlRight);
+                unsafe {
                 if IS_ALT_GR {
                     if alt || key == RdevKey::AltGr {
                         if tmp {
@@ -486,9 +495,11 @@ impl<T: InvokeUiSession> Session<T> {
         };
         #[cfg(not(windows))]
         let ctrl = get_key_state(enigo::Key::Control) || get_key_state(enigo::Key::RightControl);
-        let shift = get_key_state(enigo::Key::Shift) || get_key_state(enigo::Key::RightShift);
+        //let shift = get_key_state(enigo::Key::Shift) || get_key_state(enigo::Key::RightShift);
+        let shift = get_hotkey_state(RdevKey::ShiftLeft) || get_hotkey_state(RdevKey::ShiftRight);
         #[cfg(windows)]
-        let command = crate::platform::windows::get_win_key_state();
+        //let command = crate::platform::windows::get_win_key_state();
+        let command = get_hotkey_state(RdevKey::MetaLeft);
         #[cfg(not(windows))]
         let command = get_key_state(enigo::Key::Meta);
         let control_key = match key {
@@ -590,17 +601,6 @@ impl<T: InvokeUiSession> Session<T> {
 
         let mut key_event = KeyEvent::new();
         if let Some(k) = control_key {
-            //..
-            #[cfg(target_os = "macos")]
-            let k = match k {
-                ControlKey::Control => ControlKey::Meta,
-                ControlKey::Meta => ControlKey::Control,
-                ControlKey::RControl => ControlKey::RWin,
-                ControlKey::RWin => ControlKey::RControl,
-                ControlKey::Alt => ControlKey::RAlt,
-                ControlKey::RAlt => ControlKey::Alt,
-                _ => k,
-            };
             key_event.set_control_key(k);
         } else {
             let mut chr = match evt.name {
@@ -702,6 +702,18 @@ impl<T: InvokeUiSession> Session<T> {
 
         #[cfg(not(windows))]
         let key = self.convert_numpad_keys(key);
+
+        //..
+        #[cfg(target_os = "macos")]
+        let key = match key {
+            RdevKey::ControlLeft => RdevKey::MetaLeft,
+            RdevKey::MetaLeft => RdevKey::ControlLeft,
+            RdevKey::ControlRight => RdevKey::MetaRight,
+            RdevKey::MetaRight => RdevKey::ControlRight,
+            RdevKey::Alt => RdevKey::AltGr,
+            RdevKey::AltGr => RdevKey::Alt,
+            _ => key,
+        };
 
         match mode {
             KeyboardMode::Map => {
@@ -1109,7 +1121,7 @@ pub trait InvokeUiSession: Send + Sync + Clone + 'static + Sized + Default {
     fn job_progress(&self, id: i32, file_num: i32, speed: f64, finished_size: f64);
     fn adapt_size(&self);
     fn on_rgba(&self, data: &[u8]);
-    fn msgbox(&self, msgtype: &str, title: &str, text: &str, retry: bool);
+    fn msgbox(&self, msgtype: &str, title: &str, text: &str, link: &str, retry: bool);
     #[cfg(any(target_os = "android", target_os = "ios"))]
     fn clipboard(&self, content: String);
 }
@@ -1158,9 +1170,9 @@ impl<T: InvokeUiSession> Interface for Session<T> {
         self.lc.read().unwrap().conn_type.eq(&ConnType::RDP)
     }
 
-    fn msgbox(&self, msgtype: &str, title: &str, text: &str) {
+    fn msgbox(&self, msgtype: &str, title: &str, text: &str, link: &str) {
         let retry = check_if_retry(msgtype, title, text);
-        self.ui_handler.msgbox(msgtype, title, text, retry);
+        self.ui_handler.msgbox(msgtype, title, text, link, retry);
     }
 
     fn handle_login_error(&mut self, err: &str) -> bool {
@@ -1185,7 +1197,7 @@ impl<T: InvokeUiSession> Interface for Session<T> {
             if pi.displays.is_empty() {
                 self.lc.write().unwrap().handle_peer_info(&pi);
                 self.update_privacy_mode();
-                self.msgbox("error", "Remote Error", "No Display");
+                self.msgbox("error", "Remote Error", "No Display", "");
                 return;
             }
             let p = self.lc.read().unwrap().should_auto_login();
@@ -1202,7 +1214,12 @@ impl<T: InvokeUiSession> Interface for Session<T> {
         if self.is_file_transfer() {
             self.close_success();
         } else if !self.is_port_forward() {
-            self.msgbox("success", "Successful", "Connected, waiting for image...");
+            self.msgbox(
+                "success",
+                "Successful",
+                "Connected, waiting for image...",
+                "",
+            );
         }
         #[cfg(windows)]
         {

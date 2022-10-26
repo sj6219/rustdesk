@@ -10,13 +10,17 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_hbb/desktop/widgets/tabbar_widget.dart';
+import 'package:flutter_hbb/main.dart';
 import 'package:flutter_hbb/models/peer_model.dart';
 import 'package:flutter_hbb/utils/multi_window_manager.dart';
 import 'package:get/get.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:uni_links/uni_links.dart';
+import 'package:uni_links_desktop/uni_links_desktop.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:window_size/window_size.dart' as window_size;
+import 'package:url_launcher/url_launcher.dart';
 
 import 'common/widgets/overlay.dart';
 import 'mobile/pages/file_manager_page.dart';
@@ -37,26 +41,30 @@ var isWeb = false;
 var isWebDesktop = false;
 var version = "";
 int androidVersion = 0;
-const windowPrefix = "wm_";
 DesktopType? desktopType;
+
+/// * debug or test only, DO NOT enable in release build
+bool isTest = false;
 
 typedef F = String Function(String);
 typedef FMethod = String Function(String, dynamic);
 
 typedef StreamEventHandler = Future<void> Function(Map<String, dynamic>);
 
-late final iconKeyboard = MemoryImage(Uint8List.fromList(base64Decode(
+final iconKeyboard = MemoryImage(Uint8List.fromList(base64Decode(
     "iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAMAAABEpIrGAAAAgVBMVEUAAAD///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////9d3yJTAAAAKnRSTlMA0Gd/0y8ILZgbJffDPUwV2nvzt+TMqZxyU7CMb1pYQyzsvKunkXE4AwJnNC24AAAA+0lEQVQ4y83O2U7DMBCF4ZMxk9rZk26kpQs7nPd/QJy4EiLbLf01N5Y/2YP/qxDFQvGB5NPC/ZpVnfJx4b5xyGfF95rkHvNCWH1u+N6J6T0sC7gqRy8uGPfBLEbozPXUjlkQKwGaFPNizwQbwkx0TDvhCii34ExZCSQVBdzIOEOyeclSHgBGXkpeygXSQgStACtWx4Z8rr8COHOvfEP/IbbsQAToFUAAV1M408IIjIGYAPoCSNRP7DQutfQTqxuAiH7UUg1FaJR2AGrrx52sK2ye28LZ0wBAEyR6y8X+NADhm1B4fgiiHXbRrTrxpwEY9RdM9wsepnvFHfUDwYEeiwAJr/gAAAAASUVORK5CYII=")));
-late final iconClipboard = MemoryImage(Uint8List.fromList(base64Decode(
+final iconClipboard = MemoryImage(Uint8List.fromList(base64Decode(
     'iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAMAAABEpIrGAAAAjVBMVEUAAAD///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////8DizOFAAAALnRSTlMAnIsyZy8YZF3NSAuabRL34cq6trCScyZ4qI9CQDwV+fPl2tnTwzkeB+m/pIFK/Xx0ewAAAQlJREFUOMudktduhDAQRWep69iY3tle0+7/f16Qg7MsJUQ5Dwh8jzRzhemJPIaf3GiW7eFQfOwDPp1ek/iMnKgBi5PrhJAhZAa1lCxE9pw5KWMswOMAQXuQOvqTB7tLFJ36wimKLrufZTzUaoRtdthqRA2vEwS+tR4qguiElRKk1YMrYfUQRkwLmwVBYDMvJKF8R0o3V2MOhNrfo+hXSYYjPn1L/S+n438t8gWh+q1F+cYFBMm1Jh8Ia7y2OWXQxMMRLqr2eTc1crSD84cWfEGwYM4LlaACEee2ZjsQXJxR3qmYb+GpC8ZfNM5oh3yxxbxgQE7lEkb3ZvvH1BiRHn1bu02ICcKGWr4AudUkyYxmvywAAAAASUVORK5CYII=')));
-late final iconAudio = MemoryImage(Uint8List.fromList(base64Decode(
+final iconAudio = MemoryImage(Uint8List.fromList(base64Decode(
     'iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAMAAABEpIrGAAAAk1BMVEUAAAD////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////ROyVeAAAAMHRSTlMAgfz08DDqCAThvraZjEcoGA751JxzbGdfTRP25NrIpaGTcEM+HAvMuKinhXhWNx9Yzm/gAAABFUlEQVQ4y82S2XLCMAxFheMsQNghCQFalkL39vz/11V4GpNk0r629+Va1pmxPFfyh1ravOP2Y1ydJmBO0lYP3r+PyQ62s2Y7fgF6VRXOYdToT++ogIuoVhCUtX7YpwJG3F8f6V8rr3WABwwUahlEvr8y3IBniGKdKYBQ5OGQpukQakBpIVcfwptIhJcf8hWGakdndAAhBInIGHbdQGJg6jjbDUgEE5EpmB+AAM4uj6gb+AQT6wdhITLvAHJ4VCtgoAlG1tpNA0gWON/f4ioHdSADc1bfgt+PZFkDlD6ojWF+kVoaHlhvFjPHuVRrefohY1GdcFm1N8JvwEyrJ/X2Th2rIoVgIi3Fo6Xf0z5k8psKu5f/oi+nHjjI92o36AAAAABJRU5ErkJggg==')));
-late final iconFile = MemoryImage(Uint8List.fromList(base64Decode(
+final iconFile = MemoryImage(Uint8List.fromList(base64Decode(
     'iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAMAAADVRocKAAAAUVBMVEUAAAD///////////////////////////////////////////////////////////////////////////////////////////////////////8IN+deAAAAGnRSTlMAH+CAESEN8jyZkcIb5N/ONy3vmHhmiGjUm7UwS+YAAAHZSURBVGje7dnbboMwDIBhBwgQoFAO7Ta//4NOqCAXYZQstatq4r+r5ubrgQSpg8iyC4ZURa+PlIpQYGiwrzyeHtYZjAL8T05O4H8BbbKvFgRa4NoBU8pXeYEkDDgaaLQBcwJrmeErJQB/7wes3QBWGnCIX0+AQycL1PO6BMwPa0nA4ZxbgTvOjUYMGPHRnZkQAY4mxPZBjmy53E7ukSkFKYB/D4XsWZQx64sCeYebOogGsoOBYvv6/UCb8F0IOBZ0TlP6lEYdANY350AJqB9/qPVuOI5evw4A1hgLigAlepnyxW80bcCcwN++A2s82Vcu02ta+ceq9BoL5KGTTRwQPlpqA3gCnwWU2kCDgeWRQPj2jAPCDxgCMjhI6uZnToDpvd/BJeFrJQB/fsAa02gCt3mi1wNuy8GgBNDZlysBNNSrADVSjcJl6vCpUn6jOdx0kz0q6PMhQRa4465SFKhx35cgUCBTwj2/NHwZAb71qR8GEP2H1XcmAtBPTEO67GP6FUUAIKGABbDLQ0EArhN2sAIGesRO+iyy+RMAjckVTlMCKFVAbh/4Af9OPgG61SkDVco3BQGT3GXaDAnTIAcYZDuBTwGsAGDxuBFeAQqIqwoFMlAVLrHr/wId5MPt0nilGgAAAABJRU5ErkJggg==')));
-late final iconRestart = MemoryImage(Uint8List.fromList(base64Decode(
+final iconRestart = MemoryImage(Uint8List.fromList(base64Decode(
     'iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAACXBIWXMAAB7BAAAewQHDaVRTAAAAGXRFWHRTb2Z0d2FyZQB3d3cuaW5rc2NhcGUub3Jnm+48GgAAAbhJREFUWIXVlrFqFGEUhb+7UYxaWCQKlrKKxaZSQVGDJih2tj6MD2DnMwiWvoAIRnENIpZiYxEro6IooiS7SPwsMgNLkk3mjmYmnmb45/73nMNwz/x/qH3gMu2gH6rAU+Blw+Lngau4jpmGxVF7qp1iPWjaQKnZ2WnXbuP/NqAeUPc3ZkA9XDwvqc+BVWCgPlJ7tRwUKThZce819b46VH+pfXVRXVO/q2cSul3VOgZUl0ejq86r39TXI8mqZKDuDEwCw3IREQvAbWAGmMsQZQ0sAl3gHPB1Q+0e8BuYzRDuy2yOiFVgaUxtRf0ETGc4syk4rc6PqU0Cx9j8Zf6dAeAK8Fi9sUXtFjABvEgxJlNwRP2svlNPjbw/q35U36oTFbnyMSwabxb/gB/qA3VBHagrauV7RW0DRfP1IvMlXqkXkhz1DYyQTKtHa/Z2VVMx3IiI+PI3/bCHjuOpFrSnAMpL6QfgTcMGesDx0kBr2BMzsNyi/vtQu8CJlgwsRbZDnWP90NkKaxHxJMOXMqAeAn5u0ydwMCKGY+qbkB3C2W3EKWoXk5zVoHbUZ+6Mh7tl4G4F8RJ3qvL+AfV3r5Vdpj70AAAAAElFTkSuQmCC')));
-late final iconRecording = MemoryImage(Uint8List.fromList(base64Decode(
+final iconRecording = MemoryImage(Uint8List.fromList(base64Decode(
     'iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAAXNSR0IArs4c6QAAANpJREFUWEftltENAiEMhtsJ1NcynG6gI+gGugEOR591gppeQoIYSDBILxEeydH/57u2FMF4obE+TAOTwLoIhBDOAHBExG2n6rgR0akW640AM0sn4SWMiDycc7s8JjN7Ijro/k8NqAAR5RoeAPZxv2ggP9hCJiWZxtGbq3hqbJiBVHy4gVx8qAER8Yi4JFy6huVAKXemgb8icI+1b5KEitq0DOO/Nm1EEX1TK27p/bVvv36MOhl4EtHHbFF7jq8AoG1z08OAiFycczrkFNe6RrIet26NMQlMAuYEXiayryF/QQktAAAAAElFTkSuQmCC')));
+final iconHardDrive = MemoryImage(Uint8List.fromList(base64Decode(
+    'iVBORw0KGgoAAAANSUhEUgAAAMgAAADICAMAAACahl6sAAAAmVBMVEUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAjHWqVAAAAMnRSTlMAv0BmzLJNXlhiUu2fxXDgu7WuSUUe29LJvpqUjX53VTstD7ilNujCqTEk5IYH+vEoFjKvAagAAAPpSURBVHja7d0JbhpBEIXhB3jYzb5vBgzYgO04df/DJXGUKMwU9ECmZ6pQfSfw028LCXW3YYwxxhhjjDHGGGOM0eZ9VV1MckdKWLM1bRQ/35GW/WxHHu1me6ShuyHvNl34VhlTKsYVeDWj1EzgUZ1S1DrAk/UDparZgxd9Sl0BHnxSBhpI3jfKQG2FpLUpE69I2ILikv1nsvygjBwPSNKYMlNHggqUoSKS80AZCnwHqQ1zCRvW+CRegwRFeFAMKKrtM8gTPJlzSfwFgT9dJom3IDN4VGaSeAryAK8m0SSeghTg1ZYiql6CjBDhO8mzlyAVhKhIwgXxrh5NojGIhyRckEdwpCdhgpSQgiWTRGMQNonGIGySp0SDvMDBX5KWxiB8Eo1BgE00SYJBykhNnkmSWJAcLpGaJNMgfJKyxiDAK4WNEwryhMtkJsk8CJtEYxA+icYgQIfCcgkEqcJNXhIRQdgkGoPwSTQG+e8khdu/7JOVREwQIKCwF41B2CQljUH4JLcH6SI+OUlEBQHa0SQag/BJNAbhkjxqDMIn0RgEeI4muSlID9eSkERgEKAVTaIxCJ9EYxA2ydVB8hCASVLRGAQYR5NoDMIn0RgEyFHYSGMQPonGII4kziCNvBgNJonEk4u3GAk8Sprk6eYaqbMDY0oKvUm5jfC/viGiSypV7+M3i2iDsAGpNEDYjlTa3W8RdR/r544g50ilnA0RxoZIE2NIXqQbhkAkGyKNDZHGhkhjQ6SxIdLYEGlsiDQ2JGTVeD0264U9zipPh7XOooffpA6pfNCXjxl4/c3pUzlChwzor53zwYYVfpI5pOV6LWFF/2jiJ5FDSs5jdY/0rwUAkUMeXWdBqnSqD0DikBqdqCHsjTvELm9In0IOri/0pwAEDtlSyNaRjAIAAoesKWTtuusxByBwCJp0oomwBXcYUuCQgE50ENajE4OvZAKHLB1/68Br5NqiyCGYOY8YRd77kTkEb64n7lZN+mOIX4QOwb5FX0ZVx3uOxwW+SB0CbBubemWP8/rlaaeRX+M3uUOuZENsiA25zIbYkPsZElBIHwL13U/PTjJ/cyOOEoVM3I+hziDQlELm7pPxw3eI8/7gPh1fpLA6xGnEeDDgO0UcIAzzM35HxLPIq5SXe9BLzOsj9eUaQqyXzxS1QFSfWM2cCANiHcAISJ0AnCKpUwTuIkkA3EeSInAXSQKcs1V18e24wlllUmQp9v9zXKeHi+akRAMOPVKhAqdPBZeUmnnEsO6QcJ0+4qmOSbBxFfGVRiTUqITrdKcCbyYO3/K4wX4+aQ+FfNjXhu3JfAVjjDHGGGOMMcYYY4xIPwCgfqT6TbhCLAAAAABJRU5ErkJggg==')));
 
 enum DesktopType {
   main,
@@ -618,8 +626,8 @@ class CustomAlertDialog extends StatelessWidget {
   }
 }
 
-void msgBox(
-    String type, String title, String text, OverlayDialogManager dialogManager,
+void msgBox(String type, String title, String text, String link,
+    OverlayDialogManager dialogManager,
     {bool? hasCancel}) {
   dialogManager.dismissAll();
   List<Widget> buttons = [];
@@ -634,6 +642,12 @@ void msgBox(
 
   cancel() {
     dialogManager.dismissAll();
+  }
+
+  jumplink() {
+    if (link.startsWith('http')) {
+      launchUrl(Uri.parse(link));
+    }
   }
 
   if (type != "connecting" && type != "success" && !type.contains("nook")) {
@@ -654,9 +668,13 @@ void msgBox(
           dialogManager.dismissAll();
         }));
   }
+  if (link.isNotEmpty) {
+    buttons.insert(0, msgBoxButton(translate('JumpLink'), jumplink));
+  }
   dialogManager.show((setState, close) => CustomAlertDialog(
         title: _msgBoxTitle(title),
-        content: Text(translate(text), style: const TextStyle(fontSize: 15)),
+        content: SelectableText(translate(text),
+            style: const TextStyle(fontSize: 15)),
         actions: buttons,
         onSubmit: hasOk ? submit : null,
         onCancel: hasCancel == true ? cancel : null,
@@ -956,16 +974,18 @@ class LastWindowPosition {
   double? height;
   double? offsetWidth;
   double? offsetHeight;
+  bool? isMaximized;
 
-  LastWindowPosition(
-      this.width, this.height, this.offsetWidth, this.offsetHeight);
+  LastWindowPosition(this.width, this.height, this.offsetWidth,
+      this.offsetHeight, this.isMaximized);
 
   Map<String, dynamic> toJson() {
     return <String, dynamic>{
       "width": width,
       "height": height,
       "offsetWidth": offsetWidth,
-      "offsetHeight": offsetHeight
+      "offsetHeight": offsetHeight,
+      "isMaximized": isMaximized,
     };
   }
 
@@ -980,8 +1000,8 @@ class LastWindowPosition {
     }
     try {
       final m = jsonDecode(content);
-      return LastWindowPosition(
-          m["width"], m["height"], m["offsetWidth"], m["offsetHeight"]);
+      return LastWindowPosition(m["width"], m["height"], m["offsetWidth"],
+          m["offsetHeight"], m["isMaximized"]);
     } catch (e) {
       debugPrint(e.toString());
       return null;
@@ -998,22 +1018,29 @@ Future<void> saveWindowPosition(WindowType type, {int? windowId}) async {
   }
   switch (type) {
     case WindowType.Main:
-      List resp = await Future.wait(
-          [windowManager.getPosition(), windowManager.getSize()]);
-      Offset position = resp[0];
-      Size sz = resp[1];
-      final pos =
-          LastWindowPosition(sz.width, sz.height, position.dx, position.dy);
+      final position = await windowManager.getPosition();
+      final sz = await windowManager.getSize();
+      final isMaximized = await windowManager.isMaximized();
+      final pos = LastWindowPosition(
+          sz.width, sz.height, position.dx, position.dy, isMaximized);
       await Get.find<SharedPreferences>()
-          .setString(windowPrefix + type.name, pos.toString());
+          .setString(kWindowPrefix + type.name, pos.toString());
       break;
     default:
-      // TODO: implement window
+      final wc = WindowController.fromWindowId(windowId!);
+      final frame = await wc.getFrame();
+      final position = frame.topLeft;
+      final sz = frame.size;
+      final isMaximized = await wc.isMaximized();
+      final pos = LastWindowPosition(
+          sz.width, sz.height, position.dx, position.dy, isMaximized);
+      await Get.find<SharedPreferences>()
+          .setString(kWindowPrefix + type.name, pos.toString());
       break;
   }
 }
 
-_adjustRestoreMainWindowSize(double? width, double? height) async {
+Future<Size> _adjustRestoreMainWindowSize(double? width, double? height) async {
   const double minWidth = 600;
   const double minHeight = 100;
   double maxWidth = (((isDesktop || isWebDesktop)
@@ -1054,10 +1081,12 @@ _adjustRestoreMainWindowSize(double? width, double? height) async {
   if (restoreHeight > maxHeight) {
     restoreWidth = maxHeight;
   }
-  await windowManager.setSize(Size(restoreWidth, restoreHeight));
+  return Size(restoreWidth, restoreHeight);
 }
 
-_adjustRestoreMainWindowOffset(double? left, double? top) async {
+/// return null means center
+Future<Offset?> _adjustRestoreMainWindowOffset(
+    double? left, double? top) async {
   if (left == null || top == null) {
     await windowManager.center();
   } else {
@@ -1089,43 +1118,159 @@ _adjustRestoreMainWindowOffset(double? left, double? top) async {
         windowLeft > frameRight ||
         windowTop < frameTop ||
         windowTop > frameBottom) {
-      await windowManager.center();
+      return null;
     } else {
-      await windowManager.setPosition(Offset(windowLeft, windowTop));
+      return Offset(windowLeft, windowTop);
     }
   }
+  return null;
 }
 
-/// Save window position and size on exit
+/// Restore window position and size on start
 /// Note that windowId must be provided if it's subwindow
 Future<bool> restoreWindowPosition(WindowType type, {int? windowId}) async {
   if (type != WindowType.Main && windowId == null) {
     debugPrint(
         "Error: windowId cannot be null when saving positions for sub window");
   }
+  final pos =
+      Get.find<SharedPreferences>().getString(kWindowPrefix + type.name);
+
+  if (pos == null) {
+    debugPrint("no window position saved, ignore restore");
+    return false;
+  }
+  var lpos = LastWindowPosition.loadFromString(pos);
+  if (lpos == null) {
+    debugPrint("window position saved, but cannot be parsed");
+    return false;
+  }
+
   switch (type) {
     case WindowType.Main:
-      var pos =
-          Get.find<SharedPreferences>().getString(windowPrefix + type.name);
-      if (pos == null) {
-        debugPrint("no window position saved, ignore restore");
-        return false;
+      if (lpos.isMaximized == true) {
+        await windowManager.maximize();
+      } else {
+        final size =
+            await _adjustRestoreMainWindowSize(lpos.width, lpos.height);
+        final offset = await _adjustRestoreMainWindowOffset(
+            lpos.offsetWidth, lpos.offsetHeight);
+        await windowManager.setSize(size);
+        if (offset == null) {
+          await windowManager.center();
+        } else {
+          await windowManager.setPosition(offset);
+        }
       }
-      var lpos = LastWindowPosition.loadFromString(pos);
-      if (lpos == null) {
-        debugPrint("window position saved, but cannot be parsed");
-        return false;
-      }
-
-      await _adjustRestoreMainWindowSize(lpos.width, lpos.height);
-      await _adjustRestoreMainWindowOffset(lpos.offsetWidth, lpos.offsetHeight);
-
       return true;
     default:
-      // TODO: implement subwindow
+      final wc = WindowController.fromWindowId(windowId!);
+      if (lpos.isMaximized == true) {
+        await wc.maximize();
+      } else {
+        final size =
+            await _adjustRestoreMainWindowSize(lpos.width, lpos.height);
+        final offset = await _adjustRestoreMainWindowOffset(
+            lpos.offsetWidth, lpos.offsetHeight);
+        if (offset == null) {
+          await wc.center();
+        } else {
+          final frame =
+              Rect.fromLTWH(offset.dx, offset.dy, size.width, size.height);
+          await wc.setFrame(frame);
+        }
+      }
       break;
   }
   return false;
+}
+
+/// Initialize uni links for macos/windows
+///
+/// [Availability]
+/// initUniLinks should only be used on macos/windows.
+/// we use dbus for linux currently.
+Future<void> initUniLinks() async {
+  if (!Platform.isWindows && !Platform.isMacOS) {
+    return;
+  }
+  if (Platform.isWindows) {
+    registerProtocol('rustdesk');
+  }
+  // check cold boot
+  try {
+    final initialLink = await getInitialLink();
+    if (initialLink == null) {
+      return;
+    }
+    parseRustdeskUri(initialLink);
+  } catch (err) {
+    debugPrint("$err");
+  }
+}
+
+StreamSubscription listenUniLinks() {
+  if (Platform.isWindows || Platform.isMacOS) {
+    final sub = uriLinkStream.listen((Uri? uri) {
+      if (uri != null) {
+        callUniLinksUriHandler(uri);
+      } else {
+        print("uni listen error: uri is empty.");
+      }
+    }, onError: (err) {
+      print("uni links error: $err");
+    });
+    return sub;
+  } else {
+    // return empty stream subscription for uniform logic
+    final stream = Stream.empty();
+    return stream.listen((event) {/*ignore*/});
+  }
+}
+
+void checkArguments() {
+  // check connect args
+  final connectIndex = bootArgs.indexOf("--connect");
+  if (connectIndex == -1) {
+    return;
+  }
+  String? arg =
+      bootArgs.length < connectIndex + 1 ? null : bootArgs[connectIndex + 1];
+  if (arg != null) {
+    if (arg.startsWith(kUniLinksPrefix)) {
+      parseRustdeskUri(arg);
+    } else {
+      // fallback to peer id
+      rustDeskWinManager.newRemoteDesktop(arg);
+      bootArgs.removeAt(connectIndex);
+      bootArgs.removeAt(connectIndex);
+    }
+  }
+}
+
+/// Parse `rustdesk://` unilinks
+///
+/// [Functions]
+/// 1. New Connection: rustdesk://connection/new/your_peer_id
+void parseRustdeskUri(String uriPath) {
+  final uri = Uri.tryParse(uriPath);
+  if (uri == null) {
+    print("uri is not valid: $uriPath");
+    return;
+  }
+  callUniLinksUriHandler(uri);
+}
+
+/// uri handler
+void callUniLinksUriHandler(Uri uri) {
+  debugPrint("uni links called: $uri");
+  // new connection
+  if (uri.authority == "connection" && uri.path.startsWith("/new/")) {
+    final peerId = uri.path.substring("/new/".length);
+    Future.delayed(Duration.zero, () {
+      rustDeskWinManager.newRemoteDesktop(peerId);
+    });
+  }
 }
 
 /// Connect to a peer with [id].

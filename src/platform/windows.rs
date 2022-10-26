@@ -10,6 +10,7 @@ use std::io::prelude::*;
 use std::{
     ffi::{CString, OsString},
     fs, io, mem,
+    path::PathBuf,
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
@@ -734,6 +735,18 @@ pub fn get_active_username() -> String {
         .to_owned()
 }
 
+pub fn get_active_user_home() -> Option<PathBuf> {
+    let username = get_active_username();
+    if !username.is_empty() {
+        let drive = std::env::var("SystemDrive").unwrap_or("C:".to_owned());
+        let home = PathBuf::from(format!("{}\\Users\\{}", drive, username));
+        if home.exists() {
+            return Some(home);
+        }
+    }
+    None
+}
+
 pub fn is_prelogin() -> bool {
     let username = get_active_username();
     username.is_empty() || username == "SYSTEM"
@@ -865,6 +878,25 @@ fn get_install_info_with_subkey(subkey: String) -> (String, String, String, Stri
     (subkey, path, start_menu, exe)
 }
 
+pub fn copy_exe_cmd(src_exe: &str, _exe: &str, _path: &str) -> String {
+    #[cfg(feature = "flutter")]
+    return format!(
+        "XCOPY \"{}\" \"{}\" /Y /E /H /C /I /K /R /Z",
+        PathBuf::from(src_exe)
+            .parent()
+            .unwrap()
+            .to_string_lossy()
+            .to_string(),
+        _path
+    );
+    #[cfg(not(feature = "flutter"))]
+    return format!(
+        "copy /Y \"{src_exe}\" \"{exe}\"",
+        src_exe = src_exe,
+        exe = _exe
+    );
+}
+
 pub fn update_me() -> ResultType<()> {
     let (_, path, _, exe) = get_install_info();
     let src_exe = std::env::current_exe()?.to_str().unwrap_or("").to_owned();
@@ -874,13 +906,13 @@ pub fn update_me() -> ResultType<()> {
         sc stop {app_name}
         taskkill /F /IM {broker_exe}
         taskkill /F /IM {app_name}.exe
-        copy /Y \"{src_exe}\" \"{exe}\"
+        {copy_exe}
         \"{src_exe}\" --extract \"{path}\"
         sc start {app_name}
         {lic}
     ",
         src_exe = src_exe,
-        exe = exe,
+        copy_exe = copy_exe_cmd(&src_exe, &exe, &path),
         broker_exe = crate::ui::win_privacy::INJECTED_PROCESS_EXE,
         path = path,
         app_name = crate::get_app_name(),
@@ -1047,12 +1079,14 @@ if exist \"{tmp_path}\\{app_name} Tray.lnk\" del /f /q \"{tmp_path}\\{app_name} 
         tmp_path = tmp_path,
         app_name = crate::get_app_name(),
     );
+    let src_exe = std::env::current_exe()?.to_str().unwrap_or("").to_string();
+
     let cmds = format!(
         "
 {uninstall_str}
 chcp 65001
 md \"{path}\"
-copy /Y \"{src_exe}\" \"{exe}\"
+{copy_exe}
 copy /Y \"{ORIGIN_PROCESS_EXE}\" \"{path}\\{broker_exe}\"
 \"{src_exe}\" --extract \"{path}\"
 reg add {subkey} /f
@@ -1085,7 +1119,7 @@ sc delete {app_name}
     ",
         uninstall_str=uninstall_str,
         path=path,
-        src_exe=std::env::current_exe()?.to_str().unwrap_or(""),
+        src_exe=src_exe,
         exe=exe,
         ORIGIN_PROCESS_EXE = crate::ui::win_privacy::ORIGIN_PROCESS_EXE,
         broker_exe=crate::ui::win_privacy::INJECTED_PROCESS_EXE,
@@ -1114,6 +1148,7 @@ sc delete {app_name}
         } else {
             &dels
         },
+        copy_exe = copy_exe_cmd(&src_exe, &exe, &path),
     );
     run_cmds(cmds, debug, "install")?;
     std::thread::sleep(std::time::Duration::from_millis(2000));
@@ -1451,7 +1486,13 @@ pub fn run_uac(exe: &str, arg: &str) -> ResultType<bool> {
 }
 
 pub fn check_super_user_permission() -> ResultType<bool> {
-    run_uac("cmd", "/c /q")
+    run_uac(
+        std::env::current_exe()?
+            .to_string_lossy()
+            .to_string()
+            .as_str(),
+        "--version",
+    )
 }
 
 pub fn elevate(arg: &str) -> ResultType<bool> {

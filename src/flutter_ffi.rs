@@ -43,16 +43,6 @@ fn initialize(app_dir: &str) {
     }
 }
 
-/// FFI for rustdesk core's main entry.
-/// Return true if the app should continue running with UI(possibly Flutter), false if the app should exit.
-#[no_mangle]
-pub extern "C" fn rustdesk_core_main() -> bool {
-    #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    return crate::core_main::core_main().is_some();
-    #[cfg(any(target_os = "android", target_os = "ios"))]
-    false
-}
-
 pub enum EventToUI {
     Event(String),
     Rgba(ZeroCopyBuffer<Vec<u8>>),
@@ -193,6 +183,12 @@ pub fn session_get_custom_image_quality(id: String) -> Option<Vec<i32>> {
 pub fn session_set_custom_image_quality(id: String, value: i32) {
     if let Some(session) = SESSIONS.write().unwrap().get_mut(&id) {
         session.save_custom_image_quality(value);
+    }
+}
+
+pub fn session_set_custom_fps(id: String, fps: i32) {
+    if let Some(session) = SESSIONS.write().unwrap().get_mut(&id) {
+        session.set_custom_fps(fps);
     }
 }
 
@@ -811,6 +807,17 @@ pub fn main_is_release() -> bool {
     is_release()
 }
 
+pub fn main_start_dbus_server() {
+    #[cfg(target_os = "linux")]
+    {
+        use crate::dbus::start_dbus_server;
+        // spawn new thread to start dbus server
+        std::thread::spawn(|| {
+            let _ = start_dbus_server();
+        });
+    }
+}
+
 pub fn session_send_mouse(id: String, msg: String) {
     if let Ok(m) = serde_json::from_str::<HashMap<String, String>>(&msg) {
         let alt = m.get("alt").is_some();
@@ -999,6 +1006,10 @@ pub fn query_onlines(ids: Vec<String>) {
     crate::rendezvous_mediator::query_online_states(ids, handle_query_onlines)
 }
 
+pub fn version_to_number(v: String) -> i64 {
+    hbb_common::get_version_number(&v)
+}
+
 pub fn main_is_installed() -> SyncReturn<bool> {
     SyncReturn(is_installed())
 }
@@ -1039,6 +1050,22 @@ pub fn main_get_new_version() -> SyncReturn<String> {
 pub fn main_update_me() -> SyncReturn<bool> {
     update_me("".to_owned());
     SyncReturn(true)
+}
+
+pub fn install_show_run_without_install() -> SyncReturn<bool> {
+    SyncReturn(show_run_without_install())
+}
+
+pub fn install_run_without_install() {
+    run_without_install();
+}
+
+pub fn install_install_me(options: String, path: String) {
+    install_me(options, path, false, false);
+}
+
+pub fn install_install_path() -> SyncReturn<String> {
+    SyncReturn(install_path())
 }
 
 #[cfg(target_os = "android")]
