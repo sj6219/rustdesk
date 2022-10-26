@@ -164,3 +164,6 @@ ring = { git = "https://github.com/sj6219/ring", branch = "0.16.20_alpha" }
 winapi = { git = "https://github.com/sj6219/winapi-rs", branch = "0.2.8_alpha" }
 winit = { git = "https://github.com/sj6219/winit", branch = "0.26.1_alpha" }
 sodiumoxide = { git = "https://github.com/sj6219/sodiumoxide", branch = "0.2.7_alpha" }
+
+[patch."https://github.com/asur4s/rdev"]
+rdev = { path = "../rdev" }
