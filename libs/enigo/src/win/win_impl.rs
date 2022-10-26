@@ -43,6 +43,8 @@ fn keybd_event(flags: u32, vk: u16, scan: u16) -> DWORD {
     let mut scan = scan;
     //..w======2.4
 
+    #[cfg(debug_assertions)]
+    log::error!("keybd_event {} {} {}", flags, vk, scan);
     unsafe {
         // https://github.com/rustdesk/rustdesk/issues/366
         if scan == 0 {

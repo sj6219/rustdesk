@@ -1155,6 +1155,8 @@ impl Connection {
                 Some(message::Union::KeyEvent(me)) => {
                     //..m======2.1
                     //..w======2.1
+                    #[cfg(debug_assertions)]
+                    log::error!("recvkey {:?}", me);
                     #[cfg(not(any(target_os = "android", target_os = "ios")))]
                     if self.keyboard {
                         if is_enter(&me) {
