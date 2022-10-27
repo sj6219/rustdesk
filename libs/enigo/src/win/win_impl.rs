@@ -57,6 +57,9 @@ fn keybd_event(flags: u32, vk: u16, scan: u16) -> DWORD {
             scan = MapVirtualKeyExW(vk as _, 0, LAYOUT) as _;
         }
     }
+    #[cfg(debug_assertions)]
+    log::error!("keybd_event {} {} {}", flags, vk, scan);
+
     let mut input = INPUT {
         type_: INPUT_KEYBOARD,
         u: Default::default(),

@@ -307,6 +307,8 @@ impl<T: InvokeUiSession> Session<T> {
         //..m=====1.4
 
         msg_out.set_key_event(evt);
+        #[cfg(debug_assertions)]
+        log::error!("send_key_event {:?}", msg_out);
         self.send(Data::Message(msg_out));
     }
 
