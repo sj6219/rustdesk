@@ -46,7 +46,7 @@ class _PortForwardTabPageState extends State<PortForwardTabPage> {
   void initState() {
     super.initState();
 
-    tabController.onRemove = (_, id) => onRemoveId(id);
+    tabController.onRemoved = (_, id) => onRemoveId(id);
 
     rustDeskWinManager.setMethodHandler((call, fromWindowId) async {
       debugPrint(
@@ -70,6 +70,8 @@ class _PortForwardTabPageState extends State<PortForwardTabPage> {
             page: PortForwardPage(id: id, isRDP: isRDP)));
       } else if (call.method == "onDestroy") {
         tabController.clear();
+      } else if (call.method == kWindowActionRebuild) {
+        reloadCurrentWindow();
       }
     });
     Future.delayed(Duration.zero, () {
