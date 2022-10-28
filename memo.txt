@@ -37,6 +37,9 @@ cd ~/rustdesk/flutter
 flutter build apk --target-platform android-arm64
 adb install  ~/rustdesk/flutter/build/app/outputs/flutter-apk/app-release.apk
 
+sudo  mount -t drvfs '\\192.168.111.10\Macintosh HD' /mnt/mac
+cp ~/rustdesk/target/aarch64-linux-android/debug/liblibrustdesk.so /mnt/mac/Users/sjpark/rustdesk/flutter/android/app/src/main/jniLibs/arm64-v8a/librustdesk.so
+
 adb logcat | grep LOG_SERVICE
 adb emu kill 
 
@@ -136,34 +139,10 @@ version = "0.4.0+alpha"
 name = "sodiumoxide"
 version = "0.2.7"	
 
-env CARGO_NDK_CMAKE_TOOLCHAIN_PATH=/home/sjpark/android-ndk-r22b/build/cmake/android.toolchain.cmake \
-env CARGO_NDK_ANDROID_PLATFORM=21 \
-env CARGO_NDK_ANDROID_TARGET="arm64-v8a" \
-env AR_aarch64-linux-android=/home/sjpark/android-ndk-r22b/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android-ar \
-env CC_aarch64-linux-android=/home/sjpark/android-ndk-r22b/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang \
-env CXX_aarch64-linux-android=/home/sjpark/android-ndk-r22b/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang++ \
-env CARGO_TARGET_AARCH64_LINUX_ANDROID_AR=/home/sjpark/android-ndk-r22b/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android-ar \
-env CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=/home/sjpark/android-ndk-r22b/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang \
-env BINDGEN_EXTRA_CLANG_ARGS_aarch64_linux_android= \
-cargo rustc --target aarch64-linux-android --lib --release
-
-sudo  mount -t drvfs '\\192.168.111.10\Macintosh HD' /mnt/mac
-cp ~/rustdesk/target/aarch64-linux-android/debug/liblibrustdesk.so /mnt/mac/Users/sjpark/rustdesk/flutter/android/app/src/main/jniLibs/arm64-v8a/librustdesk.so
 adb shell dumpsys package com.carriez.flutter_hbb
 
 sudo apt install gcc-multilib
 sudo apt install make
-
-env CARGO_NDK_CMAKE_TOOLCHAIN_PATH=/Users/sjpark/Library/Android/sdk/ndk/22.0.7026061/build/cmake/android.toolchain.cmake \
-env CARGO_NDK_ANDROID_PLATFORM=21 \
-env CARGO_NDK_ANDROID_TARGET="arm64-v8a" \
-env AR_aarch64-linux-android=/Users/sjpark/Library/Android/sdk/ndk/22.0.7026061/toolchains/llvm/prebuilt/darwin-x86_64/bin/aarch64-linux-android-ar \
-env CC_aarch64-linux-android=/Users/sjpark/Library/Android/sdk/ndk/22.0.7026061/toolchains/llvm/prebuilt/darwin-x86_64/bin/aarch64-linux-android21-clang \
-env CXX_aarch64-linux-android=/Users/sjpark/Library/Android/sdk/ndk/22.0.7026061/toolchains/llvm/prebuilt/darwin-x86_64/bin/aarch64-linux-android21-clang++ \
-env CARGO_TARGET_AARCH64_LINUX_ANDROID_AR=/Users/sjpark/Library/Android/sdk/ndk/22.0.7026061/toolchains/llvm/prebuilt/darwin-x86_64/bin/aarch64-linux-android-ar \
-env CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=/Users/sjpark/Library/Android/sdk/ndk/22.0.7026061/toolchains/llvm/prebuilt/darwin-x86_64/bin/aarch64-linux-android21-clang \
-env BINDGEN_EXTRA_CLANG_ARGS_aarch64_linux_android="--target=arm64-apple-macos12.3 --sysroot=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX12.3.sdk" \
-cargo rustc --target aarch64-linux-android --lib --release
 
 objdump -T ~/rustdesk/target/aarch64-linux-android/release/liblibrustdesk.so 
 
