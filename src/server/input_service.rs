@@ -652,7 +652,7 @@ fn map_keyboard_mode(evt: &KeyEvent) {
     let (click_capslock, click_numlock) = sync_status(evt);
 
     #[cfg(windows)]
-    {
+    let click_numlock = {
     	crate::platform::windows::try_change_desktop();
 
         let code = evt.chr();
@@ -668,10 +668,13 @@ fn map_keyboard_mode(evt: &KeyEvent) {
             RdevKey::DownArrow |
             RdevKey::PageDown |
             RdevKey::Insert | 
-            RdevKey::Delete => { rdev_key_click(RdevKey::NumLock); },
-            _ => {},
+            RdevKey::Delete => { 
+                let mut en = ENIGO.lock().unwrap();
+                en.get_key_state(enigo::Key::NumLock)
+            },
+            _ => click_numlock,
         }
-    }
+    };
     // Wayland
     #[cfg(target_os = "linux")]
     if !*IS_X11.lock().unwrap() {
