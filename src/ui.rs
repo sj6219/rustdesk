@@ -15,7 +15,7 @@ use hbb_common::{
     protobuf::Message as _,
     rendezvous_proto::*,
     tcp::FramedStream,
-    tokio::{self, sync::mpsc, time},
+    tokio::{self, sync::mpsc},
 };
 
 use crate::common::get_app_name;
@@ -88,11 +88,6 @@ pub fn start(args: &mut [String]) {
     #[cfg(all(windows, not(feature = "inline")))]
     unsafe {
         winapi::um::shellscalingapi::SetProcessDpiAwareness(2);
-    }
-    #[cfg(windows)]
-    if args.len() > 0 && args[0] == "--tray" {
-        crate::tray::start_tray(crate::ui_interface::OPTIONS.clone());
-        return;
     }
     use sciter::SCRIPT_RUNTIME_FEATURES::*;
     allow_err!(sciter::set_options(sciter::RuntimeOptions::ScriptFeatures(
