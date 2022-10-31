@@ -20,15 +20,17 @@
                 }
             },
             "args": [],
-            "args": ["--connect", "192.168.111.8"],
-            "cwd": "${workspaceFolder}"
+            //"args": ["--connect", "192.168.111.8"],
+            "cwd": "${workspaceFolder}",
+            "sourceLanguages": ["rust"],        
         },
         {
             "type": "lldb",
             "request": "attach",
             "name": "Debug executable 'rustdesk'",
+            "sourceLanguages": ["rust"],        
             "program" : "${workspaceFolder}/target/debug/rustdesk",
-            "processID" : "${command:pickProcess}",
+            "pid" : "${command:pickProcess}",
         },
-    ] 
+   ] 
 }
