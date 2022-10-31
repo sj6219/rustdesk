@@ -644,20 +644,10 @@ fn sync_status(evt: &KeyEvent) -> (bool, bool) {
         || (!caps_locking && en.get_key_state(enigo::Key::CapsLock));
     let click_numlock = (num_locking && !en.get_key_state(enigo::Key::NumLock))
         || (!num_locking && en.get_key_state(enigo::Key::NumLock));
-    return (click_capslock, click_numlock);
-}
-
-fn map_keyboard_mode(evt: &KeyEvent) {
-    // map mode(1): Send keycode according to the peer platform.
-    let (click_capslock, click_numlock) = sync_status(evt);
-
     #[cfg(windows)]
     let click_numlock = {
-    	crate::platform::windows::try_change_desktop();
-
         let code = evt.chr();
         let key = rdev::get_win_key(code, 0);
-        //let key = rdev::windows::keycodes::key_from_code(code);
         match key {
             RdevKey::Home |
             RdevKey::UpArrow |
@@ -668,13 +658,20 @@ fn map_keyboard_mode(evt: &KeyEvent) {
             RdevKey::DownArrow |
             RdevKey::PageDown |
             RdevKey::Insert | 
-            RdevKey::Delete => { 
-                let mut en = ENIGO.lock().unwrap();
-                en.get_key_state(enigo::Key::NumLock)
-            },
+            RdevKey::Delete => en.get_key_state(enigo::Key::NumLock),
             _ => click_numlock,
         }
-    };
+    };   
+    return (click_capslock, click_numlock);
+}
+
+fn map_keyboard_mode(evt: &KeyEvent) {
+    // map mode(1): Send keycode according to the peer platform.
+    #[cfg(windows)]
+    crate::platform::windows::try_change_desktop();
+
+    let (click_capslock, click_numlock) = sync_status(evt);
+
     // Wayland
     #[cfg(target_os = "linux")]
     if !*IS_X11.lock().unwrap() {

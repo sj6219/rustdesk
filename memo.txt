@@ -43,6 +43,9 @@ cp ~/rustdesk/target/aarch64-linux-android/debug/liblibrustdesk.so /mnt/mac/User
 adb logcat | grep LOG_SERVICE
 adb emu kill 
 
+sudo apt install build-essential
+sudo apt install gcc-multilib
+
 # rustdesk
 cd C:\Users\sjpark\Documents\rustdesk
 set VCPKG_ROOT=C:\Users\sjpark\Documents\vcpkg
@@ -56,94 +59,8 @@ set RING_PREGENERATE_ASM=1
 #dependencies
 ring = { git = "https://github.com/sj6219/ring", branch = "0.16.20_alpha" }
 
-parity-tokio-ipc = { git = "https://github.com/sj6219/parity-tokio-ipc", branch = "
-" }
-magnum-opus = { git = "https://github.com/sj6219/magnum-opus", branch = "0.4.0_alpha" }
-reqwest = { git = "https://github.com/sj6219/reqwest", branch = "0.11.11_alpha" }
-trayicon = { git = "https://github.com/sj6219/trayicon-rs", branch = "0.1.3-1_alpha", features = ["winit"] }
-winit = { git = "https://github.com/sj6219/winit", branch = "0.26.1_alpha" }
-quest = { git = "https://github.com/sj6219/quest", branch = "0.3.0_alpha" }
-quinn = { git = "https://github.com/sj6219/quinn", branch = "0.8.3_alpha", optional = true }
-sodiumoxide = { git = "https://github.com/sj6219/sodiumoxide", branch = "0.2.7_alpha" }
-
-name = "ring"
-version = "0.16.20"
-
-name = "sct"
-version = "0.7.0"
-
-name = "webpki"
-version = "0.22.0"
-
-name = "rustls"
-version = "0.20.6"
-
-name = "quinn-proto"
-version = "0.8.3"
-
-name = "quinn-udp"
-version = "0.1.2"
-
-name = "quinn"
-version = "0.8.3"
-
-name = "tokio-rustls"
-version = "0.23.4"
-
-name = "hyper-rustls"
-version = "0.23.0"
-
-name = "reqwest"
-version = "0.11.11"
-
-
-name = "hbb_common"
-version = "0.1.0"
-
-name = "clipboard"
-version = "0.1.0"
-
-name = "simple_rc"
-version = "0.1.0"
-
-name = "virtual_display"
-version = "0.1.0"
-
-name = "rpassword"
-version = "2.1.0"
-
-name = "quest"
-version = "0.3.0"
-
-name= winapi
-version = 0.2.8
-
-name = "miow"
-version = "0.2.2"
-
-name = "kernel32-sys"
-version = "0.2.2"
-
-name = "mio"
-version = "0.6.23"
-
-name = "mio-named-pipes"
-version = "0.1.7"
-
-name = "parity-tokio-ipc"
-version = "0.7.3"
-
-name = "magnum-opus"
-version = "0.4.0+alpha"
-
-name = "sodiumoxide"
-version = "0.2.7"	
 
 adb shell dumpsys package com.carriez.flutter_hbb
-
-sudo apt install gcc-multilib
-sudo apt install make
-
 objdump -T ~/rustdesk/target/aarch64-linux-android/release/liblibrustdesk.so 
 
 cat /Users/sjpark/Library/Android/sdk/ndk/22.0.7026061/toolchains/llvm/prebuilt/darwin-x86_64/lib64/clang/11.0.5/lib/linux/aarch64/lldb-server | adb shell sh -c 'cat > /data/local/tmp/lldb-server && chmod 755 /data/local/tmp/lldb-server'
