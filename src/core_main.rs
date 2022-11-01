@@ -85,11 +85,6 @@ pub fn core_main() -> Option<Vec<String>> {
                 .ok();
         }
     }
-    #[cfg(windows)]
-    #[cfg(not(debug_assertions))]
-    if !crate::platform::is_installed() && args.is_empty() {
-        crate::platform::elevate_or_run_as_system(is_setup, _is_elevate, _is_run_as_system);
-    }
     if args.is_empty() {
         std::thread::spawn(move || crate::start_server(false));
     } else {
@@ -134,6 +129,9 @@ pub fn core_main() -> Option<Vec<String>> {
             } else if args[0] == "--extract" {
                 #[cfg(feature = "with_rc")]
                 hbb_common::allow_err!(crate::rc::extract_resources(&args[1]));
+                return None;
+            } else if args[0] == "--tray" {
+                crate::tray::start_tray(crate::ui_interface::OPTIONS.clone());
                 return None;
             }
         }
