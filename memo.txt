@@ -46,6 +46,9 @@ adb emu kill
 sudo apt install build-essential
 sudo apt install gcc-multilib
 
+#ios
+cargo build --release --target aarch64-apple-ios
+
 # rustdesk
 cd C:\Users\sjpark\Documents\rustdesk
 set VCPKG_ROOT=C:\Users\sjpark\Documents\vcpkg
@@ -64,9 +67,7 @@ adb shell dumpsys package com.carriez.flutter_hbb
 objdump -T ~/rustdesk/target/aarch64-linux-android/release/liblibrustdesk.so 
 
 cat /Users/sjpark/Library/Android/sdk/ndk/22.0.7026061/toolchains/llvm/prebuilt/darwin-x86_64/lib64/clang/11.0.5/lib/linux/aarch64/lldb-server | adb shell sh -c 'cat > /data/local/tmp/lldb-server && chmod 755 /data/local/tmp/lldb-server'
-
 adb shell run-as com.carriez.flutter_hbb mkdir -p /data/data/com.carriez.flutter_hbb/lldb/bin/
-
 adb shell "cat /data/local/tmp/lldb-server | run-as com.carriez.flutter_hbb sh -c 'cat > /data/data/com.carriez.flutter_hbb/lldb/bin/lldb-server && chmod 755 /data/data/com.carriez.flutter_hbb/lldb/bin/lldb-server'"
 
 adb shell ps -e -o PID -o NAME | grep com.carriez.flutter_hbb
