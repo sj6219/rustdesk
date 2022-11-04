@@ -17,6 +17,7 @@
             ],
             //"stopOnEntry": true,
             //"sourceMap": { "/home/" : "/Users/" }
+            "preLaunchTask": "build",   
         }
     ]
 }
