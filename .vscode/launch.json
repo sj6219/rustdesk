@@ -5,6 +5,17 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug executable 'rustdesk'",
+            "args": [],
+            //"args": ["--connect", "192.168.111.11"],
+            "cwd": "${workspaceFolder}",
+            "sourceLanguages": ["rust"],     
+            "program": "${workspaceFolder}/target/debug/rustdesk.exe",
+            //"preLaunchTask": "build",   
+        },
+        {
             "name": "(Windows) Launch",
             "type": "cppvsdbg",
             "request": "launch",
@@ -16,24 +27,6 @@
             "cwd": "${workspaceFolder}",
             "environment": [],
             "console": "externalTerminal"
-        },
-        {
-            "type": "lldb",
-            "request": "launch",
-            "name": "Debug executable 'rustdesk'",
-            "cargo": {
-                "args": [
-                    "build",
-                    "--bin=rustdesk",
-                    "--package=rustdesk"
-                ],
-                "filter": {
-                    "name": "rustdesk",
-                    "kind": "bin"
-                }
-            },
-            "args": [],
-            "cwd": "${workspaceFolder}"
         },
    ]
 }
