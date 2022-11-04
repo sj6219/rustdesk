@@ -104,7 +104,7 @@ fn main() {
     hbb_common::gen_version();
     install_oboe();
     // there is problem with cfg(target_os) in build.rs, so use our workaround
-    // let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap();
+    let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap();
     // if target_os == "android" || target_os == "ios" {
     #[cfg(feature = "flutter")]
     gen_flutter_rust_bridge();
@@ -117,5 +117,7 @@ fn main() {
     #[cfg(windows)]
     build_windows();
     //#[cfg(target_os = "macos")]
-    //println!("cargo:rustc-link-lib=framework=ApplicationServices");
+    if target_os == "macos" {
+        println!("cargo:rustc-link-lib=framework=ApplicationServices");
+    }
 }
