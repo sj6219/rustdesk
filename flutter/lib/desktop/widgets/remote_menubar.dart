@@ -6,6 +6,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_hbb/models/chat_model.dart';
+import 'package:flutter_hbb/models/state_model.dart';
 import 'package:get/get.dart';
 import 'package:provider/provider.dart';
 import 'package:rxdart/rxdart.dart' as rxdart;
@@ -29,16 +30,16 @@ class _MenubarTheme {
 
 class RemoteMenubar extends StatefulWidget {
   final String id;
-  final int windowId;
   final FFI ffi;
+  final RxBool show;
   final Function(Function(bool)) onEnterOrLeaveImageSetter;
   final Function() onEnterOrLeaveImageCleaner;
 
   const RemoteMenubar({
     Key? key,
     required this.id,
-    required this.windowId,
     required this.ffi,
+    required this.show,
     required this.onEnterOrLeaveImageSetter,
     required this.onEnterOrLeaveImageCleaner,
   }) : super(key: key);
@@ -48,17 +49,21 @@ class RemoteMenubar extends StatefulWidget {
 }
 
 class _RemoteMenubarState extends State<RemoteMenubar> {
-  final RxBool _show = false.obs;
   final Rx<Color> _hideColor = Colors.white12.obs;
   final _rxHideReplay = rxdart.ReplaySubject<int>();
   final _pinMenubar = false.obs;
   bool _isCursorOverImage = false;
   window_size.Screen? _screen;
 
-  bool get isFullscreen => Get.find<RxBool>(tag: 'fullscreen').isTrue;
+  int get windowId => stateGlobal.windowId;
+
+  bool get isFullscreen => stateGlobal.fullscreen;
   void _setFullscreen(bool v) {
-    Get.find<RxBool>(tag: 'fullscreen').value = v;
+    stateGlobal.setFullscreen(v);
+    setState(() {});
   }
+
+  RxBool get show => widget.show;
 
   @override
   initState() {
@@ -77,8 +82,8 @@ class _RemoteMenubarState extends State<RemoteMenubar> {
         .throttleTime(const Duration(milliseconds: 5000),
             trailing: true, leading: false)
         .listen((int v) {
-      if (_pinMenubar.isFalse && _show.isTrue && _isCursorOverImage) {
-        _show.value = false;
+      if (_pinMenubar.isFalse && show.isTrue && _isCursorOverImage) {
+        show.value = false;
       }
     });
   }
@@ -95,29 +100,35 @@ class _RemoteMenubarState extends State<RemoteMenubar> {
     return Align(
       alignment: Alignment.topCenter,
       child: Obx(
-          () => _show.value ? _buildMenubar(context) : _buildShowHide(context)),
+          () => show.value ? _buildMenubar(context) : _buildShowHide(context)),
     );
   }
 
   Widget _buildShowHide(BuildContext context) {
     return Obx(() => Tooltip(
-        message: translate(_show.value ? "Hide Menubar" : "Show Menubar"),
+        message: translate(show.value ? 'Hide Menubar' : 'Show Menubar'),
         child: SizedBox(
             width: 100,
             height: 13,
             child: TextButton(
-                onHover: (bool v) {
-                  _hideColor.value = v ? Colors.white60 : Colors.white24;
-                },
-                onPressed: () {
-                  _show.value = !_show.value;
-                  if (_show.isTrue) {
-                    _updateScreen();
-                  }
-                },
-                child: Obx(() => Container(
+              onHover: (bool v) {
+                _hideColor.value = v ? Colors.white60 : Colors.white24;
+              },
+              onPressed: () {
+                show.value = !show.value;
+                _hideColor.value = Colors.white24;
+                if (show.isTrue) {
+                  _updateScreen();
+                }
+              },
+              child: Obx(() => Container(
+                    decoration: BoxDecoration(
                       color: _hideColor.value,
-                    ).marginOnly(bottom: 8.0))))));
+                      border: Border.all(color: MyTheme.border),
+                      borderRadius: BorderRadius.all(Radius.circular(5.0)),
+                    ),
+                  ).marginOnly(bottom: 8.0)),
+            ))));
   }
 
   _updateScreen() async {
@@ -170,7 +181,11 @@ class _RemoteMenubarState extends State<RemoteMenubar> {
             textStyle: TextStyle(color: _MenubarTheme.commonColor)),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           Container(
-              color: Colors.white,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                border: Border.all(color: MyTheme.border),
+                borderRadius: BorderRadius.all(Radius.circular(10.0)),
+              ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: menubarItems,
@@ -203,7 +218,7 @@ class _RemoteMenubarState extends State<RemoteMenubar> {
       onPressed: () {
         _setFullscreen(!isFullscreen);
       },
-      icon: Obx(() => isFullscreen
+      icon: isFullscreen
           ? const Icon(
               Icons.fullscreen_exit,
               color: _MenubarTheme.commonColor,
@@ -211,7 +226,7 @@ class _RemoteMenubarState extends State<RemoteMenubar> {
           : const Icon(
               Icons.fullscreen,
               color: _MenubarTheme.commonColor,
-            )),
+            ),
     );
   }
 
@@ -505,7 +520,6 @@ class _RemoteMenubarState extends State<RemoteMenubar> {
       );
     }
     displayMenu.add(MenuEntryDivider());
-
     if (perms['keyboard'] != false) {
       if (pi.platform == 'Linux' || pi.sasEnabled) {
         displayMenu.add(MenuEntryButton<String>(
@@ -910,8 +924,7 @@ class _RemoteMenubarState extends State<RemoteMenubar> {
                 _setFullscreen(false);
                 double scale = _screen!.scaleFactor;
                 final wndRect =
-                    await WindowController.fromWindowId(widget.windowId)
-                        .getFrame();
+                    await WindowController.fromWindowId(windowId).getFrame();
                 final mediaSize = MediaQueryData.fromWindow(ui.window).size;
                 // On windows, wndRect is equal to GetWindowRect and mediaSize is equal to GetClientRect.
                 // https://stackoverflow.com/a/7561083
@@ -934,8 +947,7 @@ class _RemoteMenubarState extends State<RemoteMenubar> {
                 double top = wndRect.top + (wndRect.height - height) / 2;
 
                 Rect frameRect = _screen!.frame;
-                final RxBool fullscreen = Get.find(tag: 'fullscreen');
-                if (fullscreen.isFalse) {
+                if (!isFullscreen) {
                   frameRect = _screen!.visibleFrame;
                 }
                 if (left < frameRect.left) {
@@ -950,7 +962,7 @@ class _RemoteMenubarState extends State<RemoteMenubar> {
                 if ((top + height) > frameRect.bottom) {
                   top = frameRect.bottom - height;
                 }
-                await WindowController.fromWindowId(widget.windowId)
+                await WindowController.fromWindowId(windowId)
                     .setFrame(Rect.fromLTWH(left, top, width, height));
               }
             }();

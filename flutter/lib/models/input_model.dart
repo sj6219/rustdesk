@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:math';
+import 'dart:ui' as ui;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
@@ -10,7 +11,7 @@ import '../../models/model.dart';
 import '../../models/platform_model.dart';
 import '../common.dart';
 import '../consts.dart';
-import 'dart:ui' as ui;
+import './state_model.dart';
 
 /// Mouse button enum.
 enum MouseButtons { left, right, wheel }
@@ -321,9 +322,7 @@ class InputModel {
     double x = evt['x'];
     double y = max(0.0, evt['y']);
     if (isDesktop) {
-      final RxBool fullscreen = Get.find(tag: 'fullscreen');
-      final tabBarHeight = fullscreen.isTrue ? 0 : kDesktopRemoteTabBarHeight;
-      y = y - tabBarHeight;
+      y = y - stateGlobal.tabBarHeight;
     }
     final canvasModel = parent.target!.canvasModel;
     final ffiModel = parent.target!.ffiModel;

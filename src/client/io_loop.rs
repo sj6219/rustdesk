@@ -1,5 +1,5 @@
 use crate::client::{
-    Client, CodecFormat, FileManager, MediaData, MediaSender, QualityStatus, MILLI1, SEC30,
+    Client, CodecFormat, MediaData, MediaSender, QualityStatus, MILLI1, SEC30,
     SERVER_CLIPBOARD_ENABLED, SERVER_FILE_TRANSFER_ENABLED, SERVER_KEYBOARD_ENABLED,
 };
 use crate::common;
@@ -15,7 +15,7 @@ use crate::{client::Data, client::Interface};
 use hbb_common::config::{PeerConfig, TransferSerde};
 use hbb_common::fs::{
     can_enable_overwrite_detection, get_job, get_string, new_send_confirm, DigestCheckResult,
-    RemoveJobMeta, TransferJobMeta,
+    RemoveJobMeta,
 };
 use hbb_common::message_proto::permission_info::Permission;
 use hbb_common::protobuf::Message as _;
@@ -23,11 +23,12 @@ use hbb_common::rendezvous_proto::ConnType;
 use hbb_common::tokio::{
     self,
     sync::mpsc,
+    sync::Mutex as TokioMutex,
     time::{self, Duration, Instant, Interval},
 };
 use hbb_common::{
     allow_err,
-    message_proto::{self, *},
+    message_proto::*,
     sleep,
 };
 use hbb_common::{fs, log, Stream};
@@ -113,15 +114,23 @@ impl<T: InvokeUiSession> Remote<T> {
                 // just build for now
                 #[cfg(not(windows))]
                 let (_tx_holder, mut rx_clip_client) = mpsc::unbounded_channel::<i32>();
+
                 #[cfg(windows)]
-                let (client_conn_id, rx_clip_client1) =
-                    clipboard::get_rx_cliprdr_client(&self.handler.id);
+                let (_tx_holder, rx) = mpsc::unbounded_channel();
                 #[cfg(windows)]
-                let mut rx_clip_client = rx_clip_client1.lock().await;
+                let mut rx_clip_client_lock = Arc::new(TokioMutex::new(rx));
                 #[cfg(windows)]
                 {
-                    self.client_conn_id = client_conn_id;
+                    let is_conn_not_default = self.handler.is_file_transfer()
+                        || self.handler.is_port_forward()
+                        || self.handler.is_rdp();
+                    if !is_conn_not_default {
+                        (self.client_conn_id, rx_clip_client_lock) =
+                            clipboard::get_rx_cliprdr_client(&self.handler.id);
+                    };
                 }
+                #[cfg(windows)]
+                let mut rx_clip_client = rx_clip_client_lock.lock().await;
 
                 let mut status_timer = time::interval(Duration::new(1, 0));
 
@@ -1176,10 +1185,10 @@ impl<T: InvokeUiSession> Remote<T> {
     }
 
     #[cfg(windows)]
-    fn handle_cliprdr_msg(&self, clip: message_proto::Cliprdr) {
+    fn handle_cliprdr_msg(&self, clip: hbb_common::message_proto::Cliprdr) {
         if !self.handler.lc.read().unwrap().disable_clipboard {
             #[cfg(any(target_os = "android", target_os = "ios", feature = "flutter"))]
-            if let Some(message_proto::cliprdr::Union::FormatList(_)) = &clip.union {
+            if let Some(hbb_common::message_proto::cliprdr::Union::FormatList(_)) = &clip.union {
                 if self.client_conn_id
                     != clipboard::get_client_conn_id(&crate::flutter::get_cur_session_id())
                         .unwrap_or(0)

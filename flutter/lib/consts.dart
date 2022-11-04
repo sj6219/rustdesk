@@ -33,13 +33,14 @@ const int kMobileMaxDisplayHeight = 1280;
 const int kDesktopMaxDisplayWidth = 1920;
 const int kDesktopMaxDisplayHeight = 1080;
 
-const int kDesktopDoubleClickTimeMilli = 200;
-
 const Size kConnectionManagerWindowSize = Size(300, 400);
 // Tabbar transition duration, now we remove the duration
 const Duration kTabTransitionDuration = Duration.zero;
 const double kEmptyMarginTop = 50;
 const double kDesktopIconButtonSplashRadius = 20;
+
+/// [kMinCursorSize] indicates min cursor (w, h)
+const int kMinCursorSize = 24;
 
 /// [kDefaultScrollAmountMultiplier] indicates how many rows can be scrolled after a minimum scroll action of mouse
 const kDefaultScrollAmountMultiplier = 5.0;
