@@ -8,21 +8,12 @@
             "type": "lldb",
             "request": "launch",
             "name": "Debug executable 'rustdesk'",
-            "cargo": {
-                "args": [
-                    "build",
-                    "--bin=rustdesk",
-                    "--package=rustdesk"
-                ],
-                "filter": {
-                    "name": "rustdesk",
-                    "kind": "bin"
-                }
-            },
             "args": [],
             //"args": ["--connect", "192.168.111.8"],
             "cwd": "${workspaceFolder}",
-            "sourceLanguages": ["rust"],        
+            "sourceLanguages": ["rust"],     
+            "program" : "${workspaceFolder}/target/debug/rustdesk",
+            "preLaunchTask": "build",   
         },
         {
             "type": "lldb",
