@@ -116,6 +116,6 @@ fn main() {
     build_manifest();
     #[cfg(windows)]
     build_windows();
-    #[cfg(target_os = "macos")]
-    println!("cargo:rustc-link-lib=framework=ApplicationServices");
+    //#[cfg(target_os = "macos")]
+    //println!("cargo:rustc-link-lib=framework=ApplicationServices");
 }

@@ -8,7 +8,7 @@
 			"options": {
 				"cwd": "${workspaceFolder}",
 				"env": { 
-					"BINDGEN_EXTRA_CLANG_ARGS_aarch64_linux_android" : "--target=arm64-apple-macos12.3 --sysroot=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX12.3.sdk",	
+					"BINDGEN_EXTRA_CLANG_ARGS_aarch64_linux_android" : "--target=arm64-apple-macos --sysroot=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk",	
 					"RUST_LOG" : "debug",				
 				},
 			  },
