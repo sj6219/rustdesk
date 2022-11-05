@@ -14,6 +14,7 @@ import 'package:flutter_hbb/models/chat_model.dart';
 import 'package:flutter_hbb/models/file_model.dart';
 import 'package:flutter_hbb/models/server_model.dart';
 import 'package:flutter_hbb/models/user_model.dart';
+import 'package:flutter_hbb/models/state_model.dart';
 import 'package:flutter_hbb/utils/multi_window_manager.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tuple/tuple.dart';
@@ -483,9 +484,9 @@ class CanvasModel with ChangeNotifier {
   // image scale
   double _scale = 1.0;
   // the tabbar over the image
-  double tabBarHeight = 0.0;
+  // double tabBarHeight = 0.0;
   // the window border's width
-  double windowBorderWidth = 0.0;
+  // double windowBorderWidth = 0.0;
   // remote id
   String id = '';
   // scroll offset x percent
@@ -571,10 +572,15 @@ class CanvasModel with ChangeNotifier {
     return parent.target?.ffiModel.display.height ?? defaultHeight;
   }
 
+  double get windowBorderWidth => stateGlobal.windowBorderWidth;
+  double get tabBarHeight => stateGlobal.tabBarHeight;
+
   Size get size {
     final size = MediaQueryData.fromWindow(ui.window).size;
-    return Size(size.width - windowBorderWidth * 2,
-        size.height - tabBarHeight - windowBorderWidth * 2);
+    // If minimized, w or h may be negative here.
+    double w = size.width - windowBorderWidth * 2;
+    double h = size.height - tabBarHeight - windowBorderWidth * 2;
+    return Size(w < 0 ? 0 : w, h < 0 ? 0 : h);
   }
 
   moveDesktopMouse(double x, double y) {

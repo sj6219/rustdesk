@@ -8,21 +8,23 @@
             "type": "lldb",
             "request": "launch",
             "name": "Debug executable 'rustdesk'",
-            "cargo": {
-                "args": [
-                    "build",
-                    "--bin=rustdesk",
-                    "--package=rustdesk"
-                ],
-                "filter": {
-                    "name": "rustdesk",
-                    "kind": "bin"
-                }
-            },
             "args": [],
-            //"args": ["--connect", "192.168.111.8"],
+            //"args": ["--connect", "192.168.111.11"],
             "cwd": "${workspaceFolder}",
-            "sourceLanguages": ["rust"],        
+            "sourceLanguages": ["rust"],     
+            // "cargo": {
+            //     "args": [
+            //         "build",
+            //         "--bin=rustdesk",
+            //         "--package=rustdesk"
+            //     ],
+            //     "filter": {
+            //         "name": "rustdesk",
+            //         "kind": "bin"
+            //     }
+            // },        
+            "program": "${workspaceFolder}/target/debug/rustdesk.exe",
+            //"preLaunchTask": "build",   
         },
         {
             "name": "(Windows) Launch",
@@ -34,7 +36,7 @@
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
-            "console": "externalTerminal"
+            // "console": "externalTerminal"
         },
         {
             "type": "lldb",

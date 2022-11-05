@@ -17,7 +17,7 @@ flutter_win_target_dir = 'flutter/build/windows/runner/Release/'
 
 
 def get_version():
-    with open("Cargo.toml") as fh:
+    with open("Cargo.toml", encoding="utf-8") as fh:
         for line in fh:
             if line.startswith("version"):
                 return line.replace("version", "").replace("=", "").replace('"', '').strip()
@@ -268,6 +268,9 @@ def build_flutter_arch_manjaro(version, features):
 
 def build_flutter_windows(version, features):
     os.system(f'cargo build --features {features} --lib --release')
+    if not os.path.exists("target/release/librustdesk.dll"):
+        print("cargo build failed, please check rust source code.")
+        exit(-1)
     os.chdir('flutter')
     os.system('flutter build windows --release')
     os.chdir('..')

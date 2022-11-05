@@ -25,21 +25,24 @@ bool _isCustomCursorInited = false;
 final SimpleWrapper<bool> _firstEnterImage = SimpleWrapper(false);
 
 class RemotePage extends StatefulWidget {
-  const RemotePage({
+  RemotePage({
     Key? key,
     required this.id,
-    required this.windowId,
-    required this.tabBarHeight,
-    required this.windowBorderWidth,
   }) : super(key: key);
 
   final String id;
-  final int windowId;
-  final double tabBarHeight;
-  final double windowBorderWidth;
+  final SimpleWrapper<State<RemotePage>?> _lastState = SimpleWrapper(null);
+
+  FFI get ffi => (_lastState.value! as _RemotePageState)._ffi;
+  RxBool get showMenubar =>
+      (_lastState.value! as _RemotePageState)._showMenubar;
 
   @override
-  State<RemotePage> createState() => _RemotePageState();
+  State<RemotePage> createState() {
+    final state = _RemotePageState();
+    _lastState.value = state;
+    return state;
+  }
 }
 
 class _RemotePageState extends State<RemotePage>
@@ -47,6 +50,7 @@ class _RemotePageState extends State<RemotePage>
   Timer? _timer;
   String keyboardMode = "legacy";
   final _cursorOverImage = false.obs;
+  final _showMenubar = false.obs;
   late RxBool _showRemoteCursor;
   late RxBool _remoteCursorMoved;
   late RxBool _keyboardEnabled;
@@ -57,11 +61,6 @@ class _RemotePageState extends State<RemotePage>
   Function(bool)? _onEnterOrLeaveImage4Menubar;
 
   late FFI _ffi;
-
-  void _updateTabBarHeight() {
-    _ffi.canvasModel.tabBarHeight = widget.tabBarHeight;
-    _ffi.canvasModel.windowBorderWidth = widget.windowBorderWidth;
-  }
 
   void _initStates(String id) {
     PrivacyModeState.init(id);
@@ -91,7 +90,6 @@ class _RemotePageState extends State<RemotePage>
 
     _ffi = FFI();
 
-    _updateTabBarHeight();
     Get.put(_ffi, tag: widget.id);
     _ffi.start(widget.id);
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -164,7 +162,6 @@ class _RemotePageState extends State<RemotePage>
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    _updateTabBarHeight();
     return WillPopScope(
         onWillPop: () async {
           clientClose(_ffi.dialogManager);
@@ -241,8 +238,8 @@ class _RemotePageState extends State<RemotePage>
     paints.add(QualityMonitor(_ffi.qualityMonitorModel));
     paints.add(RemoteMenubar(
       id: widget.id,
-      windowId: widget.windowId,
       ffi: _ffi,
+      show: _showMenubar,
       onEnterOrLeaveImageSetter: (func) => _onEnterOrLeaveImage4Menubar = func,
       onEnterOrLeaveImageCleaner: () => _onEnterOrLeaveImage4Menubar = null,
     ));
@@ -457,11 +454,14 @@ class ImagePaint extends StatelessWidget {
 
   Widget _buildCrossScrollbar(BuildContext context, Widget child, Size size) {
     var layoutSize = MediaQuery.of(context).size;
+    // If minimized, w or h may be negative here.
+    final w = layoutSize.width - kWindowBorderWidth * 2;
+    final h =
+        layoutSize.height - kWindowBorderWidth * 2 - kDesktopRemoteTabBarHeight;
     layoutSize = Size(
-        layoutSize.width - kWindowBorderWidth * 2,
-        layoutSize.height -
-            kWindowBorderWidth * 2 -
-            kDesktopRemoteTabBarHeight);
+      w < 0 ? 0 : w,
+      h < 0 ? 0 : h,
+    );
     bool overflow =
         layoutSize.width < size.width || layoutSize.height < size.height;
     return overflow
