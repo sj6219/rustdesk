@@ -474,19 +474,16 @@ impl<T: InvokeUiSession> Session<T> {
 
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     fn legacy_keyboard_mode(&self, down_or_up: bool, key: RdevKey, evt: Event) {
-        //..m
         // legacy mode(0): Generate characters locally, look for keycode on other side.
         let peer = self.peer_platform();
         let is_win = peer == "Windows";
 
-        //let alt = get_key_state(enigo::Key::Alt);
-        let alt = get_hotkey_state(RdevKey::Alt);
+        let alt = get_key_state(enigo::Key::Alt);
         #[cfg(windows)]
         let ctrl = {
             let mut tmp =
-                //get_key_state(enigo::Key::Control) || get_key_state(enigo::Key::RightControl);
-                get_hotkey_state(RdevKey::ControlLeft) || get_hotkey_state(RdevKey::ControlRight);
-                unsafe {
+                get_key_state(enigo::Key::Control) || get_key_state(enigo::Key::RightControl);
+            unsafe {
                 if IS_ALT_GR {
                     if alt || key == RdevKey::AltGr {
                         if tmp {
@@ -501,11 +498,9 @@ impl<T: InvokeUiSession> Session<T> {
         };
         #[cfg(not(windows))]
         let ctrl = get_key_state(enigo::Key::Control) || get_key_state(enigo::Key::RightControl);
-        //let shift = get_key_state(enigo::Key::Shift) || get_key_state(enigo::Key::RightShift);
-        let shift = get_hotkey_state(RdevKey::ShiftLeft) || get_hotkey_state(RdevKey::ShiftRight);
+        let shift = get_key_state(enigo::Key::Shift) || get_key_state(enigo::Key::RightShift);
         #[cfg(windows)]
-        //let command = crate::platform::windows::get_win_key_state();
-        let command = get_hotkey_state(RdevKey::MetaLeft);
+        let command = crate::platform::windows::get_win_key_state();
         #[cfg(not(windows))]
         let command = get_key_state(enigo::Key::Meta);
         let control_key = match key {
@@ -689,9 +684,16 @@ impl<T: InvokeUiSession> Session<T> {
         }
 
         //..
-        //#[cfg(not(any(target_os = "android", target_os = "ios")))]
-        //let (alt, ctrl, shift, command) = get_all_hotkey_state(alt, ctrl, shift, command);
+        #[cfg(target_os = "macos")]
+        let (ctrl, command) = (command, ctrl);
+        
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        let (alt, ctrl, shift, command) = get_all_hotkey_state(alt, ctrl, shift, command);
         self.legacy_modifiers(&mut key_event, alt, ctrl, shift, command);
+
+        //..
+        #[cfg(target_os = "macos")]
+        let (ctrl, command) = (command, ctrl);
 
         if down_or_up == true {
             key_event.down = true;
@@ -727,7 +729,6 @@ impl<T: InvokeUiSession> Session<T> {
 
 
         let mut to_release = TO_RELEASE.lock().unwrap();
-
         match mode {
             KeyboardMode::Map => {
                 if down_or_up == true {
