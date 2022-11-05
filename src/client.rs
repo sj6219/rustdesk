@@ -1333,6 +1333,7 @@ impl LoginConfigHandler {
         }
         //..
         //if hbb_common::get_version_number(&pi.version) < hbb_common::get_version_number("1.2.0") {
+            #[cfg(windows)]
             global_save_keyboard_mode("legacy".to_owned());
         //}
         self.features = pi.features.clone().into_option();
