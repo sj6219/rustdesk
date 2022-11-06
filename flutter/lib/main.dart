@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:flutter/material.dart';
@@ -139,11 +140,30 @@ void runMultiWindow(
   String title,
 ) async {
   await initEnv(appType);
+  late Widget widget;
+  switch (appType) {
+    case kAppTypeDesktopRemote:
+      widget = DesktopRemoteScreen(
+        params: argument,
+      );
+      break;
+    case kAppTypeDesktopFileTransfer:
+      widget = DesktopFileTransferScreen(
+        params: argument,
+      );
+      break;
+    case kAppTypeDesktopPortForward:
+      widget = DesktopPortForwardScreen(
+        params: argument,
+      );
+      break;
+    default:
+      // no such appType
+      exit(0);
+  }
   _runApp(
     title,
-    DesktopRemoteScreen(
-      params: argument,
-    ),
+    widget,
     MyTheme.currentThemeMode(),
   );
 }
@@ -160,15 +180,10 @@ void runConnectionManagerScreen() async {
   );
   windowManager.waitUntilReadyToShow(windowOptions, () async {
     await windowManager.show();
+    await Future.wait([windowManager.focus(), windowManager.setOpacity(1)]);
     // ensure initial window size to be changed
-    await windowManager.setSize(kConnectionManagerWindowSize);
-    await Future.wait([
-      windowManager.setAlignment(Alignment.topRight),
-      windowManager.focus(),
-      windowManager.setOpacity(1)
-    ]);
-    // ensure
-    windowManager.setAlignment(Alignment.topRight);
+    await windowManager.setSizeAlignment(
+        kConnectionManagerWindowSize, Alignment.topRight);
   });
 }
 
