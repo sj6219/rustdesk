@@ -76,7 +76,7 @@ impl RendezvousMediator {
             if Config::get_option("stop-service").is_empty() {
             //..
               if Config::get_option("direct-server").is_empty() {
-                    if !nat_tested {
+                if !nat_tested {
                     crate::test_nat_type();
                     nat_tested = true;
                 }
