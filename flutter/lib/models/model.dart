@@ -16,7 +16,6 @@ import 'package:flutter_hbb/models/server_model.dart';
 import 'package:flutter_hbb/models/user_model.dart';
 import 'package:flutter_hbb/models/state_model.dart';
 import 'package:flutter_hbb/utils/multi_window_manager.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tuple/tuple.dart';
 import 'package:image/image.dart' as img2;
 import 'package:flutter_custom_cursor/flutter_custom_cursor.dart';
@@ -740,6 +739,9 @@ class CursorModel with ChangeNotifier {
   double _hoty = 0;
   double _displayOriginX = 0;
   double _displayOriginY = 0;
+  bool got_mouse_control = true;
+  DateTime _last_peer_mouse = DateTime.now()
+      .subtract(Duration(milliseconds: 2 * kMouseControlTimeoutMSec));
   String id = '';
   WeakReference<FFI> parent;
 
@@ -748,14 +750,16 @@ class CursorModel with ChangeNotifier {
   CursorData? get defaultCache => _getDefaultCache();
 
   double get x => _x - _displayOriginX;
-
   double get y => _y - _displayOriginY;
 
   Offset get offset => Offset(_x, _y);
 
   double get hotx => _hotx;
-
   double get hoty => _hoty;
+
+  bool get is_peer_control_protected =>
+      DateTime.now().difference(_last_peer_mouse).inMilliseconds <
+      kMouseControlTimeoutMSec;
 
   CursorModel(this.parent);
 
@@ -918,7 +922,7 @@ class CursorModel with ChangeNotifier {
     if (parent.target?.id != pid) return;
     _image = image;
     _images[id] = Tuple3(image, _hotx, _hoty);
-    await _updateCacheLinux(image, id, width, height);
+    await _updateCache(image, id, width, height);
     try {
       // my throw exception, because the listener maybe already dispose
       notifyListeners();
@@ -927,7 +931,7 @@ class CursorModel with ChangeNotifier {
     }
   }
 
-  _updateCacheLinux(ui.Image image, int id, int w, int h) async {
+  _updateCache(ui.Image image, int id, int w, int h) async {
     Uint8List? data;
     img2.Image? image2;
     if (Platform.isWindows) {
@@ -981,6 +985,8 @@ class CursorModel with ChangeNotifier {
 
   /// Update the cursor position.
   updateCursorPosition(Map<String, dynamic> evt, String id) async {
+    got_mouse_control = false;
+    _last_peer_mouse = DateTime.now();
     _x = double.parse(evt['x']);
     _y = double.parse(evt['y']);
     try {
@@ -1212,7 +1218,7 @@ class FFI {
   Future<void> close() async {
     chatModel.close();
     if (imageModel.image != null && !isWebDesktop) {
-      await savePreference(id, cursorModel.x, cursorModel.y, canvasModel.x,
+      await setCanvasConfig(id, cursorModel.x, cursorModel.y, canvasModel.x,
           canvasModel.y, canvasModel.scale, ffiModel.pi.currentDisplay);
     }
     bind.sessionClose(id: id);
@@ -1260,9 +1266,10 @@ class PeerInfo {
   List<Display> displays = [];
 }
 
-Future<void> savePreference(String id, double xCursor, double yCursor,
+const canvasKey = 'canvas';
+
+Future<void> setCanvasConfig(String id, double xCursor, double yCursor,
     double xCanvas, double yCanvas, double scale, int currentDisplay) async {
-  SharedPreferences prefs = await SharedPreferences.getInstance();
   final p = <String, dynamic>{};
   p['xCursor'] = xCursor;
   p['yCursor'] = yCursor;
@@ -1270,25 +1277,27 @@ Future<void> savePreference(String id, double xCursor, double yCursor,
   p['yCanvas'] = yCanvas;
   p['scale'] = scale;
   p['currentDisplay'] = currentDisplay;
-  prefs.setString('peer$id', json.encode(p));
+  await bind.sessionSetFlutterConfig(id: id, k: canvasKey, v: jsonEncode(p));
 }
 
-Future<Map<String, dynamic>?> getPreference(String id) async {
+Future<Map<String, dynamic>?> getCanvasConfig(String id) async {
   if (!isWebDesktop) return null;
-  SharedPreferences prefs = await SharedPreferences.getInstance();
-  var p = prefs.getString('peer$id');
-  if (p == null) return null;
-  Map<String, dynamic> m = json.decode(p);
-  return m;
+  var p = await bind.sessionGetFlutterConfig(id: id, k: canvasKey);
+  if (p == null || p.isEmpty) return null;
+  try {
+    Map<String, dynamic> m = json.decode(p);
+    return m;
+  } catch (e) {
+    return null;
+  }
 }
 
 void removePreference(String id) async {
-  SharedPreferences prefs = await SharedPreferences.getInstance();
-  prefs.remove('peer$id');
+  await bind.sessionSetFlutterConfig(id: id, k: canvasKey, v: '');
 }
 
 Future<void> initializeCursorAndCanvas(FFI ffi) async {
-  var p = await getPreference(ffi.id);
+  var p = await getCanvasConfig(ffi.id);
   int currentDisplay = 0;
   if (p != null) {
     currentDisplay = p['currentDisplay'];

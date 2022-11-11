@@ -15,7 +15,6 @@ import 'package:flutter_hbb/utils/multi_window_manager.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:get/get.dart';
 import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:bot_toast/bot_toast.dart';
 
@@ -97,7 +96,6 @@ Future<void> main(List<String> args) async {
 
 Future<void> initEnv(String appType) async {
   // global shared preference
-  await Get.putAsync(() => SharedPreferences.getInstance());
   await platformFFI.init(appType);
   // global FFI, use this **ONLY** for global configuration
   // for convenience, use global FFI on mobile platform
@@ -140,6 +138,8 @@ void runMultiWindow(
   String title,
 ) async {
   await initEnv(appType);
+  // set prevent close to true, we handle close event manually
+  WindowController.fromWindowId(windowId!).setPreventClose(true);
   late Widget widget;
   switch (appType) {
     case kAppTypeDesktopRemote:
@@ -166,6 +166,20 @@ void runMultiWindow(
     widget,
     MyTheme.currentThemeMode(),
   );
+  switch (appType) {
+    case kAppTypeDesktopRemote:
+    await restoreWindowPosition(WindowType.RemoteDesktop, windowId: windowId!);
+      break;
+    case kAppTypeDesktopFileTransfer:
+    await restoreWindowPosition(WindowType.FileTransfer, windowId: windowId!);
+      break;
+    case kAppTypeDesktopPortForward:
+    await restoreWindowPosition(WindowType.PortForward, windowId: windowId!);
+      break;
+    default:
+      // no such appType
+      exit(0);
+  }
 }
 
 void runConnectionManagerScreen() async {

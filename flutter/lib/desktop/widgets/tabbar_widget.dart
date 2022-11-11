@@ -499,6 +499,21 @@ class WindowActionPanelState extends State<WindowActionPanel>
   }
 
   @override
+  void onWindowClose() async {
+    // hide window on close
+    if (widget.isMainWindow) {
+      await windowManager.hide();
+      rustDeskWinManager.unregisterActiveWindow(0);
+    } else {
+      widget.onClose?.call();
+      await WindowController.fromWindowId(windowId!).hide();
+      rustDeskWinManager
+          .call(WindowType.Main, kWindowEventHide, {"id": windowId!});
+    }
+    super.onWindowClose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.end,
@@ -540,12 +555,9 @@ class WindowActionPanelState extends State<WindowActionPanel>
                   // note: the main window can be restored by tray icon
                   Future.delayed(Duration.zero, () async {
                     if (widget.isMainWindow) {
-                      await windowManager.hide();
-                      rustDeskWinManager.unregisterActiveWindow(0);
+                      await windowManager.close();
                     } else {
-                      await WindowController.fromWindowId(windowId!).hide();
-                      rustDeskWinManager.call(
-                          WindowType.Main, kWindowEventHide, {"id": windowId!});
+                      await WindowController.fromWindowId(windowId!).close();
                     }
                   });
                 }
