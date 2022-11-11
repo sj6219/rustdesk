@@ -737,10 +737,12 @@ impl<T: InvokeUiSession> Remote<T> {
                     self.video_sender.send(MediaData::VideoFrame(vf)).ok();
                 }
                 Some(message::Union::Hash(hash)) => {
+                    //..m::::::3.1
                     self.handler
                         .handle_hash(&self.handler.password.clone(), hash, peer)
                         .await;
                 }
+                //..m::::::5.1
                 Some(message::Union::LoginResponse(lr)) => match lr.union {
                     Some(login_response::Union::Error(err)) => {
                         if !self.handler.handle_login_error(&err) {

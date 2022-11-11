@@ -73,7 +73,9 @@ impl RendezvousMediator {
         }
         loop {
             Config::reset_online();
-            if Config::get_option("direct-server").is_empty() /* Config::get_option("stop-service").is_empty() */ {
+            if Config::get_option("stop-service").is_empty() {
+            //..
+              if Config::get_option("direct-server").is_empty() {
                 if !nat_tested {
                     crate::test_nat_type();
                     nat_tested = true;
@@ -90,6 +92,7 @@ impl RendezvousMediator {
                     }));
                 }
                 join_all(futs).await;
+              }
             } else {
                 server.write().unwrap().close_connections();
             }
@@ -195,7 +198,7 @@ impl RendezvousMediator {
                                             allow_err!(rz.handle_punch_hole(ph, server).await);
                                         });
                                     }
-                                    Some(rendezvous_message::Union::RequestRelay(rr)) => {                                                                                    // ::::::2.1
+                                    Some(rendezvous_message::Union::RequestRelay(rr)) => { 
                                         //..a::::::2.1
                                         let rz = rz.clone();
                                         let server = server.clone();

@@ -812,6 +812,7 @@ impl Connection {
         }
         let mut msg_out = Message::new();
         //..a::::::4.2
+        //..w::::::4.2
         msg_out.set_login_response(res);
         self.send(msg_out).await;
         if let Some((dir, show_hidden)) = self.file_transfer.clone() {
