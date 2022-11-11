@@ -22,7 +22,6 @@ use std::collections::{HashMap, HashSet};
 use std::ops::{Deref, DerefMut};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
-use std::time::Duration;
 
 /// IS_IN KEYBOARD_HOOKED sciter only
 pub static IS_IN: AtomicBool = AtomicBool::new(false);
@@ -97,6 +96,14 @@ impl<T: InvokeUiSession> Session<T> {
 
     pub fn save_view_style(&mut self, value: String) {
         self.lc.write().unwrap().save_view_style(value);
+    }
+
+    pub fn set_flutter_config(&mut self, k: String, v: String) {
+        self.lc.write().unwrap().set_ui_flutter(k, v);
+    }
+
+    pub fn get_flutter_config(&self, k: String) -> String {
+        self.lc.write().unwrap().get_ui_flutter(&k)
     }
 
     pub fn toggle_option(&mut self, name: String) {
@@ -1356,7 +1363,7 @@ impl<T: InvokeUiSession> Session<T> {
         #[cfg(any(target_os = "windows", target_os = "macos"))]
         std::thread::spawn(move || {
             let func = move |event: Event| match event.event_type {
-                EventType::KeyPress(key) | EventType::KeyRelease(key) => {
+                EventType::KeyPress(..) | EventType::KeyRelease(..) => {
                     // grab all keys
                     if !IS_IN.load(Ordering::SeqCst)
                         || !SERVER_KEYBOARD_ENABLED.load(Ordering::SeqCst)
@@ -1625,7 +1632,7 @@ pub fn global_grab_keyboard() {
     #[cfg(any(target_os = "windows", target_os = "macos"))]
     std::thread::spawn(move || {
         let func = move |event: Event| match event.event_type {
-            EventType::KeyPress(key) | EventType::KeyRelease(key) => {
+            EventType::KeyPress(..) | EventType::KeyRelease(..) => {
                 // grab all keys
                 if !IS_IN.load(Ordering::SeqCst) {
                     return Some(event);

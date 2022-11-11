@@ -33,21 +33,13 @@ class DesktopHomePage extends StatefulWidget {
 const borderColor = Color(0xFF2F65BA);
 
 class _DesktopHomePageState extends State<DesktopHomePage>
-    with TrayListener, WindowListener, AutomaticKeepAliveClientMixin {
+    with TrayListener, AutomaticKeepAliveClientMixin {
   final _leftPaneScrollController = ScrollController();
 
   @override
   bool get wantKeepAlive => true;
   var updateUrl = '';
   StreamSubscription? _uniLinksSubscription;
-
-  @override
-  void onWindowClose() async {
-    super.onWindowClose();
-    // hide window on close
-    await windowManager.hide();
-    rustDeskWinManager.unregisterActiveWindow(0);
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -425,7 +417,6 @@ class _DesktopHomePageState extends State<DesktopHomePage>
     // disable this tray because we use tray function provided by rust now
     // initTray();
     trayManager.addListener(this);
-    windowManager.addListener(this);
     rustDeskWinManager.registerActiveWindowListener(onActiveWindowChanged);
     rustDeskWinManager.registerActiveWindow(0);
     rustDeskWinManager.setMethodHandler((call, fromWindowId) async {
@@ -471,147 +462,12 @@ class _DesktopHomePageState extends State<DesktopHomePage>
   @override
   void dispose() {
     // destoryTray();
-    rustDeskWinManager.unregisterActiveWindowListener(onActiveWindowChanged);
+    // fix: disable unregister to prevent from receiving events from other windows
+    // rustDeskWinManager.unregisterActiveWindowListener(onActiveWindowChanged);
     trayManager.removeListener(this);
-    windowManager.removeListener(this);
     _uniLinksSubscription?.cancel();
     super.dispose();
   }
-}
-
-/// common login dialog for desktop
-/// call this directly
-Future<bool> loginDialog() async {
-  String userName = "";
-  var userNameMsg = "";
-  String pass = "";
-  var passMsg = "";
-  var userController = TextEditingController(text: userName);
-  var pwdController = TextEditingController(text: pass);
-
-  var isInProgress = false;
-  var completer = Completer<bool>();
-  gFFI.dialogManager.show((setState, close) {
-    submit() async {
-      setState(() {
-        userNameMsg = "";
-        passMsg = "";
-        isInProgress = true;
-      });
-      cancel() {
-        setState(() {
-          isInProgress = false;
-        });
-      }
-
-      userName = userController.text;
-      pass = pwdController.text;
-      if (userName.isEmpty) {
-        userNameMsg = translate("Username missed");
-        cancel();
-        return;
-      }
-      if (pass.isEmpty) {
-        passMsg = translate("Password missed");
-        cancel();
-        return;
-      }
-      try {
-        final resp = await gFFI.userModel.login(userName, pass);
-        if (resp.containsKey('error')) {
-          passMsg = resp['error'];
-          cancel();
-          return;
-        }
-        // {access_token: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJndWlkIjoiMDFkZjQ2ZjgtZjg3OS00MDE0LTk5Y2QtMGMwYzM2MmViZGJlIiwiZXhwIjoxNjYxNDg2NzYwfQ.GZpe1oI8TfM5yTYNrpcwbI599P4Z_-b2GmnwNl2Lr-w,
-        // token_type: Bearer, user: {id: , name: admin, email: null, note: null, status: null, grp: null, is_admin: true}}
-        debugPrint("$resp");
-        completer.complete(true);
-      } catch (err) {
-        debugPrint(err.toString());
-        cancel();
-        return;
-      }
-      close();
-    }
-
-    cancel() {
-      completer.complete(false);
-      close();
-    }
-
-    return CustomAlertDialog(
-      title: Text(translate("Login")),
-      content: ConstrainedBox(
-        constraints: const BoxConstraints(minWidth: 500),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const SizedBox(
-              height: 8.0,
-            ),
-            Row(
-              children: [
-                ConstrainedBox(
-                    constraints: const BoxConstraints(minWidth: 100),
-                    child: Text(
-                      "${translate('Username')}:",
-                      textAlign: TextAlign.start,
-                    ).marginOnly(bottom: 16.0)),
-                const SizedBox(
-                  width: 24.0,
-                ),
-                Expanded(
-                  child: TextField(
-                    decoration: InputDecoration(
-                        border: const OutlineInputBorder(),
-                        errorText: userNameMsg.isNotEmpty ? userNameMsg : null),
-                    controller: userController,
-                    focusNode: FocusNode()..requestFocus(),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(
-              height: 8.0,
-            ),
-            Row(
-              children: [
-                ConstrainedBox(
-                    constraints: const BoxConstraints(minWidth: 100),
-                    child: Text("${translate('Password')}:")
-                        .marginOnly(bottom: 16.0)),
-                const SizedBox(
-                  width: 24.0,
-                ),
-                Expanded(
-                  child: TextField(
-                    obscureText: true,
-                    decoration: InputDecoration(
-                        border: const OutlineInputBorder(),
-                        errorText: passMsg.isNotEmpty ? passMsg : null),
-                    controller: pwdController,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(
-              height: 4.0,
-            ),
-            Offstage(
-                offstage: !isInProgress, child: const LinearProgressIndicator())
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(onPressed: cancel, child: Text(translate("Cancel"))),
-        TextButton(onPressed: submit, child: Text(translate("OK"))),
-      ],
-      onSubmit: submit,
-      onCancel: cancel,
-    );
-  });
-  return completer.future;
 }
 
 void setPasswordDialog() async {
