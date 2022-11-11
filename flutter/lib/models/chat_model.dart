@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_hbb/models/platform_model.dart';
 import 'package:window_manager/window_manager.dart';
 
+import '../consts.dart';
 import '../common.dart';
 import '../common/widgets/overlay.dart';
 import 'model.dart';
@@ -32,6 +33,7 @@ class ChatModel with ChangeNotifier {
   OverlayState? _overlayState;
   OverlayEntry? chatIconOverlayEntry;
   OverlayEntry? chatWindowOverlayEntry;
+  bool isConnManager = false;
 
   final ChatUser me = ChatUser(
     id: "",
@@ -42,13 +44,13 @@ class ChatModel with ChangeNotifier {
       MessageBody(me, []);
 
   var _currentID = clientModeID;
-  late bool _isShowChatPage = false;
+  late bool _isShowCMChatPage = false;
 
   Map<int, MessageBody> get messages => _messages;
 
   int get currentID => _currentID;
 
-  bool get isShowChatPage => _isShowChatPage;
+  bool get isShowCMChatPage => _isShowCMChatPage;
 
   final WeakReference<FFI> parent;
 
@@ -147,9 +149,11 @@ class ChatModel with ChangeNotifier {
     }
   }
 
+  _isChatOverlayHide() => ((!isDesktop && chatIconOverlayEntry == null) ||
+      chatWindowOverlayEntry == null);
+
   toggleChatOverlay() {
-    if ((!isDesktop && chatIconOverlayEntry == null) ||
-        chatWindowOverlayEntry == null) {
+    if (_isChatOverlayHide()) {
       gFFI.invokeMethod("enable_soft_keyboard", true);
       if (!isDesktop) {
         showChatIconOverlay();
@@ -161,20 +165,32 @@ class ChatModel with ChangeNotifier {
     }
   }
 
+  showChatPage(int id) async {
+    if (isConnManager) {
+      if (!_isShowCMChatPage) {
+        await toggleCMChatPage(id);
+      }
+    } else {
+      if (_isChatOverlayHide()) {
+        await toggleChatOverlay();
+      }
+    }
+  }
+
   toggleCMChatPage(int id) async {
     if (gFFI.chatModel.currentID != id) {
       gFFI.chatModel.changeCurrentID(id);
     }
-    if (_isShowChatPage) {
-      _isShowChatPage = !_isShowChatPage;
+    if (_isShowCMChatPage) {
+      _isShowCMChatPage = !_isShowCMChatPage;
       notifyListeners();
-      await windowManager.setSize(Size(300, 400));
-      await windowManager.setAlignment(Alignment.topRight);
+      await windowManager.show();
+      await windowManager.setSizeAlignment(
+          kConnectionManagerWindowSize, Alignment.topRight);
     } else {
-      await windowManager.setSize(Size(600, 400));
-      await Future.delayed(Duration(milliseconds: 100));
-      await windowManager.setAlignment(Alignment.topRight);
-      _isShowChatPage = !_isShowChatPage;
+      await windowManager.show();
+      await windowManager.setSizeAlignment(Size(600, 400), Alignment.topRight);
+      _isShowCMChatPage = !_isShowCMChatPage;
       notifyListeners();
     }
   }
@@ -208,13 +224,11 @@ class ChatModel with ChangeNotifier {
     }
     if (text.isEmpty) return;
     // mobile: first message show overlay icon
-    if (chatIconOverlayEntry == null) {
+    if (!isDesktop && chatIconOverlayEntry == null) {
       showChatIconOverlay();
     }
-    // desktop: show chat page
-    if (!_isShowChatPage) {
-      toggleCMChatPage(id);
-    }
+    // show chat page
+    await showChatPage(id);
 
     int toId = currentID;
 

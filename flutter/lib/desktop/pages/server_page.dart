@@ -101,6 +101,7 @@ class ConnectionManagerState extends State<ConnectionManager> {
     gFFI.serverModel.updateClientState();
     gFFI.serverModel.tabController.onSelected = (index, _) =>
         gFFI.chatModel.changeCurrentID(gFFI.serverModel.clients[index].id);
+    gFFI.chatModel.isConnManager = true;
     super.initState();
   }
 
@@ -133,6 +134,7 @@ class ConnectionManagerState extends State<ConnectionManager> {
                 showMaximize: false,
                 showMinimize: true,
                 showClose: true,
+                onWindowCloseButton: handleWindowCloseButton,
                 controller: serverModel.tabController,
                 maxLabelWidth: 100,
                 tail: buildScrollJumper(),
@@ -159,7 +161,7 @@ class ConnectionManagerState extends State<ConnectionManager> {
                 pageViewBuilder: (pageView) => Row(children: [
                       Expanded(child: pageView),
                       Consumer<ChatModel>(
-                          builder: (_, model, child) => model.isShowChatPage
+                          builder: (_, model, child) => model.isShowCMChatPage
                               ? Expanded(child: Scaffold(body: ChatPage()))
                               : Offstage())
                     ])));
@@ -204,6 +206,27 @@ class ConnectionManagerState extends State<ConnectionManager> {
                 icon: Icons.arrow_right, iconSize: 22, onTap: sc.forward),
           ],
         ));
+  }
+
+  Future<bool> handleWindowCloseButton() async {
+    var tabController = gFFI.serverModel.tabController;
+    final connLength = tabController.length;
+    if (connLength <= 1) {
+      windowManager.close();
+      return true;
+    } else {
+      final opt = "enable-confirm-closing-tabs";
+      final bool res;
+      if (!option2bool(opt, await bind.mainGetOption(key: opt))) {
+        res = true;
+      } else {
+        res = await closeConfirmDialog();
+      }
+      if (res) {
+        windowManager.close();
+      }
+      return res;
+    }
   }
 }
 

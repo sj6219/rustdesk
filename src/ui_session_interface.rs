@@ -22,7 +22,6 @@ use std::collections::{HashMap, HashSet};
 use std::ops::{Deref, DerefMut};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
-use std::time::Duration;
 
 /// IS_IN KEYBOARD_HOOKED sciter only
 pub static IS_IN: AtomicBool = AtomicBool::new(false);
@@ -97,6 +96,14 @@ impl<T: InvokeUiSession> Session<T> {
 
     pub fn save_view_style(&mut self, value: String) {
         self.lc.write().unwrap().save_view_style(value);
+    }
+
+    pub fn set_flutter_config(&mut self, k: String, v: String) {
+        self.lc.write().unwrap().set_ui_flutter(k, v);
+    }
+
+    pub fn get_flutter_config(&self, k: String) -> String {
+        self.lc.write().unwrap().get_ui_flutter(&k)
     }
 
     pub fn toggle_option(&mut self, name: String) {
@@ -474,19 +481,16 @@ impl<T: InvokeUiSession> Session<T> {
 
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     fn legacy_keyboard_mode(&self, down_or_up: bool, key: RdevKey, evt: Event) {
-        //..m
         // legacy mode(0): Generate characters locally, look for keycode on other side.
         let peer = self.peer_platform();
         let is_win = peer == "Windows";
 
-        //let alt = get_key_state(enigo::Key::Alt);
-        let alt = get_hotkey_state(RdevKey::Alt);
+        let alt = get_key_state(enigo::Key::Alt);
         #[cfg(windows)]
         let ctrl = {
             let mut tmp =
-                //get_key_state(enigo::Key::Control) || get_key_state(enigo::Key::RightControl);
-                get_hotkey_state(RdevKey::ControlLeft) || get_hotkey_state(RdevKey::ControlRight);
-                unsafe {
+                get_key_state(enigo::Key::Control) || get_key_state(enigo::Key::RightControl);
+            unsafe {
                 if IS_ALT_GR {
                     if alt || key == RdevKey::AltGr {
                         if tmp {
@@ -501,11 +505,9 @@ impl<T: InvokeUiSession> Session<T> {
         };
         #[cfg(not(windows))]
         let ctrl = get_key_state(enigo::Key::Control) || get_key_state(enigo::Key::RightControl);
-        //let shift = get_key_state(enigo::Key::Shift) || get_key_state(enigo::Key::RightShift);
-        let shift = get_hotkey_state(RdevKey::ShiftLeft) || get_hotkey_state(RdevKey::ShiftRight);
+        let shift = get_key_state(enigo::Key::Shift) || get_key_state(enigo::Key::RightShift);
         #[cfg(windows)]
-        //let command = crate::platform::windows::get_win_key_state();
-        let command = get_hotkey_state(RdevKey::MetaLeft);
+        let command = crate::platform::windows::get_win_key_state();
         #[cfg(not(windows))]
         let command = get_key_state(enigo::Key::Meta);
         let control_key = match key {
@@ -689,9 +691,16 @@ impl<T: InvokeUiSession> Session<T> {
         }
 
         //..
-        //#[cfg(not(any(target_os = "android", target_os = "ios")))]
-        //let (alt, ctrl, shift, command) = get_all_hotkey_state(alt, ctrl, shift, command);
+        #[cfg(target_os = "macos")]
+        let (ctrl, command) = (command, ctrl);
+        
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        let (alt, ctrl, shift, command) = get_all_hotkey_state(alt, ctrl, shift, command);
         self.legacy_modifiers(&mut key_event, alt, ctrl, shift, command);
+
+        //..
+        #[cfg(target_os = "macos")]
+        let (ctrl, command) = (command, ctrl);
 
         if down_or_up == true {
             key_event.down = true;
@@ -727,7 +736,6 @@ impl<T: InvokeUiSession> Session<T> {
 
 
         let mut to_release = TO_RELEASE.lock().unwrap();
-
         match mode {
             KeyboardMode::Map => {
                 if down_or_up == true {
@@ -1355,7 +1363,7 @@ impl<T: InvokeUiSession> Session<T> {
         #[cfg(any(target_os = "windows", target_os = "macos"))]
         std::thread::spawn(move || {
             let func = move |event: Event| match event.event_type {
-                EventType::KeyPress(key) | EventType::KeyRelease(key) => {
+                EventType::KeyPress(..) | EventType::KeyRelease(..) => {
                     // grab all keys
                     if !IS_IN.load(Ordering::SeqCst)
                         || !SERVER_KEYBOARD_ENABLED.load(Ordering::SeqCst)
@@ -1624,7 +1632,7 @@ pub fn global_grab_keyboard() {
     #[cfg(any(target_os = "windows", target_os = "macos"))]
     std::thread::spawn(move || {
         let func = move |event: Event| match event.event_type {
-            EventType::KeyPress(key) | EventType::KeyRelease(key) => {
+            EventType::KeyPress(..) | EventType::KeyRelease(..) => {
                 // grab all keys
                 if !IS_IN.load(Ordering::SeqCst) {
                     return Some(event);
