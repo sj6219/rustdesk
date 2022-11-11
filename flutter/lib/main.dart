@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:flutter/material.dart';
@@ -14,7 +15,6 @@ import 'package:flutter_hbb/utils/multi_window_manager.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:get/get.dart';
 import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:bot_toast/bot_toast.dart';
 
@@ -96,7 +96,6 @@ Future<void> main(List<String> args) async {
 
 Future<void> initEnv(String appType) async {
   // global shared preference
-  await Get.putAsync(() => SharedPreferences.getInstance());
   await platformFFI.init(appType);
   // global FFI, use this **ONLY** for global configuration
   // for convenience, use global FFI on mobile platform
@@ -139,13 +138,48 @@ void runMultiWindow(
   String title,
 ) async {
   await initEnv(appType);
+  // set prevent close to true, we handle close event manually
+  WindowController.fromWindowId(windowId!).setPreventClose(true);
+  late Widget widget;
+  switch (appType) {
+    case kAppTypeDesktopRemote:
+      widget = DesktopRemoteScreen(
+        params: argument,
+      );
+      break;
+    case kAppTypeDesktopFileTransfer:
+      widget = DesktopFileTransferScreen(
+        params: argument,
+      );
+      break;
+    case kAppTypeDesktopPortForward:
+      widget = DesktopPortForwardScreen(
+        params: argument,
+      );
+      break;
+    default:
+      // no such appType
+      exit(0);
+  }
   _runApp(
     title,
-    DesktopRemoteScreen(
-      params: argument,
-    ),
+    widget,
     MyTheme.currentThemeMode(),
   );
+  switch (appType) {
+    case kAppTypeDesktopRemote:
+    await restoreWindowPosition(WindowType.RemoteDesktop, windowId: windowId!);
+      break;
+    case kAppTypeDesktopFileTransfer:
+    await restoreWindowPosition(WindowType.FileTransfer, windowId: windowId!);
+      break;
+    case kAppTypeDesktopPortForward:
+    await restoreWindowPosition(WindowType.PortForward, windowId: windowId!);
+      break;
+    default:
+      // no such appType
+      exit(0);
+  }
 }
 
 void runConnectionManagerScreen() async {
@@ -160,15 +194,10 @@ void runConnectionManagerScreen() async {
   );
   windowManager.waitUntilReadyToShow(windowOptions, () async {
     await windowManager.show();
+    await Future.wait([windowManager.focus(), windowManager.setOpacity(1)]);
     // ensure initial window size to be changed
-    await windowManager.setSize(kConnectionManagerWindowSize);
-    await Future.wait([
-      windowManager.setAlignment(Alignment.topRight),
-      windowManager.focus(),
-      windowManager.setOpacity(1)
-    ]);
-    // ensure
-    windowManager.setAlignment(Alignment.topRight);
+    await windowManager.setSizeAlignment(
+        kConnectionManagerWindowSize, Alignment.topRight);
   });
 }
 

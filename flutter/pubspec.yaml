@@ -40,7 +40,6 @@ dependencies:
     #firebase_analytics: ^9.1.5
     package_info_plus: ^1.4.2
     url_launcher: ^6.0.9
-    shared_preferences: ^2.0.6
     toggle_switch: ^1.4.0
     dash_chat_2: ^0.0.14
     draggable_float_widget: ^0.0.2
@@ -60,11 +59,11 @@ dependencies:
     window_manager:
         git:
             url: https://github.com/Kingtous/rustdesk_window_manager
-            ref: 88487257cbafc501599ab4f82ec343b46acec020 
+            ref: 32b24c66151b72bba033ef8b954486aa9351d97b 
     desktop_multi_window:
         git:
             url: https://github.com/Kingtous/rustdesk_desktop_multi_window
-            ref: 39a8a5b8aed059a89a1694ed2dffe69e31da2ac1
+            ref: 0831243da7231c82ea56ebaeb36e650620d4a23b
     freezed_annotation: ^2.0.3
     tray_manager:
         git:
