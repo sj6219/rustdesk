@@ -6,6 +6,7 @@ use cpal::{
 };
 use magnum_opus::{Channels::*, Decoder as AudioDecoder};
 use sha2::{Digest, Sha256};
+#[cfg(any(target_os = "android", target_os = "ios", feature = "flutter"))]
 use std::sync::atomic::Ordering;
 use std::{
     collections::HashMap,
@@ -986,6 +987,32 @@ impl LoginConfigHandler {
         self.save_config(config);
     }
 
+    /// Set a ui config of flutter for handler's [`PeerConfig`].
+    ///
+    /// # Arguments
+    ///
+    /// * `k` - key of option
+    /// * `v` - value of option
+    pub fn set_ui_flutter(&mut self, k: String, v: String) {
+        let mut config = self.load_config();
+        config.ui_flutter.insert(k, v);
+        self.save_config(config);
+    }
+
+    /// Get a ui config of flutter for handler's [`PeerConfig`].
+    /// Return String if the option is found, otherwise return "".
+    ///
+    /// # Arguments
+    ///
+    /// * `k` - key of option
+    pub fn get_ui_flutter(&self, k: &str) -> String {
+        if let Some(v) = self.config.ui_flutter.get(k) {
+            v.clone()
+        } else {
+            "".to_owned()
+        }
+    }
+
     /// Toggle an option in the handler.
     ///
     /// # Arguments
@@ -1333,6 +1360,7 @@ impl LoginConfigHandler {
         }
         //..
         //if hbb_common::get_version_number(&pi.version) < hbb_common::get_version_number("1.2.0") {
+            #[cfg(windows)]
             global_save_keyboard_mode("legacy".to_owned());
         //}
         self.features = pi.features.clone().into_option();
@@ -1968,6 +1996,7 @@ fn decode_id_pk(signed: &[u8], key: &sign::PublicKey) -> ResultType<(String, [u8
     }
 }
 
+#[cfg(any(target_os = "android", target_os = "ios", feature = "flutter"))]
 pub fn disable_keyboard_listening() {
-    crate::ui_session_interface::KEYBOARD_HOOKED.store(false, Ordering::SeqCst);
+    crate::ui_session_interface::KEYBOARD_HOOKED.store(true, Ordering::SeqCst);
 }

@@ -57,7 +57,8 @@ class _FileManagerPageState extends State<FileManagerPage>
   final _breadCrumbScrollerRemote = ScrollController();
 
   /// [_lastClickTime], [_lastClickEntry] help to handle double click
-  int _lastClickTime = DateTime.now().millisecondsSinceEpoch;
+  int _lastClickTime =
+      DateTime.now().millisecondsSinceEpoch - bind.getDoubleClickTime() - 1000;
   Entry? _lastClickEntry;
 
   final _dropMaskVisible = false.obs; // TODO impl drop mask
@@ -175,7 +176,7 @@ class _FileManagerPageState extends State<FileManagerPage>
         },
         child: IconButton(
           icon: const Icon(Icons.more_vert),
-          splashRadius: 20,
+          splashRadius: kDesktopIconButtonSplashRadius,
           onPressed: () => mod_menu.showMenu(
             context: context,
             position: menuPos,
@@ -404,7 +405,7 @@ class _FileManagerPageState extends State<FileManagerPage>
     final elapsed = current - _lastClickTime;
     _lastClickTime = current;
     if (_lastClickEntry == entry) {
-      if (elapsed < kDesktopDoubleClickTimeMilli) {
+      if (elapsed < bind.getDoubleClickTime()) {
         return true;
       }
     } else {
@@ -482,12 +483,12 @@ class _FileManagerPageState extends State<FileManagerPage>
                                   onPressed: () {
                                     model.resumeJob(item.id);
                                   },
-                                  splashRadius: 20,
+                                  splashRadius: kDesktopIconButtonSplashRadius,
                                   icon: const Icon(Icons.restart_alt_rounded)),
                             ),
                             IconButton(
                               icon: const Icon(Icons.delete_forever_outlined),
-                              splashRadius: 20,
+                              splashRadius: kDesktopIconButtonSplashRadius,
                               onPressed: () {
                                 model.jobTable.removeAt(index);
                                 model.cancelJob(item.id);
@@ -556,7 +557,7 @@ class _FileManagerPageState extends State<FileManagerPage>
               children: [
                 IconButton(
                   icon: const Icon(Icons.arrow_back),
-                  splashRadius: 20,
+                  splashRadius: kDesktopIconButtonSplashRadius,
                   onPressed: () {
                     selectedItems.clear();
                     model.goBack(isLocal: isLocal);
@@ -564,7 +565,7 @@ class _FileManagerPageState extends State<FileManagerPage>
                 ),
                 IconButton(
                   icon: const Icon(Icons.arrow_upward),
-                  splashRadius: 20,
+                  splashRadius: kDesktopIconButtonSplashRadius,
                   onPressed: () {
                     selectedItems.clear();
                     model.goToParentDirectory(isLocal: isLocal);
@@ -614,13 +615,13 @@ class _FileManagerPageState extends State<FileManagerPage>
                         Future.delayed(
                             Duration.zero, () => focusNode.requestFocus());
                       },
-                      splashRadius: 20,
+                      splashRadius: kDesktopIconButtonSplashRadius,
                       icon: Icon(Icons.search));
                 case LocationStatus.pathLocation:
                   return IconButton(
                       color: Theme.of(context).disabledColor,
                       onPressed: null,
-                      splashRadius: 20,
+                      splashRadius: kDesktopIconButtonSplashRadius,
                       icon: Icon(Icons.close));
                 case LocationStatus.fileSearchBar:
                   return IconButton(
@@ -638,7 +639,7 @@ class _FileManagerPageState extends State<FileManagerPage>
                   breadCrumbScrollToEnd(isLocal);
                   model.refresh(isLocal: isLocal);
                 },
-                splashRadius: 20,
+                splashRadius: kDesktopIconButtonSplashRadius,
                 icon: const Icon(Icons.refresh)),
           ],
         ),
@@ -655,7 +656,7 @@ class _FileManagerPageState extends State<FileManagerPage>
                       model.goHome(isLocal: isLocal);
                     },
                     icon: const Icon(Icons.home_outlined),
-                    splashRadius: 20,
+                    splashRadius: kDesktopIconButtonSplashRadius,
                   ),
                   IconButton(
                       onPressed: () {
@@ -704,7 +705,7 @@ class _FileManagerPageState extends State<FileManagerPage>
                           );
                         });
                       },
-                      splashRadius: 20,
+                      splashRadius: kDesktopIconButtonSplashRadius,
                       icon: const Icon(Icons.create_new_folder_outlined)),
                   IconButton(
                       onPressed: validItems(selectedItems)
@@ -714,7 +715,7 @@ class _FileManagerPageState extends State<FileManagerPage>
                               selectedItems.clear();
                             }
                           : null,
-                      splashRadius: 20,
+                      splashRadius: kDesktopIconButtonSplashRadius,
                       icon: const Icon(Icons.delete_forever_outlined)),
                   menu(isLocal: isLocal),
                 ],
@@ -804,9 +805,7 @@ class _FileManagerPageState extends State<FileManagerPage>
                         },
                         child: BreadCrumb(
                           items: items,
-                          divider: Text("/",
-                              style: TextStyle(
-                                  color: Theme.of(context).hintColor)),
+                          divider: Icon(Icons.chevron_right),
                           overflow: ScrollableOverflow(
                               controller:
                                   getBreadCrumbScrollController(isLocal)),
@@ -825,22 +824,22 @@ class _FileManagerPageState extends State<FileManagerPage>
                     final x = offset.dx;
                     final y = offset.dy + size.height + 1;
 
-                    final peerPlatform = (await bind.sessionGetPlatform(
-                            id: _ffi.id, isRemote: !isLocal))
-                        .toLowerCase();
+                    final isPeerWindows = isWindows(isLocal);
                     final List<MenuEntryBase> menuItems = [
                       MenuEntryButton(
-                          childBuilder: (TextStyle? style) => Text(
-                                '/',
-                                style: style,
-                              ),
+                          childBuilder: (TextStyle? style) => isPeerWindows
+                              ? buildWindowsThisPC(style)
+                              : Text(
+                                  '/',
+                                  style: style,
+                                ),
                           proc: () {
                             openDirectory('/', isLocal: isLocal);
                           },
                           dismissOnClicked: true),
                       MenuEntryDivider()
                     ];
-                    if (peerPlatform == "windows") {
+                    if (isPeerWindows) {
                       var loadingTag = "";
                       if (!isLocal) {
                         loadingTag = _ffi.dialogManager.showLoading("Waiting");
@@ -866,7 +865,8 @@ class _FileManagerPageState extends State<FileManagerPage>
                                     )
                                   ]),
                               proc: () {
-                                openDirectory(entry.name, isLocal: isLocal);
+                                openDirectory('${entry.name}\\',
+                                    isLocal: isLocal);
                               },
                               dismissOnClicked: true));
                         }
@@ -899,19 +899,46 @@ class _FileManagerPageState extends State<FileManagerPage>
               ]);
   }
 
+  Widget buildWindowsThisPC([TextStyle? textStyle]) {
+    final color = Theme.of(context).iconTheme.color?.withOpacity(0.7);
+    return Row(children: [
+      Icon(Icons.computer, size: 20, color: color),
+      SizedBox(width: 10),
+      Text(translate('This PC'), style: textStyle)
+    ]);
+  }
+
   List<BreadCrumbItem> getPathBreadCrumbItems(
       bool isLocal, void Function(List<String>) onPressed) {
     final path = model.getCurrentDir(isLocal).path;
-    final list = PathUtil.split(path, model.getCurrentIsWindows(isLocal));
     final breadCrumbList = List<BreadCrumbItem>.empty(growable: true);
-    breadCrumbList.addAll(list.asMap().entries.map((e) => BreadCrumbItem(
-        content: TextButton(
-                child: Text(e.value),
-                style: ButtonStyle(
-                    minimumSize: MaterialStateProperty.all(Size(0, 0))),
-                onPressed: () => onPressed(list.sublist(0, e.key + 1)))
-            .marginSymmetric(horizontal: 4))));
+    if (isWindows(isLocal) && path == '/') {
+      breadCrumbList.add(BreadCrumbItem(
+          content: TextButton(
+                  child: buildWindowsThisPC(),
+                  style: ButtonStyle(
+                      minimumSize: MaterialStateProperty.all(Size(0, 0))),
+                  onPressed: () => onPressed(['/']))
+              .marginSymmetric(horizontal: 4)));
+    } else {
+      final list = PathUtil.split(path, model.getCurrentIsWindows(isLocal));
+      breadCrumbList.addAll(list.asMap().entries.map((e) => BreadCrumbItem(
+          content: TextButton(
+                  child: Text(e.value),
+                  style: ButtonStyle(
+                      minimumSize: MaterialStateProperty.all(Size(0, 0))),
+                  onPressed: () => onPressed(list.sublist(0, e.key + 1)))
+              .marginSymmetric(horizontal: 4))));
+    }
     return breadCrumbList;
+  }
+
+  bool isWindows(bool isLocal) {
+    if (isLocal) {
+      return Platform.isWindows;
+    } else {
+      return _ffi.ffiModel.pi.platform.toLowerCase() == "windows";
+    }
   }
 
   breadCrumbScrollToEnd(bool isLocal) {

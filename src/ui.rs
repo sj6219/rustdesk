@@ -15,7 +15,7 @@ use hbb_common::{
     protobuf::Message as _,
     rendezvous_proto::*,
     tcp::FramedStream,
-    tokio::{self, sync::mpsc, time},
+    tokio::{self, sync::mpsc},
 };
 
 use crate::common::get_app_name;
@@ -33,7 +33,8 @@ pub mod win_privacy;
 
 type Message = RendezvousMessage;
 
-pub type Childs = Arc<Mutex<(bool, HashMap<(String, String), Child>)>>;
+pub type Children = Arc<Mutex<(bool, HashMap<(String, String), Child>)>>;
+#[allow(dead_code)]
 type Status = (i32, bool, i64, String);
 
 lazy_static::lazy_static! {
@@ -43,6 +44,7 @@ lazy_static::lazy_static! {
 
 struct UIHostHandler;
 
+// to-do: dead code?
 fn check_connect_status(
     reconnect: bool,
 ) -> (
@@ -53,11 +55,8 @@ fn check_connect_status(
 ) {
     let status = Arc::new(Mutex::new((0, false, 0, "".to_owned())));
     let options = Arc::new(Mutex::new(Config::get_options()));
-    let cloned = status.clone();
-    let cloned_options = options.clone();
     let (tx, rx) = mpsc::unbounded_channel::<ipc::Data>();
     let password = Arc::new(Mutex::new(String::default()));
-    let cloned_password = password.clone();
     std::thread::spawn(move || crate::ui_interface::check_connect_status_(reconnect, rx));
     (status, options, tx, password)
 }
@@ -92,11 +91,6 @@ pub fn start(args: &mut [String]) {
     unsafe {
         winapi::um::shellscalingapi::SetProcessDpiAwareness(2);
     }
-    #[cfg(windows)]
-    if args.len() > 0 && args[0] == "--tray" {
-        crate::tray::start_tray(crate::ui_interface::OPTIONS.clone());
-        return;
-    }
     use sciter::SCRIPT_RUNTIME_FEATURES::*;
     allow_err!(sciter::set_options(sciter::RuntimeOptions::ScriptFeatures(
         ALLOW_FILE_IO as u8 | ALLOW_SOCKET_IO as u8 | ALLOW_EVAL as u8 | ALLOW_SYSINFO as u8
@@ -119,8 +113,8 @@ pub fn start(args: &mut [String]) {
         args[1] = id;
     }
     if args.is_empty() {
-        let child: Childs = Default::default();
-        std::thread::spawn(move || check_zombie(child));
+        let children: Children = Default::default();
+        std::thread::spawn(move || check_zombie(children));
         crate::common::check_software_update();
         frame.event_handler(UI {});
         frame.sciter_handler(UIHostHandler {});
@@ -514,17 +508,17 @@ impl UI {
     }
 
     fn get_lan_peers(&self) -> String {
-        let peers = get_lan_peers()
-            .into_iter()
-            .map(|mut peer| {
-                (
-                    peer.remove("id").unwrap_or_default(),
-                    peer.remove("username").unwrap_or_default(),
-                    peer.remove("hostname").unwrap_or_default(),
-                    peer.remove("platform").unwrap_or_default(),
-                )
-            })
-            .collect::<Vec<(String, String, String, String)>>();
+        // let peers = get_lan_peers()
+        //     .into_iter()
+        //     .map(|mut peer| {
+        //         (
+        //             peer.remove("id").unwrap_or_default(),
+        //             peer.remove("username").unwrap_or_default(),
+        //             peer.remove("hostname").unwrap_or_default(),
+        //             peer.remove("platform").unwrap_or_default(),
+        //         )
+        //     })
+        //     .collect::<Vec<(String, String, String, String)>>();
         serde_json::to_string(&get_lan_peers()).unwrap_or_default()
     }
 
@@ -670,10 +664,10 @@ impl sciter::host::HostHandler for UIHostHandler {
     }
 }
 
-pub fn check_zombie(childs: Childs) {
+pub fn check_zombie(children: Children) {
     let mut deads = Vec::new();
     loop {
-        let mut lock = childs.lock().unwrap();
+        let mut lock = children.lock().unwrap();
         let mut n = 0;
         for (id, c) in lock.1.iter_mut() {
             if let Ok(Some(_)) = c.try_wait() {

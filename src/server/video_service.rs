@@ -33,9 +33,10 @@ use std::{
     collections::HashSet,
     io::ErrorKind::WouldBlock,
     ops::{Deref, DerefMut},
-    sync::Once,
     time::{self, Duration, Instant},
 };
+#[cfg(windows)]
+use std::sync::Once;
 #[cfg(windows)]
 use virtual_display;
 
@@ -468,6 +469,7 @@ fn run(sp: GenericService) -> ResultType<()> {
     #[cfg(windows)]
     start_uac_elevation_check();
 
+    #[cfg(target_os = "linux")]
     let mut would_block_count = 0u32;
 
     while sp.ok() {
@@ -528,7 +530,7 @@ fn run(sp: GenericService) -> ResultType<()> {
                         frame_controller.set_send(now, send_conn_ids);
                     }
                     scrap::Frame::RAW(data) => {
-                        if (data.len() != 0) {
+                        if data.len() != 0 {
                             let send_conn_ids =
                                 handle_one_frame(&sp, data, ms, &mut encoder, recorder.clone())?;
                             frame_controller.set_send(now, send_conn_ids);
@@ -570,9 +572,9 @@ fn run(sp: GenericService) -> ResultType<()> {
                     try_gdi += 1;
                 }
 
-                would_block_count += 1;
                 #[cfg(target_os = "linux")]
                 {
+                    would_block_count += 1;
                     if !scrap::is_x11() {
                         if would_block_count >= 100 {
                             // For now, the user should choose and agree screen sharing agiain.
@@ -600,7 +602,10 @@ fn run(sp: GenericService) -> ResultType<()> {
                 return Err(err.into());
             }
             _ => {
-                would_block_count = 0;
+                #[cfg(target_os = "linux")]
+                {
+                    would_block_count = 0;
+                }
             }
         }
 

@@ -4,11 +4,13 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_hbb/models/platform_model.dart';
+import 'package:get/get.dart';
 import 'package:wakelock/wakelock.dart';
+import 'package:window_manager/window_manager.dart';
 
 import '../common.dart';
 import '../common/formatter/id_formatter.dart';
-import '../desktop/pages/server_page.dart' as Desktop;
+import '../desktop/pages/server_page.dart' as desktop;
 import '../desktop/widgets/tabbar_widget.dart';
 import '../mobile/pages/server_page.dart';
 import 'model.dart';
@@ -36,6 +38,8 @@ class ServerModel with ChangeNotifier {
   final tabController = DesktopTabController(tabType: DesktopTabType.cm);
 
   final List<Client> _clients = [];
+
+  Timer? cmHiddenTimer;
 
   bool get isStart => _isStart;
 
@@ -257,7 +261,7 @@ class ServerModel with ChangeNotifier {
   }
 
   /// Start the screen sharing service.
-  Future<Null> startService() async {
+  Future<void> startService() async {
     _isStart = true;
     notifyListeners();
     parent.target?.ffiModel.updateEventListener("");
@@ -272,7 +276,7 @@ class ServerModel with ChangeNotifier {
   }
 
   /// Stop the screen sharing service.
-  Future<Null> stopService() async {
+  Future<void> stopService() async {
     _isStart = false;
     closeAll();
     await parent.target?.invokeMethod("stop_service");
@@ -284,7 +288,7 @@ class ServerModel with ChangeNotifier {
     }
   }
 
-  Future<Null> initInput() async {
+  Future<void> initInput() async {
     await parent.target?.invokeMethod("init_input");
   }
 
@@ -353,13 +357,7 @@ class ServerModel with ChangeNotifier {
       for (var clientJson in clientsJson) {
         final client = Client.fromJson(clientJson);
         _clients.add(client);
-        tabController.add(
-            TabInfo(
-                key: client.id.toString(),
-                label: client.name,
-                closable: false,
-                page: Desktop.buildConnectionCard(client)),
-            authorized: client.authorized);
+        _addTab(client);
       }
       notifyListeners();
     } catch (e) {
@@ -384,13 +382,7 @@ class ServerModel with ChangeNotifier {
         }
         _clients.add(client);
       }
-      tabController.add(
-          TabInfo(
-              key: client.id.toString(),
-              label: client.name,
-              closable: false,
-              page: Desktop.buildConnectionCard(client)),
-          authorized: client.authorized);
+      _addTab(client);
       // remove disconnected
       final index_disconnected = _clients
           .indexWhere((c) => c.disconnected && c.peerId == client.peerId);
@@ -403,6 +395,30 @@ class ServerModel with ChangeNotifier {
       if (isAndroid && !client.authorized) showLoginDialog(client);
     } catch (e) {
       debugPrint("Failed to call loginRequest,error:$e");
+    }
+  }
+
+  void _addTab(Client client) {
+    tabController.add(TabInfo(
+        key: client.id.toString(),
+        label: client.name,
+        closable: false,
+        onTap: () {
+          if (client.hasUnreadChatMessage.value) {
+            client.hasUnreadChatMessage.value = false;
+            final chatModel = parent.target!.chatModel;
+            chatModel.showChatPage(client.id);
+          }
+        },
+        page: desktop.buildConnectionCard(client)));
+    Future.delayed(Duration.zero, () async {
+      window_on_top(null);
+    });
+    if (client.authorized) {
+      cmHiddenTimer = Timer(const Duration(seconds: 3), () {
+        windowManager.minimize();
+        cmHiddenTimer = null;
+      });
     }
   }
 
@@ -503,9 +519,9 @@ class ServerModel with ChangeNotifier {
   }
 
   closeAll() {
-    _clients.forEach((client) {
+    for (var client in _clients) {
       bind.cmCloseConnection(connId: client.id);
-    });
+    }
     _clients.clear();
     tabController.state.value.tabs.clear();
   }
@@ -530,6 +546,8 @@ class Client {
   bool recording = false;
   bool disconnected = false;
 
+  RxBool hasUnreadChatMessage = false.obs;
+
   Client(this.id, this.authorized, this.isFileTransfer, this.name, this.peerId,
       this.keyboard, this.clipboard, this.audio);
 
@@ -549,7 +567,7 @@ class Client {
   }
 
   Map<String, dynamic> toJson() {
-    final Map<String, dynamic> data = new Map<String, dynamic>();
+    final Map<String, dynamic> data = <String, dynamic>{};
     data['id'] = id;
     data['is_start'] = authorized;
     data['is_file_transfer'] = isFileTransfer;

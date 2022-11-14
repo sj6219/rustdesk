@@ -1,10 +1,11 @@
 use crate::ipc::Data;
+use bytes::Bytes;
 pub use connection::*;
 use hbb_common::{
     allow_err,
     anyhow::{anyhow, Context},
     bail,
-    config::{Config, Config2, CONNECT_TIMEOUT, RELAY_PORT},
+    config::{Config, CONNECT_TIMEOUT, RELAY_PORT},
     log,
     message_proto::*,
     protobuf::{Enum, Message as _},
@@ -13,14 +14,17 @@ use hbb_common::{
     sodiumoxide::crypto::{box_, secretbox, sign},
     timeout, tokio, ResultType, Stream,
 };
-use service::{GenericService, Service, ServiceTmpl, Subscriber};
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+use hbb_common::config::Config2;
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+use service::ServiceTmpl;
+use service::{GenericService, Service, Subscriber};
 use std::{
     collections::HashMap,
     net::SocketAddr,
     sync::{Arc, Mutex, RwLock, Weak},
     time::Duration,
 };
-use bytes::Bytes;
 
 pub mod audio_service;
 cfg_if::cfg_if! {
@@ -140,7 +144,8 @@ pub async fn create_tcp_connection(
                 .write_to_bytes()
                 .unwrap_or_default(),
                 &sk,
-            ).into(),
+            )
+            .into(),
             ..Default::default()
         });
         timeout(CONNECT_TIMEOUT, stream.send(&msg_out)).await??;
@@ -263,6 +268,17 @@ impl Server {
         self.connections.remove(&conn.id());
     }
 
+    pub fn close_connections(&mut self) {
+        let conn_inners: Vec<_> = self.connections.values_mut().collect();
+        for c in conn_inners {
+            let mut misc = Misc::new();
+            misc.set_stop_service(true);
+            let mut msg = Message::new();
+            msg.set_misc(misc);
+            c.send(Arc::new(msg));
+        }
+    }
+
     fn add_service(&mut self, service: Box<dyn Service>) {
         let name = service.name();
         self.services.insert(name, service);
@@ -310,9 +326,9 @@ pub fn check_zombie() {
 }
 
 /// Start the host server that allows the remote peer to control the current machine.
-/// 
+///
 /// # Arguments
-/// 
+///
 /// * `is_server` - Whether the current client is definitely the server.
 /// If true, the server will be started.
 /// Otherwise, client will check if there's already a server and start one if not.
@@ -323,9 +339,9 @@ pub async fn start_server(is_server: bool) {
 }
 
 /// Start the host server that allows the remote peer to control the current machine.
-/// 
+///
 /// # Arguments
-/// 
+///
 /// * `is_server` - Whether the current client is definitely the server.
 /// If true, the server will be started.
 /// Otherwise, client will check if there's already a server and start one if not.

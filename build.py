@@ -17,7 +17,7 @@ flutter_win_target_dir = 'flutter/build/windows/runner/Release/'
 
 
 def get_version():
-    with open("Cargo.toml") as fh:
+    with open("Cargo.toml", encoding="utf-8") as fh:
         for line in fh:
             if line.startswith("version"):
                 return line.replace("version", "").replace("=", "").replace('"', '').strip()
@@ -80,6 +80,11 @@ def make_parser():
         '--portable',
         action='store_true',
         help='Build windows portable'
+    )
+    parser.add_argument(
+        '--flatpak',
+        action='store_true',
+        help='Build rustdesk libs with the flatpak feature enabled'
     )
     return parser
 
@@ -188,6 +193,8 @@ def get_features(args):
         features.append('hwcodec')
     if args.flutter:
         features.append('flutter')
+    if args.flatpak:
+        features.append('flatpak')
     print("features:", features)
     return features
 
@@ -201,7 +208,7 @@ Version: %s
 Architecture: amd64
 Maintainer: open-trade <info@rustdesk.com>
 Homepage: https://rustdesk.com
-Depends: libgtk-3-0, libxcb-randr0, libxdo3, libxfixes3, libxcb-shape0, libxcb-xfixes0, libasound2, libsystemd0, pipewire, curl
+Depends: libgtk-3-0, libxcb-randr0, libxdo3, libxfixes3, libxcb-shape0, libxcb-xfixes0, libasound2, libsystemd0, pipewire, curl, libappindicator3-1, libva-drm2, libva-x11-2, libvdpau1
 Description: A remote control software.
 
 """ % version
@@ -268,6 +275,9 @@ def build_flutter_arch_manjaro(version, features):
 
 def build_flutter_windows(version, features):
     os.system(f'cargo build --features {features} --lib --release')
+    if not os.path.exists("target/release/librustdesk.dll"):
+        print("cargo build failed, please check rust source code.")
+        exit(-1)
     os.chdir('flutter')
     os.system('flutter build windows --release')
     os.chdir('..')

@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:math';
+import 'dart:ui' as ui;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
@@ -10,7 +11,7 @@ import '../../models/model.dart';
 import '../../models/platform_model.dart';
 import '../common.dart';
 import '../consts.dart';
-import 'dart:ui' as ui;
+import './state_model.dart';
 
 /// Mouse button enum.
 enum MouseButtons { left, right, wheel }
@@ -41,6 +42,7 @@ class InputModel {
   // mouse
   final isPhysicalMouse = false.obs;
   int _lastMouseDownButtons = 0;
+  Offset last_mouse_pos = Offset.zero;
 
   get id => parent.target?.id ?? "";
 
@@ -302,6 +304,28 @@ class InputModel {
   }
 
   void handleMouse(Map<String, dynamic> evt) {
+    double x = evt['x'];
+    double y = max(0.0, evt['y']);
+    final cursorModel = parent.target!.cursorModel;
+
+    if (cursorModel.is_peer_control_protected) {
+      last_mouse_pos = ui.Offset(x, y);
+      return;
+    }
+
+    if (!cursorModel.got_mouse_control) {
+      bool self_get_control =
+          (x - last_mouse_pos.dx).abs() > kMouseControlDistance ||
+              (y - last_mouse_pos.dy).abs() > kMouseControlDistance;
+      if (self_get_control) {
+        cursorModel.got_mouse_control = true;
+      } else {
+        last_mouse_pos = ui.Offset(x, y);
+        return;
+      }
+    }
+    last_mouse_pos = ui.Offset(x, y);
+
     var type = '';
     var isMove = false;
     switch (evt['type']) {
@@ -318,12 +342,8 @@ class InputModel {
         return;
     }
     evt['type'] = type;
-    double x = evt['x'];
-    double y = max(0.0, evt['y']);
     if (isDesktop) {
-      final RxBool fullscreen = Get.find(tag: 'fullscreen');
-      final tabBarHeight = fullscreen.isTrue ? 0 : kDesktopRemoteTabBarHeight;
-      y = y - tabBarHeight;
+      y = y - stateGlobal.tabBarHeight;
     }
     final canvasModel = parent.target!.canvasModel;
     final ffiModel = parent.target!.ffiModel;

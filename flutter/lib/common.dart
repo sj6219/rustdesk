@@ -1,20 +1,20 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 import 'dart:typed_data';
-import 'dart:ui';
 
 import 'package:back_button_interceptor/back_button_interceptor.dart';
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_hbb/desktop/widgets/refresh_wrapper.dart';
 import 'package:flutter_hbb/desktop/widgets/tabbar_widget.dart';
 import 'package:flutter_hbb/main.dart';
 import 'package:flutter_hbb/models/peer_model.dart';
 import 'package:flutter_hbb/utils/multi_window_manager.dart';
 import 'package:get/get.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uni_links/uni_links.dart';
 import 'package:uni_links_desktop/uni_links_desktop.dart';
 import 'package:window_manager/window_manager.dart';
@@ -86,7 +86,7 @@ class IconFont {
   static const IconData add = IconData(0xe664, fontFamily: _family1);
   static const IconData menu = IconData(0xe628, fontFamily: _family1);
   static const IconData search = IconData(0xe6a4, fontFamily: _family2);
-  static const IconData round_close = IconData(0xe6ed, fontFamily: _family2);
+  static const IconData roundClose = IconData(0xe6ed, fontFamily: _family2);
 }
 
 class ColorThemeExtension extends ThemeExtension<ColorThemeExtension> {
@@ -204,18 +204,17 @@ class MyTheme {
   );
 
   static ThemeMode getThemeModePreference() {
-    return themeModeFromString(
-        Get.find<SharedPreferences>().getString("themeMode") ?? "");
+    return themeModeFromString(bind.mainGetLocalOption(key: kCommConfKeyTheme));
   }
 
   static void changeDarkMode(ThemeMode mode) {
     final preference = getThemeModePreference();
     if (preference != mode) {
       if (mode == ThemeMode.system) {
-        Get.find<SharedPreferences>().setString("themeMode", "");
+        bind.mainSetLocalOption(key: kCommConfKeyTheme, value: '');
       } else {
-        Get.find<SharedPreferences>()
-            .setString("themeMode", mode.toShortString());
+        bind.mainSetLocalOption(
+            key: kCommConfKeyTheme, value: mode.toShortString());
       }
       Get.changeThemeMode(mode);
       if (desktopType == DesktopType.main) {
@@ -322,10 +321,12 @@ void window_on_top(int? id) {
     windowManager.restore();
     windowManager.show();
     windowManager.focus();
+    rustDeskWinManager.registerActiveWindow(0);
   } else {
     WindowController.fromWindowId(id)
       ..focus()
       ..show();
+    rustDeskWinManager.call(WindowType.Main, kWindowEventShow, {"id": id});
   }
 }
 
@@ -1023,8 +1024,8 @@ Future<void> saveWindowPosition(WindowType type, {int? windowId}) async {
       final isMaximized = await windowManager.isMaximized();
       final pos = LastWindowPosition(
           sz.width, sz.height, position.dx, position.dy, isMaximized);
-      await Get.find<SharedPreferences>()
-          .setString(kWindowPrefix + type.name, pos.toString());
+      await bind.setLocalFlutterConfig(
+          k: kWindowPrefix + type.name, v: pos.toString());
       break;
     default:
       final wc = WindowController.fromWindowId(windowId!);
@@ -1034,8 +1035,10 @@ Future<void> saveWindowPosition(WindowType type, {int? windowId}) async {
       final isMaximized = await wc.isMaximized();
       final pos = LastWindowPosition(
           sz.width, sz.height, position.dx, position.dy, isMaximized);
-      await Get.find<SharedPreferences>()
-          .setString(kWindowPrefix + type.name, pos.toString());
+      debugPrint(
+          "saving frame: $windowId: ${pos.width}/${pos.height}, offset:${pos.offsetWidth}/${pos.offsetHeight}");
+      await bind.setLocalFlutterConfig(
+          k: kWindowPrefix + type.name, v: pos.toString());
       break;
   }
 }
@@ -1079,7 +1082,7 @@ Future<Size> _adjustRestoreMainWindowSize(double? width, double? height) async {
     restoreWidth = maxWidth;
   }
   if (restoreHeight > maxHeight) {
-    restoreWidth = maxHeight;
+    restoreHeight = maxHeight;
   }
   return Size(restoreWidth, restoreHeight);
 }
@@ -1090,11 +1093,11 @@ Future<Offset?> _adjustRestoreMainWindowOffset(
   if (left == null || top == null) {
     await windowManager.center();
   } else {
-    double windowLeft = left;
-    double windowTop = top;
+    double windowLeft = max(0.0, left);
+    double windowTop = max(0.0, top);
 
-    double frameLeft = 0;
-    double frameTop = 0;
+    double frameLeft = double.infinity;
+    double frameTop = double.infinity;
     double frameRight = ((isDesktop || isWebDesktop)
             ? kDesktopMaxDisplayWidth
             : kMobileMaxDisplayWidth)
@@ -1105,12 +1108,11 @@ Future<Offset?> _adjustRestoreMainWindowOffset(
         .toDouble();
 
     if (isDesktop || isWebDesktop) {
-      final screen = (await window_size.getWindowInfo()).screen;
-      if (screen != null) {
-        frameLeft = screen.visibleFrame.left;
-        frameTop = screen.visibleFrame.top;
-        frameRight = screen.visibleFrame.right;
-        frameBottom = screen.visibleFrame.bottom;
+      for (final screen in await window_size.getScreenList()) {
+        frameLeft = min(screen.visibleFrame.left, frameLeft);
+        frameTop = min(screen.visibleFrame.top, frameTop);
+        frameRight = max(screen.visibleFrame.right, frameRight);
+        frameBottom = max(screen.visibleFrame.bottom, frameBottom);
       }
     }
 
@@ -1133,13 +1135,7 @@ Future<bool> restoreWindowPosition(WindowType type, {int? windowId}) async {
     debugPrint(
         "Error: windowId cannot be null when saving positions for sub window");
   }
-  final pos =
-      Get.find<SharedPreferences>().getString(kWindowPrefix + type.name);
-
-  if (pos == null) {
-    debugPrint("no window position saved, ignore restore");
-    return false;
-  }
+  final pos = bind.getLocalFlutterConfig(k: kWindowPrefix + type.name);
   var lpos = LastWindowPosition.loadFromString(pos);
   if (lpos == null) {
     debugPrint("window position saved, but cannot be parsed");
@@ -1172,6 +1168,8 @@ Future<bool> restoreWindowPosition(WindowType type, {int? windowId}) async {
             await _adjustRestoreMainWindowSize(lpos.width, lpos.height);
         final offset = await _adjustRestoreMainWindowOffset(
             lpos.offsetWidth, lpos.offsetHeight);
+        debugPrint(
+            "restore lpos: ${size.width}/${size.height}, offset:${offset?.dx}/${offset?.dy}");
         if (offset == null) {
           await wc.center();
         } else {
@@ -1209,23 +1207,21 @@ Future<void> initUniLinks() async {
   }
 }
 
-StreamSubscription listenUniLinks() {
-  if (Platform.isWindows || Platform.isMacOS) {
-    final sub = uriLinkStream.listen((Uri? uri) {
-      if (uri != null) {
-        callUniLinksUriHandler(uri);
-      } else {
-        print("uni listen error: uri is empty.");
-      }
-    }, onError: (err) {
-      print("uni links error: $err");
-    });
-    return sub;
-  } else {
-    // return empty stream subscription for uniform logic
-    final stream = Stream.empty();
-    return stream.listen((event) {/*ignore*/});
+StreamSubscription? listenUniLinks() {
+  if (!(Platform.isWindows || Platform.isMacOS)) {
+    return null;
   }
+
+  final sub = uriLinkStream.listen((Uri? uri) {
+    if (uri != null) {
+      callUniLinksUriHandler(uri);
+    } else {
+      print("uni listen error: uri is empty.");
+    }
+  }, onError: (err) {
+    print("uni links error: $err");
+  });
+  return sub;
 }
 
 void checkArguments() {
@@ -1325,16 +1321,70 @@ void connect(BuildContext context, String id,
 
 Future<Map<String, String>> getHttpHeaders() async {
   return {
-    'Authorization':
-        'Bearer ${await bind.mainGetLocalOption(key: 'access_token')}'
+    'Authorization': 'Bearer ${bind.mainGetLocalOption(key: 'access_token')}'
   };
 }
 
 // Simple wrapper of built-in types for refrence use.
 class SimpleWrapper<T> {
-  T t;
-  SimpleWrapper(this.t);
+  T value;
+  SimpleWrapper(this.value);
+}
 
-  T get value => t;
-  set value(T t) => this.t = t;
+/// call this to reload current window.
+///
+/// [Note]
+/// Must have [RefreshWrapper] on the top of widget tree.
+void reloadCurrentWindow() {
+  if (Get.context != null) {
+    // reload self window
+    RefreshWrapper.of(Get.context!)?.rebuild();
+  } else {
+    debugPrint(
+        "reload current window failed, global BuildContext does not exist");
+  }
+}
+
+/// call this to reload all windows, including main + all sub windows.
+Future<void> reloadAllWindows() async {
+  reloadCurrentWindow();
+  try {
+    final ids = await DesktopMultiWindow.getAllSubWindowIds();
+    for (final id in ids) {
+      DesktopMultiWindow.invokeMethod(id, kWindowActionRebuild);
+    }
+  } on AssertionError {
+    // ignore
+  }
+}
+
+/// Indicate the flutter app is running in portable mode.
+///
+/// [Note]
+/// Portable build is only avaliable on Windows.
+bool isRunningInPortableMode() {
+  if (!Platform.isWindows) {
+    return false;
+  }
+  return bool.hasEnvironment(kEnvPortableExecutable);
+}
+
+/// Window status callback
+void onActiveWindowChanged() async {
+  print(
+      "[MultiWindowHandler] active window changed: ${rustDeskWinManager.getActiveWindows()}");
+  if (rustDeskWinManager.getActiveWindows().isEmpty) {
+    // close all sub windows
+    try {
+      await Future.wait([
+        saveWindowPosition(WindowType.Main),
+        rustDeskWinManager.closeAllSubWindows()
+      ]);
+    } catch (err) {
+      debugPrint("$err");
+    } finally {
+      await windowManager.setPreventClose(false);
+      await windowManager.close();
+    }
+  }
 }

@@ -1,23 +1,23 @@
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
-use crate::client::get_key_state;
+use crate::client::{get_key_state, SERVER_KEYBOARD_ENABLED};
 use crate::client::io_loop::Remote;
 use crate::client::{
     check_if_retry, handle_hash, handle_login_from_ui, handle_test_delay, input_os_password,
     load_config, send_mouse, start_video_audio_threads, FileManager, Key, LoginConfigHandler,
-    QualityStatus, KEY_MAP, SERVER_KEYBOARD_ENABLED,
+    QualityStatus, KEY_MAP,
 };
+#[cfg(target_os = "linux")]
 use crate::common::IS_X11;
 use crate::{client::Data, client::Interface};
 use async_trait::async_trait;
 use hbb_common::config::{Config, LocalConfig, PeerConfig};
 use hbb_common::rendezvous_proto::ConnType;
 use hbb_common::tokio::{self, sync::mpsc};
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
-use rdev::Keyboard as RdevKeyboard;
-use rdev::{Event, EventType, EventType::*, Key as RdevKey, KeyboardState};
-
 use hbb_common::{allow_err, message_proto::*};
 use hbb_common::{fs, get_version_number, log, Stream};
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+use rdev::{Keyboard as RdevKeyboard, KeyboardState};
+use rdev::{Event, EventType, EventType::*, Key as RdevKey};
 use std::collections::{HashMap, HashSet};
 use std::ops::{Deref, DerefMut};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -25,12 +25,13 @@ use std::sync::{Arc, Mutex, RwLock};
 
 /// IS_IN KEYBOARD_HOOKED sciter only
 pub static IS_IN: AtomicBool = AtomicBool::new(false);
-pub static KEYBOARD_HOOKED: AtomicBool = AtomicBool::new(true);
-pub static HOTKEY_HOOK_ENABLED: AtomicBool = AtomicBool::new(false);
-#[cfg(target_os = "linux")]
-use rdev::IS_GRAB;
+pub static KEYBOARD_HOOKED: AtomicBool = AtomicBool::new(false);
+pub static HOTKEY_HOOKED: AtomicBool = AtomicBool::new(false);
 #[cfg(windows)]
 static mut IS_ALT_GR: bool = false;
+#[cfg(feature = "flutter")]
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+use crate::flutter::FlutterHandler;
 
 lazy_static::lazy_static! {
     static ref TO_RELEASE: Arc<Mutex<HashSet<RdevKey>>> = Arc::new(Mutex::new(HashSet::<RdevKey>::new()));
@@ -39,6 +40,12 @@ lazy_static::lazy_static! {
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 lazy_static::lazy_static! {
     static ref KEYBOARD: Arc<Mutex<RdevKeyboard>> = Arc::new(Mutex::new(RdevKeyboard::new().unwrap()));
+}
+
+#[cfg(feature = "flutter")]
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+lazy_static::lazy_static! {
+    pub static ref CUR_SESSION: Arc<Mutex<Option<Session<FlutterHandler>>>> = Default::default();
 }
 
 lazy_static::lazy_static! {
@@ -90,6 +97,14 @@ impl<T: InvokeUiSession> Session<T> {
 
     pub fn save_view_style(&mut self, value: String) {
         self.lc.write().unwrap().save_view_style(value);
+    }
+
+    pub fn set_flutter_config(&mut self, k: String, v: String) {
+        self.lc.write().unwrap().set_ui_flutter(k, v);
+    }
+
+    pub fn get_flutter_config(&self, k: String) -> String {
+        self.lc.write().unwrap().get_ui_flutter(&k)
     }
 
     pub fn toggle_option(&mut self, name: String) {
@@ -368,7 +383,6 @@ impl<T: InvokeUiSession> Session<T> {
         if get_key_state(enigo::Key::NumLock) {
             key_event.modifiers.push(ControlKey::NumLock.into());
         }
-
         self.send_key_event(key_event, KeyboardMode::Map);
     }
 
@@ -468,19 +482,16 @@ impl<T: InvokeUiSession> Session<T> {
 
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     fn legacy_keyboard_mode(&self, down_or_up: bool, key: RdevKey, evt: Event) {
-        //..m
         // legacy mode(0): Generate characters locally, look for keycode on other side.
         let peer = self.peer_platform();
         let is_win = peer == "Windows";
 
-        //let alt = get_key_state(enigo::Key::Alt);
-        let alt = get_hotkey_state(RdevKey::Alt);
+        let alt = get_key_state(enigo::Key::Alt);
         #[cfg(windows)]
         let ctrl = {
             let mut tmp =
-                //get_key_state(enigo::Key::Control) || get_key_state(enigo::Key::RightControl);
-                get_hotkey_state(RdevKey::ControlLeft) || get_hotkey_state(RdevKey::ControlRight);
-                unsafe {
+                get_key_state(enigo::Key::Control) || get_key_state(enigo::Key::RightControl);
+            unsafe {
                 if IS_ALT_GR {
                     if alt || key == RdevKey::AltGr {
                         if tmp {
@@ -495,11 +506,9 @@ impl<T: InvokeUiSession> Session<T> {
         };
         #[cfg(not(windows))]
         let ctrl = get_key_state(enigo::Key::Control) || get_key_state(enigo::Key::RightControl);
-        //let shift = get_key_state(enigo::Key::Shift) || get_key_state(enigo::Key::RightShift);
-        let shift = get_hotkey_state(RdevKey::ShiftLeft) || get_hotkey_state(RdevKey::ShiftRight);
+        let shift = get_key_state(enigo::Key::Shift) || get_key_state(enigo::Key::RightShift);
         #[cfg(windows)]
-        //let command = crate::platform::windows::get_win_key_state();
-        let command = get_hotkey_state(RdevKey::MetaLeft);
+        let command = crate::platform::windows::get_win_key_state();
         #[cfg(not(windows))]
         let command = get_key_state(enigo::Key::Meta);
         let control_key = match key {
@@ -682,7 +691,17 @@ impl<T: InvokeUiSession> Session<T> {
             }
         }
 
+        //..
+        #[cfg(target_os = "macos")]
+        let (ctrl, command) = (command, ctrl);
+        
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        let (alt, ctrl, shift, command) = get_all_hotkey_state(alt, ctrl, shift, command);
         self.legacy_modifiers(&mut key_event, alt, ctrl, shift, command);
+
+        //..
+        #[cfg(target_os = "macos")]
+        let (ctrl, command) = (command, ctrl);
 
         if down_or_up == true {
             key_event.down = true;
@@ -703,6 +722,7 @@ impl<T: InvokeUiSession> Session<T> {
         #[cfg(not(windows))]
         let key = self.convert_numpad_keys(key);
 
+
         //..
         #[cfg(target_os = "macos")]
         let key = match key {
@@ -715,12 +735,14 @@ impl<T: InvokeUiSession> Session<T> {
             _ => key,
         };
 
+
+        let mut to_release = TO_RELEASE.lock().unwrap();
         match mode {
             KeyboardMode::Map => {
                 if down_or_up == true {
-                    TO_RELEASE.lock().unwrap().insert(key);
+                    to_release.insert(key);
                 } else {
-                    TO_RELEASE.lock().unwrap().remove(&key);
+                    to_release.remove(&key);
                 }
                 self.map_keyboard_mode(down_or_up, key, Some(evt));
             }
@@ -801,30 +823,33 @@ impl<T: InvokeUiSession> Session<T> {
     }
 
     pub fn enter(&self) {
-        HOTKEY_HOOK_ENABLED.store(true, Ordering::SeqCst);
+        IS_IN.store(true, Ordering::SeqCst);
         #[cfg(target_os = "linux")]
-        unsafe {
-            IS_GRAB.store(true, Ordering::SeqCst);
-        }
+        self.grab_hotkeys(true);
 
         #[cfg(windows)]
         crate::platform::windows::stop_system_key_propagate(true);
-        IS_IN.store(true, Ordering::SeqCst);
     }
 
     pub fn leave(&self) {
-        HOTKEY_HOOK_ENABLED.store(false, Ordering::SeqCst);
+        IS_IN.store(false, Ordering::SeqCst);
         #[cfg(target_os = "linux")]
-        unsafe {
-            IS_GRAB.store(false, Ordering::SeqCst);
-        }
+        self.grab_hotkeys(false);
 
         for key in TO_RELEASE.lock().unwrap().iter() {
             self.map_keyboard_mode(false, *key, None)
         }
         #[cfg(windows)]
         crate::platform::windows::stop_system_key_propagate(false);
-        IS_IN.store(false, Ordering::SeqCst);
+    }
+
+    #[cfg(target_os = "linux")]
+    pub fn grab_hotkeys(&self, _grab: bool) {
+        if _grab {
+            rdev::enable_grab().ok();
+        } else {
+            rdev::disable_grab().ok();
+        }
     }
 
     pub fn handle_flutter_key_event(
@@ -840,6 +865,7 @@ impl<T: InvokeUiSession> Session<T> {
         let keycode: u32 = keycode as u32;
         let scancode: u32 = scancode as u32;
 
+        #[cfg(not(target_os = "windows"))]
         let key = rdev::key_from_scancode(scancode) as RdevKey;
         // Windows requires special handling
         #[cfg(target_os = "windows")]
@@ -872,6 +898,9 @@ impl<T: InvokeUiSession> Session<T> {
         shift: bool,
         command: bool,
     ) {
+        if HOTKEY_HOOKED.load(Ordering::SeqCst) {
+            return;
+        }
         let chars: Vec<char> = name.chars().collect();
         if chars.len() == 1 {
             let key = Key::_Raw(chars[0] as _);
@@ -1231,11 +1260,23 @@ impl<T: InvokeUiSession> Interface for Session<T> {
                 crate::platform::windows::add_recent_document(&path);
             }
         }
-
-        #[cfg(not(any(target_os = "android", target_os = "ios")))]
-        self.start_keyboard_hook();
-        #[cfg(not(any(target_os = "android", target_os = "ios")))]
-        self.start_hotkey_grab();
+        // only run in sciter
+        #[cfg(not(feature = "flutter"))]
+        {
+            // rdev::grab and rdev::listen use the same api in macOS & Windows
+            /* todo! Unused */
+            #[cfg(not(any(
+                target_os = "android",
+                target_os = "ios",
+                target_os = "macos",
+                target_os = "windows",
+                target_os = "linux",
+            )))]
+            self.start_keyboard_hook();
+            /* todo! (sciter) Only one device can be connected at the same time in linux */
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
+            self.start_grab_hotkey();
+        }
     }
 
     async fn handle_hash(&mut self, pass: &str, hash: Hash, peer: &mut Stream) {
@@ -1278,106 +1319,81 @@ impl<T: InvokeUiSession> Interface for Session<T> {
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 impl<T: InvokeUiSession> Session<T> {
-    fn handle_hot_key_event(&self, event: Event) {
-        // keyboard long press
-        match event.event_type {
-            EventType::KeyPress(k) => {
-                if MUTEX_SPECIAL_KEYS.lock().unwrap().contains_key(&k) {
-                    if *MUTEX_SPECIAL_KEYS.lock().unwrap().get(&k).unwrap() {
-                        return;
-                    }
-                    MUTEX_SPECIAL_KEYS.lock().unwrap().insert(k, true);
-                }
-            }
-            EventType::KeyRelease(k) => {
-                if MUTEX_SPECIAL_KEYS.lock().unwrap().contains_key(&k) {
-                    MUTEX_SPECIAL_KEYS.lock().unwrap().insert(k, false);
-                }
-            }
+    fn handle_hotkey_event(&self, event: Event) {
+        // if is long press, don't do anything.
+        if is_long_press(&event) {
+            return;
+        }
+
+        let (key, down) = match event.event_type {
+            EventType::KeyPress(key) => (key, true),
+            EventType::KeyRelease(key) => (key, false),
             _ => return,
         };
 
-        // keyboard short press
-        match event.event_type {
-            EventType::KeyPress(key) => {
-                self.key_down_or_up(true, key, event);
-            }
-            EventType::KeyRelease(key) => {
-                self.key_down_or_up(false, key, event);
-            }
-            _ => {}
-        }
+        self.key_down_or_up(down, key, event);
     }
 
-    fn start_hotkey_grab(&self) {
+    #[allow(dead_code)]
+    fn start_grab_hotkey(&self) {
+        if self.is_port_forward() || self.is_file_transfer() {
+            return;
+        }
         #[cfg(target_os = "linux")]
         if !*IS_X11.lock().unwrap() {
             return;
         }
-        if self.is_port_forward() || self.is_file_transfer() {
+        if HOTKEY_HOOKED.swap(true, Ordering::SeqCst) {
             return;
         }
+
+        log::info!("starting grab hotkeys");
         let me = self.clone();
 
-        log::info!("hotkey grabing");
-        std::thread::spawn(move || {
-            std::env::set_var("KEYBOARD_ONLY", "y");
-
-            let func = move |event: Event| {
-                #[cfg(any(target_os = "windows", target_os = "macos"))]
-                if !HOTKEY_HOOK_ENABLED.load(Ordering::SeqCst) {
-                    return Some(event);
-                };
-                match event.event_type {
-                    EventType::KeyPress(_key) | EventType::KeyRelease(_key) => {
-                        #[cfg(any(target_os = "windows", target_os = "macos"))]
-                        if MUTEX_SPECIAL_KEYS.lock().unwrap().contains_key(&_key) {
-                            me.handle_hot_key_event(event);
-                            return None;
-                        } else {
-                            return Some(event);
-                        }
-
-                        #[cfg(target_os = "linux")]
-                        me.handle_hot_key_event(event);
-
-                        None
-                    }
-                    _ => Some(event),
+        #[cfg(target_os = "linux")]
+        {
+            let func = move |event: Event| match event.event_type {
+                EventType::KeyPress(_key) | EventType::KeyRelease(_key) => {
+                    me.handle_hotkey_event(event);
+                    None
                 }
+                _ => Some(event),
             };
-
-            #[cfg(target_os = "linux")]
-            {
-                use rdev::GRABED_KEYS;
-                GRABED_KEYS.lock().unwrap().insert(RdevKey::ShiftLeft);
-                GRABED_KEYS.lock().unwrap().insert(RdevKey::ShiftRight);
-                GRABED_KEYS.lock().unwrap().insert(RdevKey::ControlLeft);
-                GRABED_KEYS.lock().unwrap().insert(RdevKey::ControlRight);
-                GRABED_KEYS.lock().unwrap().insert(RdevKey::Alt);
-                GRABED_KEYS.lock().unwrap().insert(RdevKey::AltGr);
-                GRABED_KEYS.lock().unwrap().insert(RdevKey::MetaLeft);
-                GRABED_KEYS.lock().unwrap().insert(RdevKey::MetaRight);
-            }
+            rdev::start_grab_listen(func)
+        }
+        #[cfg(any(target_os = "windows", target_os = "macos"))]
+        std::thread::spawn(move || {
+            let func = move |event: Event| match event.event_type {
+                EventType::KeyPress(..) | EventType::KeyRelease(..) => {
+                    // grab all keys
+                    if !IS_IN.load(Ordering::SeqCst)
+                        || !SERVER_KEYBOARD_ENABLED.load(Ordering::SeqCst)
+                    {
+                        return Some(event);
+                    } else {
+                        me.handle_hotkey_event(event);
+                        return None;
+                    }
+                }
+                _ => Some(event),
+            };
             if let Err(error) = rdev::grab(func) {
                 log::error!("Error: {:?}", error)
             }
         });
     }
 
+    #[allow(dead_code)]
     fn start_keyboard_hook(&self) {
+        // only run in sciter
         if self.is_port_forward() || self.is_file_transfer() {
             return;
         }
-        if !KEYBOARD_HOOKED.load(Ordering::SeqCst) {
-            return;
-        }
-        // rdev::grab and rdev::listen use the same api on macOS
-        #[cfg(target_os = "macos")]
-        if HOTKEY_HOOK_ENABLED.load(Ordering::SeqCst) {
+        if KEYBOARD_HOOKED.swap(true, Ordering::SeqCst) {
             return;
         }
         log::info!("keyboard hooked");
+
         let me = self.clone();
         #[cfg(windows)]
         crate::platform::windows::enable_lowlevel_keyboard(std::ptr::null_mut() as _);
@@ -1387,32 +1403,24 @@ impl<T: InvokeUiSession> Session<T> {
 
             let func = move |evt: Event| {
                 //..m=====1.1
+                /* todo! IS_IN can't determine if the user is focused on remote page */
                 if !IS_IN.load(Ordering::SeqCst) || !SERVER_KEYBOARD_ENABLED.load(Ordering::SeqCst)
                 {
                     return;
                 }
-                let (_key, down) = match evt.event_type {
-                    KeyPress(k) => {
-                        // keyboard long press
-                        if MUTEX_SPECIAL_KEYS.lock().unwrap().contains_key(&k) {
-                            if *MUTEX_SPECIAL_KEYS.lock().unwrap().get(&k).unwrap() {
-                                return;
-                            }
-                            MUTEX_SPECIAL_KEYS.lock().unwrap().insert(k, true);
-                        }
-                        (k, true)
-                    }
-                    KeyRelease(k) => {
-                        // keyboard long press
-                        if MUTEX_SPECIAL_KEYS.lock().unwrap().contains_key(&k) {
-                            MUTEX_SPECIAL_KEYS.lock().unwrap().insert(k, false);
-                        }
-                        (k, false)
-                    }
+                if is_long_press(&evt) {
+                    return;
+                }
+                let (key, down) = match evt.event_type {
+                    EventType::KeyPress(key) => (key, true),
+                    EventType::KeyRelease(key) => (key, false),
                     _ => return,
                 };
-                me.key_down_or_up(down, _key, evt);
+                me.key_down_or_up(down, key, evt);
             };
+            /* todo!: Shift + a -> AA in sciter
+             * rdev::listen and rdev::grab both send a
+             */
             if let Err(error) = rdev::listen(func) {
                 log::error!("rdev: {:?}", error);
             }
@@ -1572,7 +1580,11 @@ async fn send_note(url: String, id: String, conn_id: i32, note: String) {
 }
 
 fn get_hotkey_state(key: RdevKey) -> bool {
-    *MUTEX_SPECIAL_KEYS.lock().unwrap().get(&key).unwrap()
+    if let Some(&state) = MUTEX_SPECIAL_KEYS.lock().unwrap().get(&key) {
+        return state;
+    } else {
+        return false;
+    }
 }
 
 fn get_all_hotkey_state(
@@ -1592,6 +1604,53 @@ fn get_all_hotkey_state(
     (alt, ctrl, shift, command)
 }
 
+#[cfg(feature = "flutter")]
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+pub fn send_key_event_to_session(event: rdev::Event) {
+    if let Some(handler) = CUR_SESSION.lock().unwrap().as_ref() {
+        handler.handle_hotkey_event(event);
+    }
+}
+
+#[cfg(feature = "flutter")]
+pub fn global_grab_keyboard() {
+    if HOTKEY_HOOKED.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    log::info!("starting global grab keyboard");
+
+    #[cfg(target_os = "linux")]
+    {
+        let func = move |event: Event| match event.event_type {
+            EventType::KeyPress(_key) | EventType::KeyRelease(_key) => {
+                send_key_event_to_session(event);
+                None
+            }
+            _ => Some(event),
+        };
+        rdev::start_grab_listen(func)
+    }
+
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
+    std::thread::spawn(move || {
+        let func = move |event: Event| match event.event_type {
+            EventType::KeyPress(..) | EventType::KeyRelease(..) => {
+                // grab all keys
+                if !IS_IN.load(Ordering::SeqCst) {
+                    return Some(event);
+                } else {
+                    send_key_event_to_session(event);
+                    return None;
+                }
+            }
+            _ => Some(event),
+        };
+        if let Err(error) = rdev::grab(func) {
+            log::error!("Error: {:?}", error)
+        }
+    });
+}
+
 pub fn global_get_keyboard_mode() -> String {
     return std::env::var("KEYBOARD_MODE")
         .unwrap_or(String::from("map"))
@@ -1600,4 +1659,26 @@ pub fn global_get_keyboard_mode() -> String {
 
 pub fn global_save_keyboard_mode(value: String) {
     std::env::set_var("KEYBOARD_MODE", value);
+}
+
+fn is_long_press(event: &Event) -> bool {
+    let mut keys = MUTEX_SPECIAL_KEYS.lock().unwrap();
+    match event.event_type {
+        EventType::KeyPress(k) => {
+            if let Some(&state) = keys.get(&k) {
+                if state == true {
+                    return true;
+                } else {
+                    keys.insert(k, true);
+                }
+            }
+        }
+        EventType::KeyRelease(k) => {
+            if keys.contains_key(&k) {
+                keys.insert(k, false);
+            }
+        }
+        _ => {}
+    };
+    return false;
 }

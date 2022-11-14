@@ -17,17 +17,17 @@ pub fn set_wayland_scrap_map_err() {
 }
 
 fn map_err_scrap(err: String) -> io::Error {
-    // REMOVE ME ===================================== uncomment to handle error
-    // // to-do: Handle error better, do not restart server
-    // if err.starts_with("Did not receive a reply") {
-    //     log::error!("Fatal pipewire error, {}", &err);
-    //     std::process::exit(-1);
-    // }
-
+    // to-do: Remove this the following log
     log::error!(
         "REMOVE ME ===================================== wayland scrap error {}",
         &err
     );
+
+    // to-do: Handle error better, do not restart server
+    if err.starts_with("Did not receive a reply") {
+        log::error!("Fatal pipewire error, {}", &err);
+        std::process::exit(-1);
+    }
 
     if DISTRO.name.to_uppercase() == "Ubuntu".to_uppercase() {
         if DISTRO.version_id < "21".to_owned() {
@@ -249,8 +249,8 @@ pub(super) fn release_resouce() {
     if *write_lock != 0 {
         let cap_display_info: *mut CapDisplayInfo = *write_lock as _;
         unsafe {
-            let box_capturer = Box::from_raw((*cap_display_info).capturer.0);
-            let box_cap_display_info = Box::from_raw(cap_display_info);
+            let _box_capturer = Box::from_raw((*cap_display_info).capturer.0);
+            let _box_cap_display_info = Box::from_raw(cap_display_info);
             *write_lock = 0;
         }
     }

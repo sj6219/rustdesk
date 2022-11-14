@@ -7,20 +7,22 @@ use std::{
 use flutter_rust_bridge::{StreamSink, SyncReturn, ZeroCopyBuffer};
 use serde_json::json;
 
+use hbb_common::ResultType;
 use hbb_common::{
     config::{self, LocalConfig, PeerConfig, ONLINE},
     fs, log,
 };
-use hbb_common::{message_proto::Hash, ResultType};
+
+// use crate::hbbs_http::account::AuthResult;
 
 use crate::flutter::{self, SESSIONS};
-use crate::start_server;
 use crate::ui_interface::{self, *};
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+use crate::ui_session_interface::CUR_SESSION;
 use crate::{
     client::file_trait::FileManager,
     flutter::{make_fd_to_json, session_add, session_start_},
 };
-
 fn initialize(app_dir: &str) {
     *config::APP_DIR.write().unwrap() = app_dir.to_owned();
     #[cfg(target_os = "android")]
@@ -158,6 +160,28 @@ pub fn session_toggle_option(id: String, value: String) {
     }
 }
 
+pub fn session_get_flutter_config(id: String, k: String) -> Option<String> {
+    if let Some(session) = SESSIONS.read().unwrap().get(&id) {
+        Some(session.get_flutter_config(k))
+    } else {
+        None
+    }
+}
+
+pub fn session_set_flutter_config(id: String, k: String, v: String) {
+    if let Some(session) = SESSIONS.write().unwrap().get_mut(&id) {
+        session.set_flutter_config(k, v);
+    }
+}
+
+pub fn get_local_flutter_config(k: String) -> SyncReturn<String> {
+    SyncReturn(ui_interface::get_local_flutter_config(k))
+}
+
+pub fn set_local_flutter_config(k: String, v: String) {
+    ui_interface::set_local_flutter_config(k, v);
+}
+
 pub fn session_get_image_quality(id: String) -> Option<String> {
     if let Some(session) = SESSIONS.read().unwrap().get(&id) {
         Some(session.get_image_quality())
@@ -223,10 +247,13 @@ pub fn session_handle_flutter_key_event(
 }
 
 pub fn session_enter_or_leave(id: String, enter: bool) {
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
     if let Some(session) = SESSIONS.read().unwrap().get(&id) {
         if enter {
+            *CUR_SESSION.lock().unwrap() = Some(session.clone());
             session.enter();
         } else {
+            *CUR_SESSION.lock().unwrap() = None;
             session.leave();
         }
     }
@@ -362,7 +389,7 @@ pub fn session_create_dir(id: String, act_id: i32, path: String, is_remote: bool
     }
 }
 
-pub fn session_read_local_dir_sync(id: String, path: String, show_hidden: bool) -> String {
+pub fn session_read_local_dir_sync(_id: String, path: String, show_hidden: bool) -> String {
     if let Ok(fd) = fs::read_dir(&fs::get_path(&path), show_hidden) {
         return make_fd_to_json(fd.id, path, &fd.entries);
     }
@@ -411,7 +438,7 @@ pub fn session_resume_job(id: String, act_id: i32, is_remote: bool) {
 pub fn main_get_sound_inputs() -> Vec<String> {
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     return get_sound_inputs();
-    #[cfg(any(target_os = "android", target_os = "linux"))]
+    #[cfg(any(target_os = "android", target_os = "ios"))]
     vec![String::from("")]
 }
 
@@ -530,8 +557,8 @@ pub fn main_post_request(url: String, body: String, header: String) {
     post_request(url, body, header)
 }
 
-pub fn main_get_local_option(key: String) -> String {
-    get_local_option(key)
+pub fn main_get_local_option(key: String) -> SyncReturn<String> {
+    SyncReturn(get_local_option(key))
 }
 
 pub fn main_set_local_option(key: String, value: String) {
@@ -561,6 +588,11 @@ pub fn main_set_peer_option(id: String, key: String, value: String) {
 pub fn main_set_peer_option_sync(id: String, key: String, value: String) -> SyncReturn<bool> {
     set_peer_option(id, key, value);
     SyncReturn(true)
+}
+
+pub fn main_set_peer_alias(id: String, alias: String) {
+    main_broadcast_message(&HashMap::from([("name", "alias"), ("id", &id), ("alias", &alias)]));
+    set_peer_option(id, "alias".to_owned(), alias)
 }
 
 pub fn main_forget_password(id: String) {
@@ -803,8 +835,13 @@ pub fn main_is_root() -> bool {
     is_root()
 }
 
-pub fn main_is_release() -> bool {
-    is_release()
+pub fn get_double_click_time() -> SyncReturn<i32> {
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        return SyncReturn(crate::platform::get_double_click_time() as _);
+    }
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    SyncReturn(500i32)
 }
 
 pub fn main_start_dbus_server() {
@@ -1014,6 +1051,11 @@ pub fn main_is_installed() -> SyncReturn<bool> {
     SyncReturn(is_installed())
 }
 
+pub fn main_start_grab_keyboard() {
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    crate::ui_session_interface::global_grab_keyboard();
+}
+
 pub fn main_is_installed_lower_version() -> SyncReturn<bool> {
     SyncReturn(is_installed_lower_version())
 }
@@ -1052,6 +1094,10 @@ pub fn main_update_me() -> SyncReturn<bool> {
     SyncReturn(true)
 }
 
+pub fn set_cur_session_id(id: String) {
+    super::flutter::set_cur_session_id(id)
+}
+
 pub fn install_show_run_without_install() -> SyncReturn<bool> {
     SyncReturn(show_run_without_install())
 }
@@ -1068,6 +1114,20 @@ pub fn install_install_path() -> SyncReturn<String> {
     SyncReturn(install_path())
 }
 
+pub fn main_account_auth(op: String) {
+    let id = get_id();
+    let uuid = get_uuid();
+    account_auth(op, id, uuid);
+}
+
+pub fn main_account_auth_cancel() {
+    account_auth_cancel()
+}
+
+pub fn main_account_auth_result() -> String {
+    account_auth_result()
+}
+
 #[cfg(target_os = "android")]
 pub mod server_side {
     use jni::{
@@ -1076,7 +1136,7 @@ pub mod server_side {
         JNIEnv,
     };
 
-    use hbb_common::{config::Config, log};
+    use hbb_common::log;
 
     use crate::start_server;
 

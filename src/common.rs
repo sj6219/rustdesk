@@ -1,5 +1,4 @@
 use std::{
-    collections::HashMap,
     future::Future,
     sync::{Arc, Mutex},
 };
@@ -7,10 +6,12 @@ use std::{
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub use arboard::Clipboard as ClipboardContext;
 
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+use hbb_common::compress::decompress;
 use hbb_common::{
     allow_err,
     anyhow::bail,
-    compress::{compress as compress_func, decompress},
+    compress::{compress as compress_func},
     config::{self, Config, COMPRESS_LEVEL, RENDEZVOUS_TIMEOUT},
     get_version_number, log,
     message_proto::*,
@@ -30,6 +31,9 @@ pub type NotifyMessageBox = fn(String, String, String, String) -> dyn Future<Out
 
 pub const CLIPBOARD_NAME: &'static str = "clipboard";
 pub const CLIPBOARD_INTERVAL: u64 = 333;
+
+// the executable name of the portable version
+pub const PORTABLE_APPNAME_RUNTIME_ENV_KEY: &str = "RUSTDESK_APPNAME";
 
 lazy_static::lazy_static! {
     pub static ref CONTENT: Arc<Mutex<String>> = Default::default();
@@ -580,7 +584,7 @@ pub fn is_ip(id: &str) -> bool {
 }
 
 pub fn is_setup(name: &str) -> bool {
-    name.to_lowercase().ends_with("install.exe") || name.to_lowercase().ends_with("安装.exe")
+    name.to_lowercase().ends_with("install.exe")
 }
 
 pub fn get_custom_rendezvous_server(custom: String) -> String {

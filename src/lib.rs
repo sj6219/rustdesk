@@ -41,12 +41,14 @@ mod lang;
 mod license;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 mod port_forward;
-#[cfg(windows)]
+
 mod tray;
 
 mod ui_cm_interface;
 mod ui_interface;
 mod ui_session_interface;
+
+mod hbbs_http;
 
 #[cfg(windows)]
 pub mod clipboard_file;

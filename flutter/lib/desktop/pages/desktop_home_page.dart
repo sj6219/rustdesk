@@ -5,6 +5,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart' hide MenuItem;
 import 'package:flutter/services.dart';
 import 'package:flutter_hbb/common.dart';
+import 'package:flutter_hbb/consts.dart';
 import 'package:flutter_hbb/desktop/pages/connection_page.dart';
 import 'package:flutter_hbb/desktop/pages/desktop_setting_page.dart';
 import 'package:flutter_hbb/desktop/pages/desktop_tab_page.dart';
@@ -12,6 +13,7 @@ import 'package:flutter_hbb/desktop/widgets/scroll_wrapper.dart';
 import 'package:flutter_hbb/models/platform_model.dart';
 import 'package:flutter_hbb/models/server_model.dart';
 import 'package:flutter_hbb/utils/multi_window_manager.dart';
+import 'package:flutter_hbb/utils/tray_manager.dart';
 import 'package:get/get.dart';
 import 'package:provider/provider.dart';
 import 'package:tray_manager/tray_manager.dart';
@@ -31,32 +33,13 @@ class DesktopHomePage extends StatefulWidget {
 const borderColor = Color(0xFF2F65BA);
 
 class _DesktopHomePageState extends State<DesktopHomePage>
-    with TrayListener, WindowListener, AutomaticKeepAliveClientMixin {
+    with TrayListener, AutomaticKeepAliveClientMixin {
   final _leftPaneScrollController = ScrollController();
 
   @override
   bool get wantKeepAlive => true;
   var updateUrl = '';
   StreamSubscription? _uniLinksSubscription;
-
-  @override
-  void onWindowClose() async {
-    super.onWindowClose();
-    // close all sub windows
-    if (await windowManager.isPreventClose()) {
-      try {
-        await Future.wait([
-          saveWindowPosition(WindowType.Main),
-          rustDeskWinManager.closeAllSubWindows()
-        ]);
-      } catch (err) {
-        debugPrint("$err");
-      } finally {
-        await windowManager.setPreventClose(false);
-        await windowManager.close();
-      }
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -395,13 +378,28 @@ class _DesktopHomePageState extends State<DesktopHomePage>
   }
 
   @override
+  void onTrayIconMouseDown() {
+    windowManager.show();
+  }
+
+  @override
+  void onTrayIconRightMouseDown() {
+    // linux does not support popup menu manually.
+    // linux will handle popup action ifself.
+    if (Platform.isMacOS || Platform.isWindows) {
+      trayManager.popUpContextMenu();
+    }
+  }
+
+  @override
   void onTrayMenuItemClick(MenuItem menuItem) {
-    debugPrint('click ${menuItem.key}');
     switch (menuItem.key) {
-      case "quit":
-        exit(0);
-      case "show":
-        // windowManager.show();
+      case kTrayItemQuitKey:
+        windowManager.close();
+        break;
+      case kTrayItemShowKey:
+        windowManager.show();
+        windowManager.focus();
         break;
       default:
         break;
@@ -411,24 +409,19 @@ class _DesktopHomePageState extends State<DesktopHomePage>
   @override
   void initState() {
     super.initState();
-    Timer(const Duration(seconds: 1), () async {
-      final installed = bind.mainIsInstalled();
-      final root = await bind.mainIsRoot();
-      final release = await bind.mainIsRelease();
-      if (Platform.isWindows && release && !installed && !root) {
-        msgBox('custom-elevation-nocancel', 'Prompt', 'elevation_prompt', '',
-            gFFI.dialogManager);
-      }
-    });
+    bind.mainStartGrabKeyboard();
     Timer(const Duration(seconds: 5), () async {
       updateUrl = await bind.mainGetSoftwareUpdateUrl();
       if (updateUrl.isNotEmpty) setState(() {});
     });
+    // disable this tray because we use tray function provided by rust now
+    // initTray();
     trayManager.addListener(this);
-    windowManager.addListener(this);
+    rustDeskWinManager.registerActiveWindowListener(onActiveWindowChanged);
+    rustDeskWinManager.registerActiveWindow(0);
     rustDeskWinManager.setMethodHandler((call, fromWindowId) async {
       debugPrint(
-          "call ${call.method} with args ${call.arguments} from window $fromWindowId");
+          "[Main] call ${call.method} with args ${call.arguments} from window $fromWindowId");
       if (call.method == "main_window_on_top") {
         window_on_top(null);
       } else if (call.method == "get_window_info") {
@@ -452,6 +445,12 @@ class _DesktopHomePageState extends State<DesktopHomePage>
             'scaleFactor': screen.scaleFactor,
           });
         }
+      } else if (call.method == kWindowActionRebuild) {
+        reloadCurrentWindow();
+      } else if (call.method == kWindowEventShow) {
+        rustDeskWinManager.registerActiveWindow(call.arguments["id"]);
+      } else if (call.method == kWindowEventHide) {
+        rustDeskWinManager.unregisterActiveWindow(call.arguments["id"]);
       }
     });
     Future.delayed(Duration.zero, () {
@@ -462,146 +461,13 @@ class _DesktopHomePageState extends State<DesktopHomePage>
 
   @override
   void dispose() {
+    // destoryTray();
+    // fix: disable unregister to prevent from receiving events from other windows
+    // rustDeskWinManager.unregisterActiveWindowListener(onActiveWindowChanged);
     trayManager.removeListener(this);
-    windowManager.removeListener(this);
     _uniLinksSubscription?.cancel();
     super.dispose();
   }
-}
-
-/// common login dialog for desktop
-/// call this directly
-Future<bool> loginDialog() async {
-  String userName = "";
-  var userNameMsg = "";
-  String pass = "";
-  var passMsg = "";
-  var userController = TextEditingController(text: userName);
-  var pwdController = TextEditingController(text: pass);
-
-  var isInProgress = false;
-  var completer = Completer<bool>();
-  gFFI.dialogManager.show((setState, close) {
-    submit() async {
-      setState(() {
-        userNameMsg = "";
-        passMsg = "";
-        isInProgress = true;
-      });
-      cancel() {
-        setState(() {
-          isInProgress = false;
-        });
-      }
-
-      userName = userController.text;
-      pass = pwdController.text;
-      if (userName.isEmpty) {
-        userNameMsg = translate("Username missed");
-        cancel();
-        return;
-      }
-      if (pass.isEmpty) {
-        passMsg = translate("Password missed");
-        cancel();
-        return;
-      }
-      try {
-        final resp = await gFFI.userModel.login(userName, pass);
-        if (resp.containsKey('error')) {
-          passMsg = resp['error'];
-          cancel();
-          return;
-        }
-        // {access_token: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJndWlkIjoiMDFkZjQ2ZjgtZjg3OS00MDE0LTk5Y2QtMGMwYzM2MmViZGJlIiwiZXhwIjoxNjYxNDg2NzYwfQ.GZpe1oI8TfM5yTYNrpcwbI599P4Z_-b2GmnwNl2Lr-w,
-        // token_type: Bearer, user: {id: , name: admin, email: null, note: null, status: null, grp: null, is_admin: true}}
-        debugPrint("$resp");
-        completer.complete(true);
-      } catch (err) {
-        debugPrint(err.toString());
-        cancel();
-        return;
-      }
-      close();
-    }
-
-    cancel() {
-      completer.complete(false);
-      close();
-    }
-
-    return CustomAlertDialog(
-      title: Text(translate("Login")),
-      content: ConstrainedBox(
-        constraints: const BoxConstraints(minWidth: 500),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const SizedBox(
-              height: 8.0,
-            ),
-            Row(
-              children: [
-                ConstrainedBox(
-                    constraints: const BoxConstraints(minWidth: 100),
-                    child: Text(
-                      "${translate('Username')}:",
-                      textAlign: TextAlign.start,
-                    ).marginOnly(bottom: 16.0)),
-                const SizedBox(
-                  width: 24.0,
-                ),
-                Expanded(
-                  child: TextField(
-                    decoration: InputDecoration(
-                        border: const OutlineInputBorder(),
-                        errorText: userNameMsg.isNotEmpty ? userNameMsg : null),
-                    controller: userController,
-                    focusNode: FocusNode()..requestFocus(),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(
-              height: 8.0,
-            ),
-            Row(
-              children: [
-                ConstrainedBox(
-                    constraints: const BoxConstraints(minWidth: 100),
-                    child: Text("${translate('Password')}:")
-                        .marginOnly(bottom: 16.0)),
-                const SizedBox(
-                  width: 24.0,
-                ),
-                Expanded(
-                  child: TextField(
-                    obscureText: true,
-                    decoration: InputDecoration(
-                        border: const OutlineInputBorder(),
-                        errorText: passMsg.isNotEmpty ? passMsg : null),
-                    controller: pwdController,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(
-              height: 4.0,
-            ),
-            Offstage(
-                offstage: !isInProgress, child: const LinearProgressIndicator())
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(onPressed: cancel, child: Text(translate("Cancel"))),
-        TextButton(onPressed: submit, child: Text(translate("OK"))),
-      ],
-      onSubmit: submit,
-      onCancel: cancel,
-    );
-  });
-  return completer.future;
 }
 
 void setPasswordDialog() async {

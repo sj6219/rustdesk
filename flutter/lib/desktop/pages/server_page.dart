@@ -5,7 +5,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_hbb/consts.dart';
 import 'package:flutter_hbb/desktop/widgets/tabbar_widget.dart';
-import 'package:flutter_hbb/mobile/pages/chat_page.dart';
 import 'package:flutter_hbb/models/chat_model.dart';
 import 'package:get/get.dart';
 import 'package:provider/provider.dart';
@@ -13,6 +12,7 @@ import 'package:window_manager/window_manager.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../common.dart';
+import '../../common/widgets/chat_page.dart';
 import '../../models/platform_model.dart';
 import '../../models/server_model.dart';
 
@@ -30,7 +30,7 @@ class _DesktopServerPageState extends State<DesktopServerPage>
   void initState() {
     gFFI.ffiModel.updateEventListener("");
     windowManager.addListener(this);
-    tabController.onRemove = (_, id) => onRemoveId(id);
+    tabController.onRemoved = (_, id) => onRemoveId(id);
     super.initState();
   }
 
@@ -99,14 +99,22 @@ class ConnectionManagerState extends State<ConnectionManager> {
   @override
   void initState() {
     gFFI.serverModel.updateClientState();
-    gFFI.serverModel.tabController.onSelected = (index) =>
+    gFFI.serverModel.tabController.onSelected = (index, _) =>
         gFFI.chatModel.changeCurrentID(gFFI.serverModel.clients[index].id);
+    gFFI.chatModel.isConnManager = true;
     super.initState();
   }
 
   @override
   Widget build(BuildContext context) {
     final serverModel = Provider.of<ServerModel>(context);
+    final pointerHandler = serverModel.cmHiddenTimer != null
+        ? (PointerEvent e) {
+            serverModel.cmHiddenTimer!.cancel();
+            serverModel.cmHiddenTimer = null;
+            debugPrint("CM hidden timer has been canceled");
+          }
+        : null;
     return serverModel.clients.isEmpty
         ? Column(
             children: [
@@ -118,35 +126,45 @@ class ConnectionManagerState extends State<ConnectionManager> {
               ),
             ],
           )
-        : DesktopTab(
-            showTitle: false,
-            showMaximize: false,
-            showMinimize: true,
-            showClose: true,
-            controller: serverModel.tabController,
-            maxLabelWidth: 100,
-            tail: buildScrollJumper(),
-            selectedTabBackgroundColor:
-                Theme.of(context).hintColor.withOpacity(0.2),
-            tabBuilder: (key, icon, label, themeConf) {
-              return Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  icon,
-                  Tooltip(
-                      message: key,
-                      waitDuration: Duration(seconds: 1),
-                      child: label),
-                ],
-              );
-            },
-            pageViewBuilder: (pageView) => Row(children: [
-                  Expanded(child: pageView),
-                  Consumer<ChatModel>(
-                      builder: (_, model, child) => model.isShowChatPage
-                          ? Expanded(child: Scaffold(body: ChatPage()))
-                          : Offstage())
-                ]));
+        : Listener(
+            onPointerDown: pointerHandler,
+            onPointerMove: pointerHandler,
+            child: DesktopTab(
+                showTitle: false,
+                showMaximize: false,
+                showMinimize: true,
+                showClose: true,
+                onWindowCloseButton: handleWindowCloseButton,
+                controller: serverModel.tabController,
+                maxLabelWidth: 100,
+                tail: buildScrollJumper(),
+                selectedTabBackgroundColor:
+                    Theme.of(context).hintColor.withOpacity(0.2),
+                tabBuilder: (key, icon, label, themeConf) {
+                  final client = serverModel.clients.firstWhereOrNull(
+                      (client) => client.id.toString() == key);
+                  return Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Tooltip(
+                          message: key,
+                          waitDuration: Duration(seconds: 1),
+                          child: label),
+                      Obx(() => Offstage(
+                          offstage:
+                              !(client?.hasUnreadChatMessage.value ?? false),
+                          child:
+                              Icon(Icons.circle, color: Colors.red, size: 10)))
+                    ],
+                  );
+                },
+                pageViewBuilder: (pageView) => Row(children: [
+                      Expanded(child: pageView),
+                      Consumer<ChatModel>(
+                          builder: (_, model, child) => model.isShowCMChatPage
+                              ? Expanded(child: Scaffold(body: ChatPage()))
+                              : Offstage())
+                    ])));
   }
 
   Widget buildTitleBar() {
@@ -188,6 +206,27 @@ class ConnectionManagerState extends State<ConnectionManager> {
                 icon: Icons.arrow_right, iconSize: 22, onTap: sc.forward),
           ],
         ));
+  }
+
+  Future<bool> handleWindowCloseButton() async {
+    var tabController = gFFI.serverModel.tabController;
+    final connLength = tabController.length;
+    if (connLength <= 1) {
+      windowManager.close();
+      return true;
+    } else {
+      final opt = "enable-confirm-closing-tabs";
+      final bool res;
+      if (!option2bool(opt, await bind.mainGetOption(key: opt))) {
+        res = true;
+      } else {
+        res = await closeConfirmDialog();
+      }
+      if (res) {
+        windowManager.close();
+      }
+      return res;
+    }
   }
 }
 
@@ -334,10 +373,10 @@ class _CmHeaderState extends State<_CmHeader>
         Offstage(
           offstage: !client.authorized || client.isFileTransfer,
           child: IconButton(
-            onPressed: () => checkClickTime(
-                client.id, () => gFFI.chatModel.toggleCMChatPage(client.id)),
-            icon: Icon(Icons.message_outlined),
-          ),
+              onPressed: () => checkClickTime(
+                  client.id, () => gFFI.chatModel.toggleCMChatPage(client.id)),
+              icon: Icon(Icons.message_outlined),
+              splashRadius: kDesktopIconButtonSplashRadius),
         )
       ],
     );

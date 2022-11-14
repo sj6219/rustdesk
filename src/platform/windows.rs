@@ -1,4 +1,5 @@
 use super::{CursorData, ResultType};
+use crate::common::PORTABLE_APPNAME_RUNTIME_ENV_KEY;
 use crate::ipc;
 use crate::license::*;
 use hbb_common::{
@@ -8,7 +9,7 @@ use hbb_common::{
 };
 use std::io::prelude::*;
 use std::{
-    ffi::{CString, OsString},
+    ffi::OsString,
     fs, io, mem,
     path::PathBuf,
     sync::{Arc, Mutex},
@@ -21,9 +22,12 @@ use winapi::{
         errhandlingapi::GetLastError,
         handleapi::CloseHandle,
         minwinbase::STILL_ACTIVE,
-        processthreadsapi::{GetCurrentProcess, GetExitCodeProcess, OpenProcess, OpenProcessToken},
+        processthreadsapi::{
+            GetCurrentProcess, GetCurrentProcessId, GetExitCodeProcess, OpenProcess,
+            OpenProcessToken,
+        },
         securitybaseapi::GetTokenInformation,
-        shellapi::ShellExecuteA,
+        shellapi::ShellExecuteW,
         winbase::*,
         wingdi::*,
         winnt::{
@@ -878,22 +882,34 @@ fn get_install_info_with_subkey(subkey: String) -> (String, String, String, Stri
     (subkey, path, start_menu, exe)
 }
 
-pub fn copy_exe_cmd(src_exe: &str, _exe: &str, _path: &str) -> String {
+pub fn copy_exe_cmd(src_exe: &str, _exe: &str, path: &str) -> String {
     #[cfg(feature = "flutter")]
-    return format!(
+    let main_exe = format!(
         "XCOPY \"{}\" \"{}\" /Y /E /H /C /I /K /R /Z",
         PathBuf::from(src_exe)
             .parent()
             .unwrap()
             .to_string_lossy()
             .to_string(),
-        _path
+        path
     );
     #[cfg(not(feature = "flutter"))]
-    return format!(
+    let main_exe = format!(
         "copy /Y \"{src_exe}\" \"{exe}\"",
         src_exe = src_exe,
         exe = _exe
+    );
+
+    return format!(
+        "
+        {main_exe}
+        copy /Y \"{ORIGIN_PROCESS_EXE}\" \"{path}\\{broker_exe}\"
+        \"{src_exe}\" --extract \"{path}\"
+        ",
+        main_exe = main_exe,
+        path = path,
+        ORIGIN_PROCESS_EXE = crate::ui::win_privacy::ORIGIN_PROCESS_EXE,
+        broker_exe = crate::ui::win_privacy::INJECTED_PROCESS_EXE,
     );
 }
 
@@ -905,18 +921,16 @@ pub fn update_me() -> ResultType<()> {
         chcp 65001
         sc stop {app_name}
         taskkill /F /IM {broker_exe}
-        taskkill /F /IM {app_name}.exe
+        taskkill /F /IM {app_name}.exe /FI \"PID ne {cur_pid}\"
         {copy_exe}
-        \"{src_exe}\" --extract \"{path}\"
         sc start {app_name}
         {lic}
     ",
-        src_exe = src_exe,
         copy_exe = copy_exe_cmd(&src_exe, &exe, &path),
         broker_exe = crate::ui::win_privacy::INJECTED_PROCESS_EXE,
-        path = path,
         app_name = crate::get_app_name(),
         lic = register_licence(),
+        cur_pid = get_current_pid(),
     );
     std::thread::sleep(std::time::Duration::from_millis(1000));
     run_cmds(cmds, false, "update")?;
@@ -1087,8 +1101,6 @@ if exist \"{tmp_path}\\{app_name} Tray.lnk\" del /f /q \"{tmp_path}\\{app_name} 
 chcp 65001
 md \"{path}\"
 {copy_exe}
-copy /Y \"{ORIGIN_PROCESS_EXE}\" \"{path}\\{broker_exe}\"
-\"{src_exe}\" --extract \"{path}\"
 reg add {subkey} /f
 reg add {subkey} /f /v DisplayIcon /t REG_SZ /d \"{exe}\"
 reg add {subkey} /f /v DisplayName /t REG_SZ /d \"{app_name}\"
@@ -1119,10 +1131,7 @@ sc delete {app_name}
     ",
         uninstall_str=uninstall_str,
         path=path,
-        src_exe=src_exe,
         exe=exe,
-        ORIGIN_PROCESS_EXE = crate::ui::win_privacy::ORIGIN_PROCESS_EXE,
-        broker_exe=crate::ui::win_privacy::INJECTED_PROCESS_EXE,
         subkey=subkey,
         app_name=crate::get_app_name(),
         version=crate::VERSION,
@@ -1178,13 +1187,14 @@ fn get_before_uninstall() -> String {
     sc stop {app_name}
     sc delete {app_name}
     taskkill /F /IM {broker_exe}
-    taskkill /F /IM {app_name}.exe
+    taskkill /F /IM {app_name}.exe /FI \"PID ne {cur_pid}\"
     reg delete HKEY_CLASSES_ROOT\\.{ext} /f
     netsh advfirewall firewall delete rule name=\"{app_name} Service\"
     ",
         app_name = app_name,
         broker_exe = crate::ui::win_privacy::INJECTED_PROCESS_EXE,
-        ext = ext
+        ext = ext,
+        cur_pid = get_current_pid(),
     )
 }
 
@@ -1324,7 +1334,12 @@ fn get_reg_of(subkey: &str, name: &str) -> String {
 }
 
 fn get_license_from_exe_name() -> ResultType<License> {
-    let exe = std::env::current_exe()?.to_str().unwrap_or("").to_owned();
+    let mut exe = std::env::current_exe()?.to_str().unwrap_or("").to_owned();
+    // if defined portable appname entry, replace original executable name with it.
+    if let Ok(portable_exe) = std::env::var(PORTABLE_APPNAME_RUNTIME_ENV_KEY) {
+        exe = portable_exe;
+        log::debug!("update portable executable name to {}", exe);
+    }
     get_license_from_string(&exe)
 }
 
@@ -1466,17 +1481,19 @@ pub fn get_user_token(session_id: u32, as_user: bool) -> HANDLE {
 }
 
 pub fn run_uac(exe: &str, arg: &str) -> ResultType<bool> {
+    let wop = wide_string("runas");
+    let wexe = wide_string(exe);
+    let warg;
     unsafe {
-        let cstring;
-        let ret = ShellExecuteA(
+        let ret = ShellExecuteW(
             NULL as _,
-            CString::new("runas")?.as_ptr() as _,
-            CString::new(exe)?.as_ptr() as _,
+            wop.as_ptr() as _,
+            wexe.as_ptr() as _,
             if arg.is_empty() {
                 NULL as _
             } else {
-                cstring = CString::new(arg)?;
-                cstring.as_ptr() as _
+                warg = wide_string(arg);
+                warg.as_ptr() as _
             },
             NULL as _,
             SW_SHOWNORMAL,
@@ -1514,7 +1531,7 @@ pub fn run_as_system(arg: &str) -> ResultType<()> {
 }
 
 pub fn elevate_or_run_as_system(is_setup: bool, is_elevate: bool, is_run_as_system: bool) {
-    // avoid possible run recursively due to failed run, which hasn't happened yet.
+    // avoid possible run recursively due to failed run.
     let arg_elevate = if is_setup {
         "--noinstall --elevate"
     } else {
@@ -1525,37 +1542,37 @@ pub fn elevate_or_run_as_system(is_setup: bool, is_elevate: bool, is_run_as_syst
     } else {
         "--run-as-system"
     };
-    let rerun_as_system = || {
-        if !is_root() {
-            if run_as_system(arg_run_as_system).is_ok() {
-                std::process::exit(0);
-            } else {
-                log::error!("Failed to run as system");
-            }
-        }
-    };
 
-    if is_elevate {
-        if !is_elevated(None).map_or(true, |b| b) {
-            log::error!("Failed to elevate");
-            return;
-        }
-        rerun_as_system();
-    } else if is_run_as_system {
-        if !is_root() {
-            log::error!("Failed to be system");
-        }
+    if is_root() {
+        log::debug!("portable run as system user");
     } else {
-        if let Ok(true) = is_elevated(None) {
-            // right click
-            rerun_as_system();
-        } else {
-            // left click || run without install
-            if let Ok(true) = elevate(arg_elevate) {
-                std::process::exit(0);
-            } else {
-                // do nothing but prompt
+        match is_elevated(None) {
+            Ok(elevated) => {
+                if elevated {
+                    if !is_run_as_system {
+                        if run_as_system(arg_run_as_system).is_ok() {
+                            std::process::exit(0);
+                        } else {
+                            unsafe {
+                                log::error!("Failed to run as system, errno={}", GetLastError());
+                            }
+                        }
+                    }
+                } else {
+                    if !is_elevate {
+                        if let Ok(true) = elevate(arg_elevate) {
+                            std::process::exit(0);
+                        } else {
+                            unsafe {
+                                log::error!("Failed to elevate, errno={}", GetLastError());
+                            }
+                        }
+                    }
+                }
             }
+            Err(_) => unsafe {
+                log::error!("Failed to get elevation status, errno={}", GetLastError());
+            },
         }
     }
 }
@@ -1612,4 +1629,20 @@ pub fn is_foreground_window_elevated() -> ResultType<bool> {
         }
         is_elevated(Some(process_id))
     }
+}
+
+fn get_current_pid() -> u32 {
+    unsafe { GetCurrentProcessId() }
+}
+
+pub fn get_double_click_time() -> u32 {
+    unsafe { GetDoubleClickTime() }
+}
+
+fn wide_string(s: &str) -> Vec<u16> {
+    use std::os::windows::prelude::OsStrExt;
+    std::ffi::OsStr::new(s)
+        .encode_wide()
+        .chain(Some(0).into_iter())
+        .collect()
 }

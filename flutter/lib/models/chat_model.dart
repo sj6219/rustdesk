@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_hbb/models/platform_model.dart';
 import 'package:window_manager/window_manager.dart';
 
+import '../consts.dart';
 import '../common.dart';
 import '../common/widgets/overlay.dart';
 import 'model.dart';
@@ -14,11 +15,11 @@ class MessageBody {
   MessageBody(this.chatUser, this.chatMessages);
 
   void insert(ChatMessage cm) {
-    this.chatMessages.insert(0, cm);
+    chatMessages.insert(0, cm);
   }
 
   void clear() {
-    this.chatMessages.clear();
+    chatMessages.clear();
   }
 }
 
@@ -32,27 +33,30 @@ class ChatModel with ChangeNotifier {
   OverlayState? _overlayState;
   OverlayEntry? chatIconOverlayEntry;
   OverlayEntry? chatWindowOverlayEntry;
+  bool isConnManager = false;
 
   final ChatUser me = ChatUser(
     id: "",
     firstName: "Me",
   );
 
-  late final Map<int, MessageBody> _messages = Map()
-    ..[clientModeID] = MessageBody(me, []);
+  late final Map<int, MessageBody> _messages = {}..[clientModeID] =
+      MessageBody(me, []);
 
   var _currentID = clientModeID;
-  late bool _isShowChatPage = false;
+  late bool _isShowCMChatPage = false;
 
   Map<int, MessageBody> get messages => _messages;
 
   int get currentID => _currentID;
 
-  bool get isShowChatPage => _isShowChatPage;
+  bool get isShowCMChatPage => _isShowCMChatPage;
 
   final WeakReference<FFI> parent;
 
   ChatModel(this.parent);
+
+  FocusNode inputNode = FocusNode();
 
   ChatUser get currentUser {
     final user = messages[currentID]?.chatUser;
@@ -108,6 +112,7 @@ class ChatModel with ChangeNotifier {
                   hideChatWindowOverlay();
                 }
               },
+              backgroundColor: Theme.of(context).colorScheme.primary,
               child: Icon(Icons.message)));
     });
     overlayState.insert(overlay);
@@ -144,9 +149,11 @@ class ChatModel with ChangeNotifier {
     }
   }
 
+  _isChatOverlayHide() => ((!isDesktop && chatIconOverlayEntry == null) ||
+      chatWindowOverlayEntry == null);
+
   toggleChatOverlay() {
-    if ((!isDesktop && chatIconOverlayEntry == null) ||
-        chatWindowOverlayEntry == null) {
+    if (_isChatOverlayHide()) {
       gFFI.invokeMethod("enable_soft_keyboard", true);
       if (!isDesktop) {
         showChatIconOverlay();
@@ -158,20 +165,32 @@ class ChatModel with ChangeNotifier {
     }
   }
 
+  showChatPage(int id) async {
+    if (isConnManager) {
+      if (!_isShowCMChatPage) {
+        await toggleCMChatPage(id);
+      }
+    } else {
+      if (_isChatOverlayHide()) {
+        await toggleChatOverlay();
+      }
+    }
+  }
+
   toggleCMChatPage(int id) async {
     if (gFFI.chatModel.currentID != id) {
       gFFI.chatModel.changeCurrentID(id);
     }
-    if (_isShowChatPage) {
-      _isShowChatPage = !_isShowChatPage;
+    if (_isShowCMChatPage) {
+      _isShowCMChatPage = !_isShowCMChatPage;
       notifyListeners();
-      await windowManager.setSize(Size(300, 400));
-      await windowManager.setAlignment(Alignment.topRight);
+      await windowManager.show();
+      await windowManager.setSizeAlignment(
+          kConnectionManagerWindowSize, Alignment.topRight);
     } else {
-      await windowManager.setSize(Size(600, 400));
-      await Future.delayed(Duration(milliseconds: 100));
-      await windowManager.setAlignment(Alignment.topRight);
-      _isShowChatPage = !_isShowChatPage;
+      await windowManager.show();
+      await windowManager.setSizeAlignment(Size(600, 400), Alignment.topRight);
+      _isShowCMChatPage = !_isShowCMChatPage;
       notifyListeners();
     }
   }
@@ -198,36 +217,44 @@ class ChatModel with ChangeNotifier {
   }
 
   receive(int id, String text) async {
+    final session = parent.target;
+    if (session == null) {
+      debugPrint("Failed to receive msg, session state is null");
+      return;
+    }
     if (text.isEmpty) return;
     // mobile: first message show overlay icon
-    if (chatIconOverlayEntry == null) {
+    if (!isDesktop && chatIconOverlayEntry == null) {
       showChatIconOverlay();
     }
-    // desktop: show chat page
-    if (!_isShowChatPage) {
-      toggleCMChatPage(id);
-    }
-    parent.target?.serverModel.jumpTo(id);
+    // show chat page
+    await showChatPage(id);
 
-    late final chatUser;
+    int toId = currentID;
+
+    late final ChatUser chatUser;
     if (id == clientModeID) {
       chatUser = ChatUser(
-        firstName: parent.target?.ffiModel.pi.username,
-        id: await bind.mainGetLastRemoteId(),
+        firstName: session.ffiModel.pi.username,
+        id: session.id,
       );
+      toId = id;
     } else {
-      final client = parent.target?.serverModel.clients
-          .firstWhere((client) => client.id == id);
-      if (client == null) {
-        return debugPrint("Failed to receive msg,user doesn't exist");
-      }
+      final client =
+          session.serverModel.clients.firstWhere((client) => client.id == id);
       if (isDesktop) {
         window_on_top(null);
-        var index = parent.target?.serverModel.clients
-            .indexWhere((client) => client.id == id);
-        if (index != null && index >= 0) {
-          gFFI.serverModel.tabController.jumpTo(index);
+        // disable auto jumpTo other tab when hasFocus, and mark unread message
+        final currentSelectedTab =
+            session.serverModel.tabController.state.value.selectedTabInfo;
+        if (currentSelectedTab.key != id.toString() && inputNode.hasFocus) {
+          client.hasUnreadChatMessage.value = true;
+        } else {
+          parent.target?.serverModel.jumpTo(id);
+          toId = id;
         }
+      } else {
+        toId = id;
       }
       chatUser = ChatUser(id: client.peerId, firstName: client.name);
     }
@@ -237,7 +264,7 @@ class ChatModel with ChangeNotifier {
     }
     _messages[id]!.insert(
         ChatMessage(text: text, user: chatUser, createdAt: DateTime.now()));
-    _currentID = id;
+    _currentID = toId;
     notifyListeners();
   }
 

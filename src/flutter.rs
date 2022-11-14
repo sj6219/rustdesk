@@ -22,7 +22,8 @@ pub(super) const APP_TYPE_DESKTOP_FILE_TRANSFER: &str = "file transfer";
 pub(super) const APP_TYPE_DESKTOP_PORT_FORWARD: &str = "port forward";
 
 lazy_static::lazy_static! {
-    pub static ref SESSIONS: RwLock<HashMap<String,Session<FlutterHandler>>> = Default::default();
+    static ref CUR_SESSION_ID: RwLock<String> = Default::default();
+    pub static ref SESSIONS: RwLock<HashMap<String, Session<FlutterHandler>>> = Default::default();
     pub static ref GLOBAL_EVENT_STREAM: RwLock<HashMap<String, StreamSink<String>>> = Default::default(); // rust to dart event channel
 }
 
@@ -53,6 +54,7 @@ pub extern "C" fn rustdesk_core_main(args_len: *mut c_int) -> *mut *mut c_char {
 }
 
 // https://gist.github.com/iskakaushik/1c5b8aa75c77479c33c4320913eebef6
+#[cfg(windows)]
 fn rust_args_to_c_args(args: Vec<String>, outlen: *mut c_int) -> *mut *mut c_char {
     let mut v = vec![];
 
@@ -226,6 +228,7 @@ impl InvokeUiSession for FlutterHandler {
         id: i32,
         entries: &Vec<FileEntry>,
         path: String,
+        #[allow(unused_variables)]
         is_local: bool,
         only_count: bool,
     ) {
@@ -403,6 +406,7 @@ pub fn session_start_(id: &str, event_stream: StreamSink<EventToUI>) -> ResultTy
         *session.event_stream.write().unwrap() = Some(event_stream);
         let session = session.clone();
         std::thread::spawn(move || {
+            // if flutter : disable keyboard listen 
             crate::client::disable_keyboard_listening();
             io_loop(session);
         });
@@ -417,6 +421,7 @@ pub fn session_start_(id: &str, event_stream: StreamSink<EventToUI>) -> ResultTy
 pub mod connection_manager {
     use std::collections::HashMap;
 
+    #[cfg(any(target_os = "android"))]
     use hbb_common::log;
     #[cfg(any(target_os = "android"))]
     use scrap::android::call_main_service_set_by_name;
@@ -563,4 +568,14 @@ pub fn make_fd_flutter(id: i32, entries: &Vec<FileEntry>, only_count: bool) -> S
     }
     m.insert("total_size".into(), json!(n as f64));
     serde_json::to_string(&m).unwrap_or("".into())
+}
+
+pub fn get_cur_session_id() -> String {
+    CUR_SESSION_ID.read().unwrap().clone()
+}
+
+pub fn set_cur_session_id(id: String) {
+    if get_cur_session_id() != id {
+        *CUR_SESSION_ID.write().unwrap() = id;
+    }
 }
