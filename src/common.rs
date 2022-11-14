@@ -6,7 +6,8 @@ use std::{
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub use arboard::Clipboard as ClipboardContext;
 
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
+//..
+#[cfg(not(any(target_os = "ios")))]
 use hbb_common::compress::decompress;
 use hbb_common::{
     allow_err,
@@ -104,7 +105,8 @@ pub fn check_clipboard(
     None
 }
 
-#[cfg(not(target_os = "ios"))]
+//..
+#[cfg(not(any(target_os = "ios")))]
 pub fn update_clipboard(clipboard: Clipboard, old: Option<&Arc<Mutex<String>>>) {
     let content = if clipboard.compress {
         decompress(&clipboard.content)
