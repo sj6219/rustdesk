@@ -12,5 +12,6 @@
             "program": "${workspaceFolder}/flutter/build/ios/iphoneos/Runner.app",
             "iosBundleId": "com.carriez.flutterHbb1",
             "iosTarget": "select",
+            "iosTarget": "last-selected",
         },    ]
 }
