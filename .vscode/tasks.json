@@ -1,0 +1,13 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "build",
+			"type" : "shell",
+			"command": "cargo build --target aarch64-apple-ios && cp target/aarch64-apple-ios/debug/liblibrustdesk.a target/aarch64-apple-ios/release/liblibrustdesk.a",
+			"options": {
+				"cwd": "${workspaceFolder}",
+			},
+		},
+	]
+}
