@@ -13,5 +13,6 @@
             "iosBundleId": "com.carriez.flutterHbb1",
             "iosTarget": "select",
             "iosTarget": "last-selected",
+            "sourceLanguages": ["rust"],        
         },    ]
 }
