@@ -8,6 +8,7 @@
             "name": "Launch App",
             "type": "lldb",
             "request": "launch",
+			"request": "attach",
             "program": "${workspaceFolder}/flutter/build/ios/iphoneos/Runner.app",
             "iosBundleId": "com.carriez.flutterHbb1",
             "iosTarget": "select",
