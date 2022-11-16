@@ -223,7 +223,7 @@ class _RemotePageState extends State<RemotePage> {
 
     return WillPopScope(
       onWillPop: () async {
-        clientClose(gFFI.dialogManager);
+        clientClose(widget.id, gFFI.dialogManager);
         return false;
       },
       child: getRawPointerAndKeyBody(Scaffold(
@@ -304,7 +304,7 @@ class _RemotePageState extends State<RemotePage> {
                       color: Colors.white,
                       icon: Icon(Icons.clear),
                       onPressed: () {
-                        clientClose(gFFI.dialogManager);
+                        clientClose(widget.id, gFFI.dialogManager);
                       },
                     )
                   ] +
@@ -862,11 +862,19 @@ class CursorPaint extends StatelessWidget {
     final c = Provider.of<CanvasModel>(context);
     final adjust = gFFI.cursorModel.adjustForKeyboard();
     var s = c.scale;
+    double hotx = m.hotx;
+    double hoty = m.hoty;
+    if (m.image == null) {
+      if (m.defaultCache != null) {
+        hotx = m.defaultImage!.width / 2;
+        hoty = m.defaultImage!.height / 2;
+      }
+    }
     return CustomPaint(
       painter: ImagePainter(
-          image: m.image,
-          x: m.x * s - m.hotx + c.x,
-          y: m.y * s - m.hoty + c.y - adjust,
+          image: m.image ?? m.defaultImage,
+          x: m.x * s - hotx * s + c.x,
+          y: m.y * s - hoty * s + c.y - adjust,
           scale: 1),
     );
   }
