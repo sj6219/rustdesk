@@ -4,7 +4,7 @@
 		{
 			"label": "build",
 			"type" : "shell",
-			"command": "cargo ndk --platform 21 --target aarch64-linux-android rustc --lib && cp ~/rustdesk/target/aarch64-linux-android/debug/liblibrustdesk.so ~/rustdesk/flutter/android/app/src/main/jniLibs/arm64-v8a/librustdesk.so",
+			"command": "cargo ndk --platform 21 --target aarch64-linux-android rustc --lib --features flutter && cp target/aarch64-linux-android/debug/liblibrustdesk.so flutter/android/app/src/main/jniLibs/arm64-v8a/librustdesk.so",
 			"options": {
 				"cwd": "${workspaceFolder}",
 				"env": { 

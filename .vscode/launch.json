@@ -5,6 +5,23 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "Android",
+            "type": "android-debug",
+            "request": "attach",
+            "target": "select",
+            "pid": "${command:pickAndroidProcess}",
+            "mode": "native", // Change to `java` or `native` to attach only Java or Native debugger.
+            "packageName": "com.carriez.flutter_hbb", // Package name for your app.
+            "native": {
+                "symbolSearchPaths": [
+                    // "${workspaceFolder}/flutter/android/app/src/main/jniLibs/arm64-v8a/",
+                ],
+            },
+            "java": {
+                // "sourcePaths": ["${workspaceFolder}/app/src/main/java"]
+            }
+        },
+        {
             "name": "Remote launch",
             "type": "lldb",
             "request": "custom",
