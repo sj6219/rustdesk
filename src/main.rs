@@ -26,7 +26,7 @@ fn main() {
         {
             use std::io::Write;
     
-            println!("======================0");
+            println!("======================0 {}", std::process::id());
             std::io::stdout().flush().unwrap();
             
             //platform::macos::is_can_screen_recording(false);

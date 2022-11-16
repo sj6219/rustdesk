@@ -15,7 +15,7 @@ use std::iter::FromIterator;
 use clipboard::{cliprdr::CliprdrClientContext, empty_clipboard, set_conn_enabled, ContextSend};
 use serde_derive::Serialize;
 
-use crate::ipc::{self, new_listener, Connection, Data};
+use crate::ipc::{self, Connection, Data};
 #[cfg(windows)]
 use hbb_common::tokio::sync::Mutex as TokioMutex;
 use hbb_common::{
@@ -85,6 +85,8 @@ pub trait InvokeUiCM: Send + Clone + 'static + Sized {
     fn change_theme(&self, dark: String);
 
     fn change_language(&self);
+
+    fn show_elevation(&self, show: bool);
 }
 
 impl<T: InvokeUiCM> Deref for ConnectionManager<T> {
@@ -170,6 +172,10 @@ impl<T: InvokeUiCM> ConnectionManager<T> {
         }
 
         self.ui_handler.remove_connection(id, close);
+    }
+
+    fn show_elevation(&self, show: bool) {
+        self.ui_handler.show_elevation(show);
     }
 }
 
@@ -362,6 +368,9 @@ impl<T: InvokeUiCM> IpcTaskRunner<T> {
                                     LocalConfig::set_option("lang".to_owned(), lang);
                                     self.cm.change_language();
                                 }
+                                Data::DataPortableService(ipc::DataPortableService::CmShowElevation(show)) => {
+                                    self.cm.show_elevation(show);
+                                }
                                 _ => {
 
                                 }
@@ -434,7 +443,7 @@ pub async fn start_ipc<T: InvokeUiCM>(cm: ConnectionManager<T>) {
         allow_err!(crate::ui::win_privacy::start());
     });
 
-    match new_listener("_cm").await {
+    match ipc::new_listener("_cm").await {
         Ok(mut incoming) => {
             while let Some(result) = incoming.next().await {
                 match result {
@@ -754,6 +763,31 @@ fn cm_inner_send(id: i32, data: Data) {
     } else {
         for s in lock.values() {
             allow_err!(s.tx.send(data.clone()));
+        }
+    }
+}
+
+pub fn can_elevate() -> bool {
+    #[cfg(windows)]
+    {
+        return !crate::platform::is_installed()
+            && !crate::portable_service::client::PORTABLE_SERVICE_RUNNING
+                .lock()
+                .unwrap()
+                .clone();
+    }
+    #[cfg(not(windows))]
+    return false;
+}
+
+pub fn elevate_portable(id: i32) {
+    #[cfg(windows)]
+    {
+        let lock = CLIENTS.read().unwrap();
+        if let Some(s) = lock.get(&id) {
+            allow_err!(s.tx.send(ipc::Data::DataPortableService(
+                ipc::DataPortableService::RequestStart
+            )));
         }
     }
 }
