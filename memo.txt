@@ -33,9 +33,8 @@ open -a Simulator --args -CurrentDeviceUDID 5D1C39DD-708B-41D3-B89A-3F0D9B8E42BF
 #android
 BINDGEN_EXTRA_CLANG_ARGS_aarch64_linux_android="--target=arm64-apple-macos --sysroot=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk" RUST_LOG=debug cargo ndk --platform 21 --target aarch64-linux-android rustc --lib --features flutter --release 
 cp target/aarch64-linux-android/release/liblibrustdesk.so flutter/android/app/src/main/jniLibs/arm64-v8a/librustdesk.so
-
-pushd flutter; flutter build apk --target-platform android-arm64 --debug; popd
-adb install flutter/build/app/outputs/flutter-apk/app-debug.apk
+pushd flutter; flutter build apk --target-platform android-arm64; popd
+adb install flutter/build/app/outputs/flutter-apk/app-release.apk
 
 sudo  mount -t drvfs '\\192.168.111.10\Macintosh HD' /mnt/mac
 cp target/aarch64-linux-android/debug/liblibrustdesk.so /mnt/mac/Users/sjpark/rustdesk/flutter/android/app/src/main/jniLibs/arm64-v8a/librustdesk.so
