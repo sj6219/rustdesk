@@ -56,6 +56,7 @@ impl DerefMut for DynTcpStream {
 }
 
 fn new_socket(addr: std::net::SocketAddr, reuse: bool) -> Result<TcpSocket, std::io::Error> {
+    //..m::::::1.2
     //..a::::::1.2
     let socket = match addr {
         std::net::SocketAddr::V4(..) => TcpSocket::new_v4()?,
@@ -81,7 +82,6 @@ impl FramedStream {
     ) -> ResultType<Self> {
         for local_addr in lookup_host(&local_addr).await? {
             for remote_addr in lookup_host(&remote_addr).await? {
-                //..m::::::1.2
                 let stream = super::timeout(
                     ms_timeout,
                     new_socket(local_addr, true)?.connect(remote_addr),
