@@ -10,8 +10,7 @@ use hbb_common::password_security;
 use hbb_common::{
     allow_err,
     config::{self, Config, LocalConfig, PeerConfig},
-    directories_next, log,
-    sleep,
+    directories_next, log, sleep,
     tokio::{self, sync::mpsc, time},
 };
 
@@ -26,7 +25,7 @@ use hbb_common::{
 
 #[cfg(feature = "flutter")]
 use crate::hbbs_http::account;
-use crate::{common::SOFTWARE_UPDATE_URL, ipc, platform};
+use crate::{common::SOFTWARE_UPDATE_URL, ipc};
 
 #[cfg(any(target_os = "android", target_os = "ios", feature = "flutter"))]
 type Message = RendezvousMessage;
@@ -253,6 +252,7 @@ pub fn test_if_valid_server(host: String) -> String {
 
 #[inline]
 #[cfg(feature = "flutter")]
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub fn get_sound_inputs() -> Vec<String> {
     let mut a = Vec::new();
     #[cfg(not(target_os = "linux"))]
@@ -375,7 +375,7 @@ pub fn is_installed() -> bool {
 
 #[cfg(any(target_os = "android", target_os = "ios"))]
 #[inline]
-pub fn is_installed() -> bool {  
+pub fn is_installed() -> bool {
     false
 }
 
@@ -782,7 +782,7 @@ pub fn default_video_save_directory() -> String {
     }
 
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    if let Some(home) = platform::get_active_user_home() {
+    if let Some(home) = crate::platform::get_active_user_home() {
         let name = if cfg!(target_os = "macos") {
             "Movies"
         } else {

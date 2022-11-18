@@ -16,8 +16,6 @@ use hbb_common::{
 // use crate::hbbs_http::account::AuthResult;
 
 use crate::flutter::{self, SESSIONS};
-#[cfg(target_os = "android")]
-use crate::start_server;
 use crate::ui_interface::{self, *};
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 use crate::ui_session_interface::CUR_SESSION;
@@ -172,7 +170,7 @@ pub fn session_get_flutter_config(id: String, k: String) -> Option<String> {
 
 pub fn session_set_flutter_config(id: String, k: String, v: String) {
     if let Some(session) = SESSIONS.write().unwrap().get_mut(&id) {
-        session.set_flutter_config(k, v);
+        session.save_flutter_config(k, v);
     }
 }
 
@@ -182,6 +180,34 @@ pub fn get_local_flutter_config(k: String) -> SyncReturn<String> {
 
 pub fn set_local_flutter_config(k: String, v: String) {
     ui_interface::set_local_flutter_config(k, v);
+}
+
+pub fn session_get_view_style(id: String) -> Option<String> {
+    if let Some(session) = SESSIONS.read().unwrap().get(&id) {
+        Some(session.get_view_style())
+    } else {
+        None
+    }
+}
+
+pub fn session_set_view_style(id: String, value: String) {
+    if let Some(session) = SESSIONS.write().unwrap().get_mut(&id) {
+        session.save_view_style(value);
+    }
+}
+
+pub fn session_get_scroll_style(id: String) -> Option<String> {
+    if let Some(session) = SESSIONS.read().unwrap().get(&id) {
+        Some(session.get_scroll_style())
+    } else {
+        None
+    }
+}
+
+pub fn session_set_scroll_style(id: String, value: String) {
+    if let Some(session) = SESSIONS.write().unwrap().get_mut(&id) {
+        session.save_scroll_style(value);
+    }
 }
 
 pub fn session_get_image_quality(id: String) -> Option<String> {
@@ -592,6 +618,11 @@ pub fn main_set_peer_option_sync(id: String, key: String, value: String) -> Sync
     SyncReturn(true)
 }
 
+pub fn main_set_peer_alias(id: String, alias: String) {
+    main_broadcast_message(&HashMap::from([("name", "alias"), ("id", &id), ("alias", &alias)]));
+    set_peer_option(id, "alias".to_owned(), alias)
+}
+
 pub fn main_forget_password(id: String) {
     forget_password(id)
 }
@@ -833,7 +864,12 @@ pub fn main_is_root() -> bool {
 }
 
 pub fn get_double_click_time() -> SyncReturn<i32> {
-    SyncReturn(crate::platform::get_double_click_time() as _)
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        return SyncReturn(crate::platform::get_double_click_time() as _);
+    }
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    SyncReturn(500i32)
 }
 
 pub fn main_start_dbus_server() {
@@ -965,6 +1001,11 @@ pub fn main_wol(id: String) {
     crate::lan::send_wol(id)
 }
 
+pub fn main_create_shortcut(_id: String) {
+    #[cfg(windows)]
+    create_shortcut(_id);
+}
+
 pub fn cm_send_chat(conn_id: i32, msg: String) {
     crate::ui_cm_interface::send_chat(conn_id, msg);
 }
@@ -997,11 +1038,23 @@ pub fn cm_switch_permission(conn_id: i32, name: String, enabled: bool) {
     crate::ui_cm_interface::switch_permission(conn_id, name, enabled)
 }
 
+pub fn cm_can_elevate() -> SyncReturn<bool> {
+    SyncReturn(crate::ui_cm_interface::can_elevate())
+}
+
+pub fn cm_elevate_portable(conn_id: i32) {
+    crate::ui_cm_interface::elevate_portable(conn_id);
+}
+
 pub fn main_get_icon() -> String {
     #[cfg(not(any(target_os = "android", target_os = "ios", feature = "cli")))]
     return ui_interface::get_icon();
     #[cfg(any(target_os = "android", target_os = "ios", feature = "cli"))]
     return String::new();
+}
+
+pub fn main_get_build_date() -> String {
+    crate::BUILD_DATE.to_string()
 }
 
 #[no_mangle]
@@ -1128,7 +1181,7 @@ pub mod server_side {
         JNIEnv,
     };
 
-    use hbb_common::{config::Config, log};
+    use hbb_common::log;
 
     use crate::start_server;
 

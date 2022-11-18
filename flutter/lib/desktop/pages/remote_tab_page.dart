@@ -116,18 +116,21 @@ class _ConnectionTabPageState extends State<ConnectionTabPage> {
 
   @override
   Widget build(BuildContext context) {
-    final tabWidget = Container(
-      decoration: BoxDecoration(
+    final tabWidget = Obx(
+      () => Container(
+        decoration: BoxDecoration(
           border: Border.all(
               color: MyTheme.color(context).border!,
-              width: kWindowBorderWidth)),
-      child: Scaffold(
+              width: stateGlobal.windowBorderWidth.value),
+        ),
+        child: Scaffold(
           backgroundColor: Theme.of(context).backgroundColor,
           body: DesktopTab(
             controller: tabController,
             onWindowCloseButton: handleWindowCloseButton,
             tail: const AddButton().paddingOnly(left: 10),
             pageViewBuilder: (pageView) => pageView,
+            labelGetter: DesktopTab.labelGetterAlias,
             tabBuilder: (key, icon, label, themeConf) => Obx(() {
               final connectionType = ConnectionTypeState.find(key);
               if (!connectionType.isValid()) {
@@ -181,7 +184,9 @@ class _ConnectionTabPageState extends State<ConnectionTabPage> {
                 );
               }
             }),
-          )),
+          ),
+        ),
+      ),
     );
     return Platform.isMacOS
         ? tabWidget
@@ -241,13 +246,12 @@ class _ConnectionTabPageState extends State<ConnectionTabPage> {
             dismissOnClicked: true,
           ),
         ],
-        curOptionGetter: () async {
-          return await bind.sessionGetOption(id: key, arg: 'view-style') ??
-              'adaptive';
-        },
+        curOptionGetter: () async =>
+            // null means peer id is not found, which there's no need to care about
+            await bind.sessionGetViewStyle(id: key) ?? '',
         optionSetter: (String oldValue, String newValue) async {
-          await bind.sessionPeerOption(
-              id: key, name: "view-style", value: newValue);
+          await bind.sessionSetViewStyle(
+              id: key, value: newValue);
           ffi.canvasModel.updateViewStyle();
           cancelFunc();
         },
