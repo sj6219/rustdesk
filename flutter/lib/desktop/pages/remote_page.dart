@@ -51,6 +51,7 @@ class _RemotePageState extends State<RemotePage>
   String keyboardMode = "legacy";
   final _cursorOverImage = false.obs;
   late RxBool _showRemoteCursor;
+  late RxBool _zoomCursor;
   late RxBool _remoteCursorMoved;
   late RxBool _keyboardEnabled;
 
@@ -68,6 +69,10 @@ class _RemotePageState extends State<RemotePage>
     KeyboardEnabledState.init(id);
     ShowRemoteCursorState.init(id);
     RemoteCursorMovedState.init(id);
+    final optZoomCursor = 'zoom-cursor';
+    PeerBoolOption.init(id, optZoomCursor,
+        () => bind.sessionGetToggleOptionSync(id: id, arg: optZoomCursor));
+    _zoomCursor = PeerBoolOption.find(id, optZoomCursor);
     _showRemoteCursor = ShowRemoteCursorState.find(id);
     _keyboardEnabled = KeyboardEnabledState.find(id);
     _remoteCursorMoved = RemoteCursorMovedState.find(id);
@@ -216,6 +221,7 @@ class _RemotePageState extends State<RemotePage>
         });
         return ImagePaint(
           id: widget.id,
+          zoomCursor: _zoomCursor,
           cursorOverImage: _cursorOverImage,
           keyboardEnabled: _keyboardEnabled,
           remoteCursorMoved: _remoteCursorMoved,
@@ -233,6 +239,7 @@ class _RemotePageState extends State<RemotePage>
         visible: _showRemoteCursor.isTrue && _remoteCursorMoved.isTrue,
         child: CursorPaint(
           id: widget.id,
+          zoomCursor: _zoomCursor,
         ))));
     paints.add(QualityMonitor(_ffi.qualityMonitorModel));
     paints.add(RemoteMenubar(
@@ -253,6 +260,7 @@ class _RemotePageState extends State<RemotePage>
 
 class ImagePaint extends StatefulWidget {
   final String id;
+  final Rx<bool> zoomCursor;
   final Rx<bool> cursorOverImage;
   final Rx<bool> keyboardEnabled;
   final Rx<bool> remoteCursorMoved;
@@ -261,6 +269,7 @@ class ImagePaint extends StatefulWidget {
   ImagePaint(
       {Key? key,
       required this.id,
+      required this.zoomCursor,
       required this.cursorOverImage,
       required this.keyboardEnabled,
       required this.remoteCursorMoved,
@@ -277,6 +286,7 @@ class _ImagePaintState extends State<ImagePaint> {
   final ScrollController _vertical = ScrollController();
 
   String get id => widget.id;
+  Rx<bool> get zoomCursor => widget.zoomCursor;
   Rx<bool> get cursorOverImage => widget.cursorOverImage;
   Rx<bool> get keyboardEnabled => widget.keyboardEnabled;
   Rx<bool> get remoteCursorMoved => widget.remoteCursorMoved;
@@ -311,12 +321,10 @@ class _ImagePaintState extends State<ImagePaint> {
     if (c.scrollStyle == ScrollStyle.scrollbar) {
       final imageWidth = c.getDisplayWidth() * s;
       final imageHeight = c.getDisplayHeight() * s;
-      final imageWidget = SizedBox(
-          width: imageWidth,
-          height: imageHeight,
-          child: CustomPaint(
-            painter: ImagePainter(image: m.image, x: 0, y: 0, scale: s),
-          ));
+      final imageWidget = CustomPaint(
+        size: Size(imageWidth, imageHeight),
+        painter: ImagePainter(image: m.image, x: 0, y: 0, scale: s),
+      );
 
       return NotificationListener<ScrollNotification>(
         onNotification: (notification) {
@@ -340,13 +348,10 @@ class _ImagePaintState extends State<ImagePaint> {
                 Size(imageWidth, imageHeight))),
       );
     } else {
-      final imageWidget = SizedBox(
-          width: c.size.width,
-          height: c.size.height,
-          child: CustomPaint(
-            painter:
-                ImagePainter(image: m.image, x: c.x / s, y: c.y / s, scale: s),
-          ));
+      final imageWidget = CustomPaint(
+        size: Size(c.size.width, c.size.height),
+        painter: ImagePainter(image: m.image, x: c.x / s, y: c.y / s, scale: s),
+      );
       return mouseRegion(child: _buildListener(imageWidget));
     }
   }
@@ -357,7 +362,7 @@ class _ImagePaintState extends State<ImagePaint> {
     if (cache == null) {
       return MouseCursor.defer;
     } else {
-      final key = cache.updateGetKey(scale);
+      final key = cache.updateGetKey(scale, zoomCursor.value);
       cursor.addKey(key);
       return FlutterCustomMemoryImageCursor(
         pixbuf: cache.data,
@@ -500,8 +505,13 @@ class _ImagePaintState extends State<ImagePaint> {
 
 class CursorPaint extends StatelessWidget {
   final String id;
+  final RxBool zoomCursor;
 
-  const CursorPaint({Key? key, required this.id}) : super(key: key);
+  const CursorPaint({
+    Key? key,
+    required this.id,
+    required this.zoomCursor,
+  }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -516,13 +526,21 @@ class CursorPaint extends StatelessWidget {
         hoty = m.defaultImage!.height / 2;
       }
     }
-    return CustomPaint(
-      painter: ImagePainter(
-          image: m.image ?? m.defaultImage,
-          x: m.x - hotx + c.x / c.scale,
-          y: m.y - hoty + c.y / c.scale,
-          scale: c.scale),
-    );
+    return zoomCursor.isTrue
+        ? CustomPaint(
+            painter: ImagePainter(
+                image: m.image ?? m.defaultImage,
+                x: m.x - hotx + c.x / c.scale,
+                y: m.y - hoty + c.y / c.scale,
+                scale: c.scale),
+          )
+        : CustomPaint(
+            painter: ImagePainter(
+                image: m.image ?? m.defaultImage,
+                x: (m.x - hotx) * c.scale + c.x,
+                y: (m.y - hoty) * c.scale + c.y,
+                scale: 1.0),
+          );
   }
 }
 

@@ -93,6 +93,7 @@ impl<T: InvokeUiSession> Remote<T> {
         } else {
             ConnType::default()
         };
+        //..m::::::1.1
         //..a::::::1.1
         match Client::start(
             &self.handler.id,
@@ -918,13 +919,8 @@ impl<T: InvokeUiSession> Remote<T> {
                             }
                         }
                         Some(file_response::Union::Block(block)) => {
-                            log::info!(
-                                "file response block, file id:{}, file num: {}",
-                                block.id,
-                                block.file_num
-                            );
                             if let Some(job) = fs::get_job(block.id, &mut self.write_jobs) {
-                                if let Err(_err) = job.write(block, None).await {
+                                if let Err(_err) = job.write(block).await {
                                     // to-do: add "skip" for writing job
                                 }
                                 self.update_jobs_status();
