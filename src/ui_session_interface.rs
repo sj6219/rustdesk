@@ -738,8 +738,6 @@ impl<T: InvokeUiSession> Session<T> {
             RdevKey::MetaLeft => RdevKey::ControlLeft,
             RdevKey::ControlRight => RdevKey::MetaRight,
             RdevKey::MetaRight => RdevKey::ControlRight,
-            RdevKey::Alt => RdevKey::AltGr,
-            RdevKey::AltGr => RdevKey::Alt,
             _ => key,
         };
 
