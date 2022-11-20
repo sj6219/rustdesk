@@ -8,11 +8,11 @@
             "name": "Launch App",
             "type": "lldb",
             "request": "launch",
-			"request": "attach",
+			//"request": "attach",
+            "iosTarget": "select",
+            //"iosTarget": "last-selected",
             "program": "${workspaceFolder}/flutter/build/ios/iphoneos/Runner.app",
             "iosBundleId": "com.carriez.flutterHbb1",
-            "iosTarget": "select",
-            "iosTarget": "last-selected",
             "sourceLanguages": ["rust"],        
         },    ]
 }
