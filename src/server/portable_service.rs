@@ -237,11 +237,10 @@ pub mod server {
     fn run_exit_check() {
         loop {
             if EXIT.lock().unwrap().clone() {
-                std::thread::sleep(Duration::from_secs(1));
-                log::info!("exit from seperate check thread");
+                std::thread::sleep(Duration::from_millis(50));
                 std::process::exit(0);
             }
-            std::thread::sleep(Duration::from_secs(1));
+            std::thread::sleep(Duration::from_millis(50));
         }
     }
 
@@ -462,6 +461,7 @@ pub mod client {
     }
 
     pub(crate) fn start_portable_service() -> ResultType<()> {
+        log::info!("start portable service");
         if PORTABLE_SERVICE_RUNNING.lock().unwrap().clone() {
             bail!("already running");
         }
@@ -484,7 +484,7 @@ pub mod client {
                 crate::portable_service::SHMEM_NAME,
                 shmem_size,
             )?);
-            shutdown_hooks::add_shutdown_hook(drop_shmem);
+            shutdown_hooks::add_shutdown_hook(drop_portable_service_shared_memory);
         }
         let mut option = SHMEM.lock().unwrap();
         let shmem = option.as_mut().unwrap();
@@ -504,7 +504,7 @@ pub mod client {
         Ok(())
     }
 
-    extern "C" fn drop_shmem() {
+    pub extern "C" fn drop_portable_service_shared_memory() {
         log::info!("drop shared memory");
         *SHMEM.lock().unwrap() = None;
     }
@@ -623,6 +623,17 @@ pub mod client {
         use DataPortableService::*;
         let rx = Arc::new(tokio::sync::Mutex::new(rx));
         let postfix = IPC_PROFIX;
+        #[cfg(feature = "flutter")]
+        let quick_support = {
+            let args: Vec<_> = std::env::args().collect();
+            args.contains(&"--quick_support".to_string())
+        };
+        #[cfg(not(feature = "flutter"))]
+        let quick_support = std::env::current_exe()
+            .unwrap_or("".into())
+            .to_string_lossy()
+            .to_lowercase()
+            .ends_with("qs.exe");
 
         match new_listener(postfix).await {
             Ok(mut incoming) => loop {
@@ -660,8 +671,10 @@ pub mod client {
                                                                 *PORTABLE_SERVICE_RUNNING.lock().unwrap() = true;
                                                             },
                                                             ConnCount(None) => {
-                                                                let cnt = crate::server::CONN_COUNT.lock().unwrap().clone();
-                                                                stream.send(&Data::DataPortableService(ConnCount(Some(cnt)))).await.ok();
+                                                                if !quick_support {
+                                                                    let cnt = crate::server::CONN_COUNT.lock().unwrap().clone();
+                                                                    stream.send(&Data::DataPortableService(ConnCount(Some(cnt)))).await.ok();
+                                                                }
                                                             },
                                                             WillClose => {
                                                                 log::info!("portable service will close");
