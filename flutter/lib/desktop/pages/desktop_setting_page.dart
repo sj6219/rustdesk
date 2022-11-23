@@ -580,20 +580,21 @@ class _SafetyState extends State<_Safety> with AutomaticKeepAliveClientMixin {
     return ChangeNotifierProvider.value(
         value: gFFI.serverModel,
         child: Consumer<ServerModel>(builder: ((context, model, child) {
-          List<String> keys = [
+          List<String> passwordKeys = [
             kUseTemporaryPassword,
             kUsePermanentPassword,
             kUseBothPasswords,
           ];
-          List<String> values = [
-            translate('Use temporary password'),
+          List<String> passwordValues = [
+            translate('Use one-time password'),
             translate('Use permanent password'),
             translate('Use both passwords'),
           ];
           bool tmpEnabled = model.verificationMethod != kUsePermanentPassword;
           bool permEnabled = model.verificationMethod != kUseTemporaryPassword;
-          String currentValue = values[keys.indexOf(model.verificationMethod)];
-          List<Widget> radios = values
+          String currentValue =
+              passwordValues[passwordKeys.indexOf(model.verificationMethod)];
+          List<Widget> radios = passwordValues
               .map((value) => _Radio<String>(
                     context,
                     value: value,
@@ -601,8 +602,8 @@ class _SafetyState extends State<_Safety> with AutomaticKeepAliveClientMixin {
                     label: value,
                     onChanged: ((value) {
                       () async {
-                        await model
-                            .setVerificationMethod(keys[values.indexOf(value)]);
+                        await model.setVerificationMethod(
+                            passwordKeys[passwordValues.indexOf(value)]);
                         await model.updatePasswordModel();
                       }();
                     }),
@@ -640,20 +641,40 @@ class _SafetyState extends State<_Safety> with AutomaticKeepAliveClientMixin {
                   ))
               .toList();
 
+          final modeKeys = ['password', 'click', ''];
+          final modeValues = [
+            translate('Accept sessions via password'),
+            translate('Accept sessions via click'),
+            translate('Accept sessions via both'),
+          ];
+          var modeInitialKey = model.approveMode;
+          if (!modeKeys.contains(modeInitialKey)) modeInitialKey = '';
+          final usePassword = model.approveMode != 'click';
+
           return _Card(title: 'Password', children: [
-            radios[0],
-            _SubLabeledWidget(
-                'Temporary Password Length',
-                Row(
-                  children: [
-                    ...lengthRadios,
-                  ],
-                ),
-                enabled: tmpEnabled && !locked),
-            radios[1],
-            _SubButton('Set permanent password', setPasswordDialog,
-                permEnabled && !locked),
-            radios[2],
+            _ComboBox(
+              keys: modeKeys,
+              values: modeValues,
+              initialKey: modeInitialKey,
+              onChanged: (key) => model.setApproveMode(key),
+            ).marginOnly(left: _kContentHMargin),
+            if (usePassword) radios[0],
+            if (usePassword)
+              _SubLabeledWidget(
+                  'One-time password length',
+                  Row(
+                    children: [
+                      ...lengthRadios,
+                    ],
+                  ),
+                  enabled: tmpEnabled && !locked),
+            if (usePassword) radios[1],
+            if (usePassword)
+              _SubButton('Set permanent password', setPasswordDialog,
+                  permEnabled && !locked),
+            if (usePassword)
+              hide_cm(!locked).marginOnly(left: _kContentHSubMargin - 6),
+            if (usePassword) radios[2],
           ]);
         })));
   }
@@ -781,6 +802,46 @@ class _SafetyState extends State<_Safety> with AutomaticKeepAliveClientMixin {
         },
       ).marginOnly(left: _kCheckBoxLeftMargin);
     });
+  }
+
+  Widget hide_cm(bool enabled) {
+    return ChangeNotifierProvider.value(
+        value: gFFI.serverModel,
+        child: Consumer<ServerModel>(builder: (context, model, child) {
+          final enableHideCm = model.approveMode == 'password' &&
+              model.verificationMethod == kUsePermanentPassword;
+          onHideCmChanged(bool? b) {
+            if (b != null) {
+              bind.mainSetOption(
+                  key: 'allow-hide-cm', value: bool2option('allow-hide-cm', b));
+            }
+          }
+
+          return Tooltip(
+              message: enableHideCm ? "" : translate('hide_cm_tip'),
+              child: GestureDetector(
+                onTap:
+                    enableHideCm ? () => onHideCmChanged(!model.hideCm) : null,
+                child: Row(
+                  children: [
+                    Checkbox(
+                            value: model.hideCm,
+                            onChanged: enabled && enableHideCm
+                                ? onHideCmChanged
+                                : null)
+                        .marginOnly(right: 5),
+                    Expanded(
+                      child: Text(
+                        translate('Hide connection management window'),
+                        style: TextStyle(
+                            color: _disabledTextColor(
+                                context, enabled && enableHideCm)),
+                      ),
+                    ),
+                  ],
+                ),
+              ));
+        }));
   }
 }
 

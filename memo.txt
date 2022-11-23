@@ -12,9 +12,11 @@ reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution 
 #macos
 cargo bundle --release --features inline
 cp libsciter.dylib target/release/bundle/osx/RustDesk.app/Contents/MacOS
+mv target/release/bundle/osx/RustDesk.app/Contents/Resources/res/* target/release/bundle/osx/RustDesk.app/Contents/Resources
+rm -rf target/release/bundle/osx/RustDesk.app/Contents/Resources/res
 target/release/bundle/osx/RustDesk.app/Contents/Info.plist
-    <key>LSUIElement</key>
-    <string>1</string>
+  <key>LSUIElement</key>
+  <string>1</string>
 
 cp target/release/rustdesk ../Documents/RustDesk.app/Contents/MacOS/rustdesk 
 codesign -s "Developer ID Application" --force --options runtime  ../Documents/RustDesk.app/Contents/MacOS/*

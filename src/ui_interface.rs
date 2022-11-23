@@ -39,6 +39,7 @@ lazy_static::lazy_static! {
     static ref OPTIONS : Arc<Mutex<HashMap<String, String>>> = Arc::new(Mutex::new(Config::get_options()));
     static ref ASYNC_JOB_STATUS : Arc<Mutex<String>> = Default::default();
     static ref TEMPORARY_PASSWD : Arc<Mutex<String>> = Arc::new(Mutex::new("".to_owned()));
+    pub static ref OPTION_SYNCED : Arc<Mutex<bool>> = Default::default();
 }
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -874,7 +875,12 @@ pub fn check_zombie(children: Children) {
     }
 }
 
-pub(crate) fn check_connect_status(reconnect: bool) -> mpsc::UnboundedSender<ipc::Data> {
+pub fn start_option_status_sync() {
+    let _sender = SENDER.lock().unwrap();
+}
+
+// not call directly
+fn check_connect_status(reconnect: bool) -> mpsc::UnboundedSender<ipc::Data> {
     let (tx, rx) = mpsc::unbounded_channel::<ipc::Data>();
     std::thread::spawn(move || check_connect_status_(reconnect, rx));
     tx
@@ -898,7 +904,7 @@ pub fn account_auth_result() -> String {
 // notice: avoiding create ipc connecton repeatly,
 // because windows named pipe has serious memory leak issue.
 #[tokio::main(flavor = "current_thread")]
-pub(crate) async fn check_connect_status_(reconnect: bool, rx: mpsc::UnboundedReceiver<ipc::Data>) {
+async fn check_connect_status_(reconnect: bool, rx: mpsc::UnboundedReceiver<ipc::Data>) {
     let mut key_confirmed = false;
     let mut rx = rx;
     let mut mouse_time = 0;
@@ -919,7 +925,8 @@ pub(crate) async fn check_connect_status_(reconnect: bool, rx: mpsc::UnboundedRe
                                 UI_STATUS.lock().unwrap().2 = v;
                             }
                             Ok(Some(ipc::Data::Options(Some(v)))) => {
-                                *OPTIONS.lock().unwrap() = v
+                                *OPTIONS.lock().unwrap() = v;
+                                *OPTION_SYNCED.lock().unwrap() = true;
                             }
                             Ok(Some(ipc::Data::Config((name, Some(value))))) => {
                                 if name == "id" {
@@ -960,6 +967,11 @@ pub(crate) async fn check_connect_status_(reconnect: bool, rx: mpsc::UnboundedRe
         *UI_STATUS.lock().unwrap() = (-1, key_confirmed, mouse_time, id.clone());
         sleep(1.).await;
     }
+}
+
+#[allow(dead_code)]
+pub fn option_synced() -> bool {
+    OPTION_SYNCED.lock().unwrap().clone()
 }
 
 #[cfg(any(target_os = "android", target_os = "ios", feature = "flutter"))]
