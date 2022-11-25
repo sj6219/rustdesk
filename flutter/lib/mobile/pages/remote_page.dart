@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_hbb/consts.dart';
 import 'package:flutter_hbb/mobile/widgets/gesture_help.dart';
 import 'package:flutter_hbb/models/chat_model.dart';
 import 'package:get/get_state_manager/src/rx_flutter/rx_obx_widget.dart';
@@ -223,7 +224,7 @@ class _RemotePageState extends State<RemotePage> {
 
     return WillPopScope(
       onWillPop: () async {
-        clientClose(gFFI.dialogManager);
+        clientClose(widget.id, gFFI.dialogManager);
         return false;
       },
       child: getRawPointerAndKeyBody(Scaffold(
@@ -304,7 +305,7 @@ class _RemotePageState extends State<RemotePage> {
                       color: Colors.white,
                       icon: Icon(Icons.clear),
                       onPressed: () {
-                        clientClose(gFFI.dialogManager);
+                        clientClose(widget.id, gFFI.dialogManager);
                       },
                     )
                   ] +
@@ -474,7 +475,7 @@ class _RemotePageState extends State<RemotePage> {
         },
         onTwoFingerScaleEnd: (d) {
           _scale = 1;
-          bind.sessionPeerOption(id: widget.id, name: "view-style", value: "");
+          bind.sessionSetViewStyle(id: widget.id, value: "");
         },
         onThreeFingerVerticalDragUpdate: gFFI.ffiModel.isPeerAndroid
             ? null
@@ -642,7 +643,7 @@ class _RemotePageState extends State<RemotePage> {
         // FIXME:
         // null means no session of id
         // empty string means no password
-        var password = await bind.sessionGetOption(id: id, arg: "os-password");
+        var password = await bind.sessionGetOption(id: id, arg: 'os-password');
         if (password != null) {
           bind.sessionInputOsPassword(id: widget.id, value: password);
         } else {
@@ -862,11 +863,19 @@ class CursorPaint extends StatelessWidget {
     final c = Provider.of<CanvasModel>(context);
     final adjust = gFFI.cursorModel.adjustForKeyboard();
     var s = c.scale;
+    double hotx = m.hotx;
+    double hoty = m.hoty;
+    if (m.image == null) {
+      if (preDefaultCursor.image != null) {
+        hotx = preDefaultCursor.image!.width / 2;
+        hoty = preDefaultCursor.image!.height / 2;
+      }
+    }
     return CustomPaint(
       painter: ImagePainter(
-          image: m.image,
-          x: m.x * s - m.hotx + c.x,
-          y: m.y * s - m.hoty + c.y - adjust,
+          image: m.image ?? preDefaultCursor.image,
+          x: m.x * s - hotx * s + c.x,
+          y: m.y * s - hoty * s + c.y - adjust,
           scale: 1),
     );
   }
@@ -900,13 +909,13 @@ class ImagePainter extends CustomPainter {
 
 void showOptions(
     BuildContext context, String id, OverlayDialogManager dialogManager) async {
-  String quality = await bind.sessionGetImageQuality(id: id) ?? 'balanced';
-  if (quality == '') quality = 'balanced';
+  String quality =
+      await bind.sessionGetImageQuality(id: id) ?? kRemoteImageQualityBalanced;
+  if (quality == '') quality = kRemoteImageQualityBalanced;
   String codec =
       await bind.sessionGetOption(id: id, arg: 'codec-preference') ?? 'auto';
   if (codec == '') codec = 'auto';
-  String viewStyle =
-      await bind.sessionGetOption(id: id, arg: 'view-style') ?? '';
+  String viewStyle = await bind.sessionGetViewStyle(id: id) ?? '';
 
   var displays = <Widget>[];
   final pi = gFFI.ffiModel.pi;
@@ -993,7 +1002,7 @@ void showOptions(
       setState(() {
         viewStyle = value;
         bind
-            .sessionPeerOption(id: id, name: "view-style", value: value)
+            .sessionSetViewStyle(id: id, value: value)
             .then((_) => gFFI.canvasModel.updateViewStyle());
       });
     }
@@ -1009,12 +1018,16 @@ void showOptions(
     }
 
     final radios = [
-      getRadio('Scale original', 'original', viewStyle, setViewStyle),
-      getRadio('Scale adaptive', 'adaptive', viewStyle, setViewStyle),
+      getRadio(
+          'Scale original', kRemoteViewStyleOriginal, viewStyle, setViewStyle),
+      getRadio(
+          'Scale adaptive', kRemoteViewStyleAdaptive, viewStyle, setViewStyle),
       const Divider(color: MyTheme.border),
-      getRadio('Good image quality', 'best', quality, setQuality),
-      getRadio('Balanced', 'balanced', quality, setQuality),
-      getRadio('Optimize reaction time', 'low', quality, setQuality),
+      getRadio(
+          'Good image quality', kRemoteImageQualityBest, quality, setQuality),
+      getRadio('Balanced', kRemoteImageQualityBalanced, quality, setQuality),
+      getRadio('Optimize reaction time', kRemoteImageQualityLow, quality,
+          setQuality),
       const Divider(color: MyTheme.border)
     ];
 

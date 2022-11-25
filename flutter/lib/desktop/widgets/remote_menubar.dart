@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_hbb/models/chat_model.dart';
 import 'package:flutter_hbb/models/state_model.dart';
+import 'package:flutter_hbb/consts.dart';
 import 'package:get/get.dart';
 import 'package:provider/provider.dart';
 import 'package:rxdart/rxdart.dart' as rxdart;
@@ -22,9 +23,10 @@ import './popup_menu.dart';
 import './material_mod_popup_menu.dart' as mod_menu;
 
 class MenubarState {
-  final kStoreKey = "remoteMenubarState";
+  final kStoreKey = 'remoteMenubarState';
   late RxBool show;
   late RxBool _pin;
+  RxString viewStyle = RxString(kRemoteViewStyleOriginal);
 
   MenubarState() {
     final s = bind.getLocalFlutterConfig(k: kStoreKey);
@@ -47,7 +49,8 @@ class MenubarState {
   }
 
   _initSet(bool s, bool p) {
-    show = RxBool(s);
+    // Show remubar when connection is established.
+    show = RxBool(true);
     _pin = RxBool(p);
   }
 
@@ -66,20 +69,24 @@ class MenubarState {
   switchPin() async {
     _pin.value = !_pin.value;
     // Save everytime changed, as this func will not be called frequently
-    await save();
+    await _savePin();
   }
 
   setPin(bool v) async {
     if (_pin.value != v) {
       _pin.value = v;
       // Save everytime changed, as this func will not be called frequently
-      await save();
+      await _savePin();
     }
   }
 
-  save() async {
+  _savePin() async {
     bind.setLocalFlutterConfig(
         k: kStoreKey, v: jsonEncode({'pin': _pin.value}));
+  }
+
+  save() async {
+    await _savePin();
   }
 }
 
@@ -194,7 +201,7 @@ class _RemoteMenubarState extends State<RemoteMenubar> {
   }
 
   _updateScreen() async {
-    final v = await DesktopMultiWindow.invokeMethod(0, "get_window_info", "");
+    final v = await DesktopMultiWindow.invokeMethod(0, 'get_window_info', '');
     final String valueStr = v;
     if (valueStr.isEmpty) {
       _screen = null;
@@ -321,7 +328,7 @@ class _RemoteMenubarState extends State<RemoteMenubar> {
             child: Obx(() {
               RxInt display = CurrentDisplayState.find(widget.id);
               return Text(
-                "${display.value + 1}/${pi.displays.length}",
+                '${display.value + 1}/${pi.displays.length}',
                 style: const TextStyle(
                     color: _MenubarTheme.commonColor, fontSize: 8),
               );
@@ -403,6 +410,8 @@ class _RemoteMenubarState extends State<RemoteMenubar> {
 
   Widget _buildDisplay(BuildContext context) {
     return FutureBuilder(future: () async {
+      widget.state.viewStyle.value =
+          await bind.sessionGetViewStyle(id: widget.id) ?? '';
       final supportedHwcodec =
           await bind.sessionSupportedHwcodec(id: widget.id);
       return {'supportedHwcodec': supportedHwcodec};
@@ -489,7 +498,7 @@ class _RemoteMenubarState extends State<RemoteMenubar> {
     return IconButton(
       tooltip: translate('Close'),
       onPressed: () {
-        clientClose(widget.ffi.dialogManager);
+        clientClose(widget.id, widget.ffi.dialogManager);
       },
       icon: const Icon(
         Icons.close,
@@ -594,10 +603,10 @@ class _RemoteMenubarState extends State<RemoteMenubar> {
         ));
       }
     }
-    if (perms["restart"] != false &&
-        (pi.platform == "Linux" ||
-            pi.platform == "Windows" ||
-            pi.platform == "Mac OS")) {
+    if (perms['restart'] != false &&
+        (pi.platform == 'Linux' ||
+            pi.platform == 'Windows' ||
+            pi.platform == 'Mac OS')) {
       displayMenu.add(MenuEntryButton<String>(
         childBuilder: (TextStyle? style) => Text(
           translate('Restart Remote Device'),
@@ -628,14 +637,14 @@ class _RemoteMenubarState extends State<RemoteMenubar> {
         displayMenu.add(MenuEntryButton<String>(
           childBuilder: (TextStyle? style) => Obx(() => Text(
                 translate(
-                    '${BlockInputState.find(widget.id).value ? "Unb" : "B"}lock user input'),
+                    '${BlockInputState.find(widget.id).value ? 'Unb' : 'B'}lock user input'),
                 style: style,
               )),
           proc: () {
             RxBool blockInput = BlockInputState.find(widget.id);
             bind.sessionToggleOption(
                 id: widget.id,
-                value: '${blockInput.value ? "un" : ""}block-input');
+                value: '${blockInput.value ? 'un' : ''}block-input');
             blockInput.value = !blockInput.value;
           },
           padding: padding,
@@ -670,7 +679,7 @@ class _RemoteMenubarState extends State<RemoteMenubar> {
       //           ClipboardData? data =
       //               await Clipboard.getData(Clipboard.kTextPlain);
       //           if (data != null && data.text != null) {
-      //             bind.sessionInputString(id: widget.id, value: data.text ?? "");
+      //             bind.sessionInputString(id: widget.id, value: data.text ?? '');
       //           }
       //         }();
       //       },
@@ -678,18 +687,6 @@ class _RemoteMenubarState extends State<RemoteMenubar> {
       //       dismissOnClicked: true,
       //     ));
       //   }
-
-      displayMenu.add(MenuEntryButton<String>(
-        childBuilder: (TextStyle? style) => Text(
-          translate('Reset canvas'),
-          style: style,
-        ),
-        proc: () {
-          widget.ffi.cursorModel.reset();
-        },
-        padding: padding,
-        dismissOnClicked: true,
-      ));
     }
 
     return displayMenu;
@@ -730,23 +727,24 @@ class _RemoteMenubarState extends State<RemoteMenubar> {
         optionsGetter: () => [
           MenuEntryRadioOption(
             text: translate('Scale original'),
-            value: 'original',
+            value: kRemoteViewStyleOriginal,
             dismissOnClicked: true,
           ),
           MenuEntryRadioOption(
             text: translate('Scale adaptive'),
-            value: 'adaptive',
+            value: kRemoteViewStyleAdaptive,
             dismissOnClicked: true,
           ),
         ],
         curOptionGetter: () async {
-          return await bind.sessionGetOption(
-                  id: widget.id, arg: 'view-style') ??
-              'adaptive';
+          // null means peer id is not found, which there's no need to care about
+          final viewStyle = await bind.sessionGetViewStyle(id: widget.id) ?? '';
+          widget.state.viewStyle.value = viewStyle;
+          return viewStyle;
         },
         optionSetter: (String oldValue, String newValue) async {
-          await bind.sessionPeerOption(
-              id: widget.id, name: "view-style", value: newValue);
+          await bind.sessionSetViewStyle(id: widget.id, value: newValue);
+          widget.state.viewStyle.value = newValue;
           widget.ffi.canvasModel.updateViewStyle();
         },
         padding: padding,
@@ -758,23 +756,20 @@ class _RemoteMenubarState extends State<RemoteMenubar> {
         optionsGetter: () => [
           MenuEntryRadioOption(
             text: translate('ScrollAuto'),
-            value: 'scrollauto',
+            value: kRemoteScrollStyleAuto,
             dismissOnClicked: true,
           ),
           MenuEntryRadioOption(
             text: translate('Scrollbar'),
-            value: 'scrollbar',
+            value: kRemoteScrollStyleBar,
             dismissOnClicked: true,
           ),
         ],
-        curOptionGetter: () async {
-          return await bind.sessionGetOption(
-                  id: widget.id, arg: 'scroll-style') ??
-              '';
-        },
+        curOptionGetter: () async =>
+            // null means peer id is not found, which there's no need to care about
+            await bind.sessionGetScrollStyle(id: widget.id) ?? '',
         optionSetter: (String oldValue, String newValue) async {
-          await bind.sessionPeerOption(
-              id: widget.id, name: "scroll-style", value: newValue);
+          await bind.sessionSetScrollStyle(id: widget.id, value: newValue);
           widget.ffi.canvasModel.updateScrollStyle();
         },
         padding: padding,
@@ -786,30 +781,27 @@ class _RemoteMenubarState extends State<RemoteMenubar> {
         optionsGetter: () => [
           MenuEntryRadioOption(
             text: translate('Good image quality'),
-            value: 'best',
+            value: kRemoteImageQualityBest,
             dismissOnClicked: true,
           ),
           MenuEntryRadioOption(
             text: translate('Balanced'),
-            value: 'balanced',
+            value: kRemoteImageQualityBalanced,
             dismissOnClicked: true,
           ),
           MenuEntryRadioOption(
             text: translate('Optimize reaction time'),
-            value: 'low',
+            value: kRemoteImageQualityLow,
             dismissOnClicked: true,
           ),
           MenuEntryRadioOption(
               text: translate('Custom'),
-              value: 'custom',
+              value: kRemoteImageQualityCustom,
               dismissOnClicked: true),
         ],
-        curOptionGetter: () async {
-          String quality =
-              await bind.sessionGetImageQuality(id: widget.id) ?? 'balanced';
-          if (quality == '') quality = 'balanced';
-          return quality;
-        },
+        curOptionGetter: () async =>
+            // null means peer id is not found, which there's no need to care about
+            await bind.sessionGetImageQuality(id: widget.id) ?? '',
         optionSetter: (String oldValue, String newValue) async {
           if (oldValue != newValue) {
             await bind.sessionSetImageQuality(id: widget.id, value: newValue);
@@ -841,7 +833,7 @@ class _RemoteMenubarState extends State<RemoteMenubar> {
             }
           }
 
-          if (newValue == 'custom') {
+          if (newValue == kRemoteImageQualityCustom) {
             final btnClose = msgBoxButton(translate('Close'), () async {
               await setCustomValues();
               widget.ffi.dialogManager.dismissAll();
@@ -1074,14 +1066,14 @@ class _RemoteMenubarState extends State<RemoteMenubar> {
             }
             return list;
           },
-          curOptionGetter: () async {
-            return await bind.sessionGetOption(
-                    id: widget.id, arg: 'codec-preference') ??
-                'auto';
-          },
+          curOptionGetter: () async =>
+              // null means peer id is not found, which there's no need to care about
+              await bind.sessionGetOption(
+                  id: widget.id, arg: 'codec-preference') ??
+              '',
           optionSetter: (String oldValue, String newValue) async {
             await bind.sessionPeerOption(
-                id: widget.id, name: "codec-preference", value: newValue);
+                id: widget.id, name: 'codec-preference', value: newValue);
             bind.sessionChangePreferCodec(id: widget.id);
           },
           padding: padding,
@@ -1108,6 +1100,27 @@ class _RemoteMenubarState extends State<RemoteMenubar> {
         dismissOnClicked: true,
       );
     }());
+
+    /// Show remote cursor scaling with image
+    if (widget.state.viewStyle.value != kRemoteViewStyleOriginal) {
+      displayMenu.add(() {
+        final opt = 'zoom-cursor';
+        final state = PeerBoolOption.find(widget.id, opt);
+        return MenuEntrySwitch2<String>(
+          switchType: SwitchType.scheckbox,
+          text: translate('Zoom cursor'),
+          getter: () {
+            return state;
+          },
+          setter: (bool v) async {
+            state.value = v;
+            await bind.sessionToggleOption(id: widget.id, value: opt);
+          },
+          padding: padding,
+          dismissOnClicked: true,
+        );
+      }());
+    }
 
     /// Show quality monitor
     displayMenu.add(MenuEntrySwitch<String>(
@@ -1175,13 +1188,11 @@ class _RemoteMenubarState extends State<RemoteMenubar> {
           MenuEntryRadioOption(text: translate('Legacy mode'), value: 'legacy'),
           MenuEntryRadioOption(text: translate('Map mode'), value: 'map'),
         ],
-        curOptionGetter: () async {
-          return await bind.sessionGetKeyboardName(id: widget.id);
-        },
+        curOptionGetter: () async =>
+            await bind.sessionGetKeyboardName(id: widget.id),
         optionSetter: (String oldValue, String newValue) async {
           await bind.sessionSetKeyboardMode(
               id: widget.id, keyboardMode: newValue);
-          widget.ffi.canvasModel.updateViewStyle();
         },
       )
     ];
@@ -1209,16 +1220,16 @@ class _RemoteMenubarState extends State<RemoteMenubar> {
 void showSetOSPassword(
     String id, bool login, OverlayDialogManager dialogManager) async {
   final controller = TextEditingController();
-  var password = await bind.sessionGetOption(id: id, arg: "os-password") ?? "";
-  var autoLogin = await bind.sessionGetOption(id: id, arg: "auto-login") != "";
+  var password = await bind.sessionGetOption(id: id, arg: 'os-password') ?? '';
+  var autoLogin = await bind.sessionGetOption(id: id, arg: 'auto-login') != '';
   controller.text = password;
   dialogManager.show((setState, close) {
     submit() {
       var text = controller.text.trim();
-      bind.sessionPeerOption(id: id, name: "os-password", value: text);
+      bind.sessionPeerOption(id: id, name: 'os-password', value: text);
       bind.sessionPeerOption(
-          id: id, name: "auto-login", value: autoLogin ? 'Y' : '');
-      if (text != "" && login) {
+          id: id, name: 'auto-login', value: autoLogin ? 'Y' : '');
+      if (text != '' && login) {
         bind.sessionInputOsPassword(id: id, value: text);
       }
       close();
@@ -1265,7 +1276,7 @@ void showAuditDialog(String id, dialogManager) async {
   dialogManager.show((setState, close) {
     submit() {
       var text = controller.text.trim();
-      if (text != "") {
+      if (text != '') {
         bind.sessionSendNote(id: id, note: text);
       }
       close();
@@ -1304,11 +1315,11 @@ void showAuditDialog(String id, dialogManager) async {
             keyboardType: TextInputType.multiline,
             textInputAction: TextInputAction.newline,
             decoration: const InputDecoration.collapsed(
-              hintText: "input note here",
+              hintText: 'input note here',
             ),
             // inputFormatters: [
             //   LengthLimitingTextInputFormatter(16),
-            //   // FilteringTextInputFormatter(RegExp(r"[a-zA-z][a-zA-z0-9\_]*"), allow: true)
+            //   // FilteringTextInputFormatter(RegExp(r'[a-zA-z][a-zA-z0-9\_]*'), allow: true)
             // ],
             maxLines: null,
             maxLength: 256,

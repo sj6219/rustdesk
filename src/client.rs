@@ -185,8 +185,6 @@ impl Client {
             ));
         }
         let (mut rendezvous_server, servers, contained) = crate::get_rendezvous_server(1_000).await;
-        //..m::::::1.1
-        //..a::::::1.1
         let mut socket =
             socket_client::connect_tcp(&*rendezvous_server, any_addr, RENDEZVOUS_TIMEOUT).await;
         debug_assert!(!servers.contains(&rendezvous_server));
@@ -976,6 +974,8 @@ impl LoginConfigHandler {
         self.save_config(config);
     }
 
+    //to-do: too many dup code below.
+
     /// Save view style to the current config.
     ///
     /// # Arguments
@@ -987,13 +987,24 @@ impl LoginConfigHandler {
         self.save_config(config);
     }
 
+    /// Save scroll style to the current config.
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - The view style to be saved.
+    pub fn save_scroll_style(&mut self, value: String) {
+        let mut config = self.load_config();
+        config.scroll_style = value;
+        self.save_config(config);
+    }
+
     /// Set a ui config of flutter for handler's [`PeerConfig`].
     ///
     /// # Arguments
     ///
     /// * `k` - key of option
     /// * `v` - value of option
-    pub fn set_ui_flutter(&mut self, k: String, v: String) {
+    pub fn save_ui_flutter(&mut self, k: String, v: String) {
         let mut config = self.load_config();
         config.ui_flutter.insert(k, v);
         self.save_config(config);
@@ -1128,6 +1139,9 @@ impl LoginConfigHandler {
             };
             msg.custom_image_quality = quality << 8;
             n += 1;
+        }
+        if let Some(custom_fps) = self.options.get("custom-fps") {
+            msg.custom_fps = custom_fps.parse().unwrap_or(30);
         }
         if self.get_toggle_option("show-remote-cursor") {
             msg.show_remote_cursor = BoolOption::Yes.into();
@@ -1323,6 +1337,15 @@ impl LoginConfigHandler {
             self.password = Default::default();
             interface.msgbox("re-input-password", err, "Do you want to enter again?", "");
             true
+        } else if err == "No Password Access" {
+            self.password = Default::default();
+            interface.msgbox(
+                "wait-remote-accept-nook",
+                "Prompt",
+                "Please wait for the remote side to accept your session request...",
+                "",
+            );
+            true
         } else {
             if err.contains(SCRAP_X11_REQUIRED) {
                 interface.msgbox("error", "Login Error", err, SCRAP_X11_REF_URL);
@@ -1423,11 +1446,7 @@ impl LoginConfigHandler {
             username: self.id.clone(),
             password: password.into(),
             my_id,
-            my_name: if cfg!(windows) {
-                crate::platform::get_active_username()
-            } else {
-                crate::username()
-            },
+            my_name: crate::username(),
             option: self.get_option_message(true).into(),
             session_id: self.session_id,
             version: crate::VERSION.to_string(),
@@ -1563,13 +1582,37 @@ pub async fn handle_test_delay(t: TestDelay, peer: &mut Stream) {
     }
 }
 
+/// Whether is track pad scrolling.
+#[inline]
+#[cfg(all(target_os = "macos"))]
+fn check_scroll_on_mac(mask: i32, x: i32, y: i32) -> bool {
+    // flutter version we set mask type bit to 4 when track pad scrolling.
+    if mask & 7 == 4 {
+        return true;
+    }
+    if mask & 3 != 3 {
+        return false;
+    }
+    let btn = mask >> 3;
+    if y == -1 {
+        btn != 0xff88 && btn != -0x780000
+    } else if y == 1 {
+        btn != 0x78 && btn != 0x780000
+    } else if x != 0 {
+        // No mouse support horizontal scrolling.
+        true
+    } else {
+        false
+    }
+}
+
 /// Send mouse data.
 ///
 /// # Arguments
 ///
 /// * `mask` - Mouse event.
 ///     * mask = buttons << 3 | type
-///     * type, 1: down, 2: up, 3: wheel
+///     * type, 1: down, 2: up, 3: wheel, 4: trackpad
 ///     * buttons, 1: left, 2: right, 4: middle
 /// * `x` - X coordinate.
 /// * `y` - Y coordinate.
@@ -1607,6 +1650,10 @@ pub fn send_mouse(
     }
     if command {
         mouse_event.modifiers.push(ControlKey::Meta.into());
+    }
+    #[cfg(all(target_os = "macos"))]
+    if check_scroll_on_mac(mask, x, y) {
+        mouse_event.modifiers.push(ControlKey::Scroll.into());
     }
     #[cfg(target_os = "macos")]
     {

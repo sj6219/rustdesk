@@ -10,8 +10,7 @@ use hbb_common::password_security;
 use hbb_common::{
     allow_err,
     config::{self, Config, LocalConfig, PeerConfig},
-    directories_next, log,
-    sleep,
+    directories_next, log, sleep,
     tokio::{self, sync::mpsc, time},
 };
 
@@ -26,7 +25,7 @@ use hbb_common::{
 
 #[cfg(feature = "flutter")]
 use crate::hbbs_http::account;
-use crate::{common::SOFTWARE_UPDATE_URL, ipc, platform};
+use crate::{common::SOFTWARE_UPDATE_URL, ipc};
 
 #[cfg(any(target_os = "android", target_os = "ios", feature = "flutter"))]
 type Message = RendezvousMessage;
@@ -40,6 +39,7 @@ lazy_static::lazy_static! {
     static ref OPTIONS : Arc<Mutex<HashMap<String, String>>> = Arc::new(Mutex::new(Config::get_options()));
     static ref ASYNC_JOB_STATUS : Arc<Mutex<String>> = Default::default();
     static ref TEMPORARY_PASSWD : Arc<Mutex<String>> = Arc::new(Mutex::new("".to_owned()));
+    pub static ref OPTION_SYNCED : Arc<Mutex<bool>> = Default::default();
 }
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -253,6 +253,7 @@ pub fn test_if_valid_server(host: String) -> String {
 
 #[inline]
 #[cfg(feature = "flutter")]
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub fn get_sound_inputs() -> Vec<String> {
     let mut a = Vec::new();
     #[cfg(not(target_os = "linux"))]
@@ -375,7 +376,7 @@ pub fn is_installed() -> bool {
 
 #[cfg(any(target_os = "android", target_os = "ios"))]
 #[inline]
-pub fn is_installed() -> bool {  
+pub fn is_installed() -> bool {
     false
 }
 
@@ -782,7 +783,7 @@ pub fn default_video_save_directory() -> String {
     }
 
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    if let Some(home) = platform::get_active_user_home() {
+    if let Some(home) = crate::platform::get_active_user_home() {
         let name = if cfg!(target_os = "macos") {
             "Movies"
         } else {
@@ -874,7 +875,12 @@ pub fn check_zombie(children: Children) {
     }
 }
 
-pub(crate) fn check_connect_status(reconnect: bool) -> mpsc::UnboundedSender<ipc::Data> {
+pub fn start_option_status_sync() {
+    let _sender = SENDER.lock().unwrap();
+}
+
+// not call directly
+fn check_connect_status(reconnect: bool) -> mpsc::UnboundedSender<ipc::Data> {
     let (tx, rx) = mpsc::unbounded_channel::<ipc::Data>();
     std::thread::spawn(move || check_connect_status_(reconnect, rx));
     tx
@@ -898,7 +904,7 @@ pub fn account_auth_result() -> String {
 // notice: avoiding create ipc connecton repeatly,
 // because windows named pipe has serious memory leak issue.
 #[tokio::main(flavor = "current_thread")]
-pub(crate) async fn check_connect_status_(reconnect: bool, rx: mpsc::UnboundedReceiver<ipc::Data>) {
+async fn check_connect_status_(reconnect: bool, rx: mpsc::UnboundedReceiver<ipc::Data>) {
     let mut key_confirmed = false;
     let mut rx = rx;
     let mut mouse_time = 0;
@@ -919,7 +925,8 @@ pub(crate) async fn check_connect_status_(reconnect: bool, rx: mpsc::UnboundedRe
                                 UI_STATUS.lock().unwrap().2 = v;
                             }
                             Ok(Some(ipc::Data::Options(Some(v)))) => {
-                                *OPTIONS.lock().unwrap() = v
+                                *OPTIONS.lock().unwrap() = v;
+                                *OPTION_SYNCED.lock().unwrap() = true;
                             }
                             Ok(Some(ipc::Data::Config((name, Some(value))))) => {
                                 if name == "id" {
@@ -960,6 +967,11 @@ pub(crate) async fn check_connect_status_(reconnect: bool, rx: mpsc::UnboundedRe
         *UI_STATUS.lock().unwrap() = (-1, key_confirmed, mouse_time, id.clone());
         sleep(1.).await;
     }
+}
+
+#[allow(dead_code)]
+pub fn option_synced() -> bool {
+    OPTION_SYNCED.lock().unwrap().clone()
 }
 
 #[cfg(any(target_os = "android", target_os = "ios", feature = "flutter"))]
