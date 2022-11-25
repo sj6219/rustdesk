@@ -84,7 +84,6 @@ class _ConnectionTabPageState extends State<ConnectionTabPage> {
       if (call.method == "new_remote_desktop") {
         final args = jsonDecode(call.arguments);
         final id = args['id'];
-        ConnectionTypeState.init(id);
         window_on_top(windowId());
         ConnectionTypeState.init(id);
         tabController.add(TabInfo(
@@ -237,12 +236,12 @@ class _ConnectionTabPageState extends State<ConnectionTabPage> {
         optionsGetter: () => [
           MenuEntryRadioOption(
             text: translate('Scale original'),
-            value: 'original',
+            value: kRemoteViewStyleOriginal,
             dismissOnClicked: true,
           ),
           MenuEntryRadioOption(
             text: translate('Scale adaptive'),
-            value: 'adaptive',
+            value: kRemoteViewStyleAdaptive,
             dismissOnClicked: true,
           ),
         ],
@@ -250,8 +249,7 @@ class _ConnectionTabPageState extends State<ConnectionTabPage> {
             // null means peer id is not found, which there's no need to care about
             await bind.sessionGetViewStyle(id: key) ?? '',
         optionSetter: (String oldValue, String newValue) async {
-          await bind.sessionSetViewStyle(
-              id: key, value: newValue);
+          await bind.sessionSetViewStyle(id: key, value: newValue);
           ffi.canvasModel.updateViewStyle();
           cancelFunc();
         },

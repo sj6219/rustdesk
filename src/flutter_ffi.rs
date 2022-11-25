@@ -156,6 +156,7 @@ pub fn session_reconnect(id: String) {
 
 pub fn session_toggle_option(id: String, value: String) {
     if let Some(session) = SESSIONS.write().unwrap().get_mut(&id) {
+        log::warn!("toggle option {}", value);
         session.toggle_option(value);
     }
 }
@@ -562,7 +563,7 @@ pub fn main_get_connect_status() -> String {
 
 pub fn main_check_connect_status() {
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    check_mouse_time(); // avoid multi calls
+    start_option_status_sync(); // avoid multi calls
 }
 
 pub fn main_is_using_public_server() -> bool {
@@ -619,7 +620,11 @@ pub fn main_set_peer_option_sync(id: String, key: String, value: String) -> Sync
 }
 
 pub fn main_set_peer_alias(id: String, alias: String) {
-    main_broadcast_message(&HashMap::from([("name", "alias"), ("id", &id), ("alias", &alias)]));
+    main_broadcast_message(&HashMap::from([
+        ("name", "alias"),
+        ("id", &id),
+        ("alias", &alias),
+    ]));
     set_peer_option(id, "alias".to_owned(), alias)
 }
 
@@ -903,6 +908,7 @@ pub fn session_send_mouse(id: String, msg: String) {
                 "down" => 1,
                 "up" => 2,
                 "wheel" => 3,
+                "trackpad" => 4,
                 _ => 0,
             };
         }
@@ -1092,6 +1098,10 @@ pub fn version_to_number(v: String) -> i64 {
     hbb_common::get_version_number(&v)
 }
 
+pub fn option_synced() -> bool {
+    crate::ui_interface::option_synced()
+}
+
 pub fn main_is_installed() -> SyncReturn<bool> {
     SyncReturn(is_installed())
 }
@@ -1171,6 +1181,12 @@ pub fn main_account_auth_cancel() {
 
 pub fn main_account_auth_result() -> String {
     account_auth_result()
+}
+
+pub fn main_on_main_window_close() {
+    // may called more than one times
+    #[cfg(windows)]
+    crate::portable_service::client::drop_portable_service_shared_memory();
 }
 
 #[cfg(target_os = "android")]

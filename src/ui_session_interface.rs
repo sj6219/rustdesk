@@ -200,6 +200,7 @@ impl<T: InvokeUiSession> Session<T> {
             h265 = h265 && encoding_265;
             return (h264, h265);
         }
+        #[allow(dead_code)]
         (false, false)
     }
 
@@ -738,8 +739,6 @@ impl<T: InvokeUiSession> Session<T> {
             RdevKey::MetaLeft => RdevKey::ControlLeft,
             RdevKey::ControlRight => RdevKey::MetaRight,
             RdevKey::MetaRight => RdevKey::ControlRight,
-            RdevKey::Alt => RdevKey::AltGr,
-            RdevKey::AltGr => RdevKey::Alt,
             _ => key,
         };
 
