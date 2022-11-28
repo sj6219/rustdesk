@@ -32,9 +32,6 @@ sudo lsof -i -n -P | grep rustdesk     // netstat
 https://github.com/create-dmg/create-dmg
 security find-identity -p basic -v
 
-xcrun simctl list
-open -a Simulator --args -CurrentDeviceUDID 5D1C39DD-708B-41D3-B89A-3F0D9B8E42BF
-
 #android
 BINDGEN_EXTRA_CLANG_ARGS_aarch64_linux_android="--target=arm64-apple-macos --sysroot=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk" RUST_LOG=debug cargo ndk --platform 21 --target aarch64-linux-android rustc --lib --features flutter --release 
 cp target/aarch64-linux-android/release/liblibrustdesk.so flutter/android/app/src/main/jniLibs/arm64-v8a/librustdesk.so
@@ -56,6 +53,9 @@ cargo build --target aarch64-apple-ios --release
 // cp target/aarch64-apple-ios/debug/liblibrustdesk.a target/aarch64-apple-ios/release/liblibrustdesk.a
 flutter build ios // --debug
 xcode/Window/Devices and Simulators/INSTALLED APPS
+
+xcrun simctl list
+open -a Simulator --args -CurrentDeviceUDID 5D1C39DD-708B-41D3-B89A-3F0D9B8E42BF
 
 # rustdesk
 cd C:\Users\sjpark\Documents\rustdesk

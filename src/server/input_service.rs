@@ -738,6 +738,7 @@ pub fn handle_key(evt: &KeyEvent) {
     #[cfg(target_os = "macos")]
     if !*IS_SERVER {
         // having GUI, run main GUI thread, otherwise crash
+        //..m======2.4
         let evt = evt.clone();
         QUEUE.exec_async(move || handle_key_(&evt));
         return;
@@ -1001,6 +1002,7 @@ fn legacy_keyboard_mode(evt: &KeyEvent) {
 }
 
 pub fn handle_key_(evt: &KeyEvent) {
+    //..m======2.5
     if EXITING.load(Ordering::SeqCst) {
         return;
     }

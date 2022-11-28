@@ -374,6 +374,7 @@ impl KeyboardControllable for Enigo {
             return Err("".into()); 
         }
         if let Some(src) = self.event_source.as_ref() {
+            //..m======2.6
             if let Ok(event) =
                 CGEvent::new_keyboard_event(src.clone(), code, true)
             {
