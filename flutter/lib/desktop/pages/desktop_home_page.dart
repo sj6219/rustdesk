@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:convert';
 
+import 'package:auto_size_text/auto_size_text.dart';
 import 'package:flutter/material.dart' hide MenuItem;
 import 'package:flutter/services.dart';
 import 'package:flutter_hbb/common.dart';
@@ -202,10 +203,11 @@ class _DesktopHomePageState extends State<DesktopHomePage>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    translate("Password"),
+                  AutoSizeText(
+                    translate("One-time Password"),
                     style: TextStyle(
                         fontSize: 14, color: textColor?.withOpacity(0.5)),
+                    maxLines: 1,
                   ),
                   Row(
                     children: [
@@ -418,7 +420,17 @@ class _DesktopHomePageState extends State<DesktopHomePage>
     // initTray();
     trayManager.addListener(this);
     rustDeskWinManager.registerActiveWindowListener(onActiveWindowChanged);
-    rustDeskWinManager.registerActiveWindow(0);
+    // main window may be hidden because of the initial uni link or arguments.
+    // note that we must wrap this active window registration in future because 
+    // we must ensure the execution is after `windowManager.hide/show()`.
+    Future.delayed(Duration.zero, () {
+      windowManager.isVisible().then((visibility) {
+        if (visibility) {
+          rustDeskWinManager.registerActiveWindow(kWindowMainId);
+        }
+      });
+    });
+
     rustDeskWinManager.setMethodHandler((call, fromWindowId) async {
       debugPrint(
           "[Main] call ${call.method} with args ${call.arguments} from window $fromWindowId");
@@ -453,9 +465,6 @@ class _DesktopHomePageState extends State<DesktopHomePage>
         rustDeskWinManager.unregisterActiveWindow(call.arguments["id"]);
       }
     });
-    Future.delayed(Duration.zero, () {
-      checkArguments();
-    });
     _uniLinksSubscription = listenUniLinks();
   }
 
@@ -484,7 +493,7 @@ void setPasswordDialog() async {
         errMsg1 = "";
       });
       final pass = p0.text.trim();
-      if (pass.length < 6) {
+      if (pass.length < 6 && pass.isNotEmpty) {
         setState(() {
           errMsg0 = translate("Too short, at least 6 characters.");
         });

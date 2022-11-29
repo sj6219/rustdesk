@@ -7,6 +7,7 @@ use crate::video_service;
 #[cfg(any(target_os = "android", target_os = "ios"))]
 use crate::{common::DEVICE_NAME, flutter::connection_manager::start_channel};
 use crate::{ipc, VERSION};
+use cidr_utils::cidr::IpCidr;
 use hbb_common::{
     config::Config,
     fs,
@@ -14,7 +15,8 @@ use hbb_common::{
     futures::{SinkExt, StreamExt},
     get_time, get_version_number,
     message_proto::{option_message::BoolOption, permission_info::Permission},
-    password_security as password, sleep, timeout,
+    password_security::{self as password, ApproveMode},
+    sleep, timeout,
     tokio::{
         net::TcpStream,
         sync::mpsc,
@@ -539,8 +541,6 @@ impl Connection {
                                     ControlKey::Meta => ControlKey::Control,
                                     ControlKey::RControl => ControlKey::RWin,
                                     ControlKey::RWin => ControlKey::RControl,
-                                    ControlKey::Alt => ControlKey::RAlt,
-                                    ControlKey::RAlt => ControlKey::Alt,
                                     _ => ck,
                                 };
                                 msg.set_control_key(ck);
@@ -675,7 +675,7 @@ impl Connection {
                 .is_none()
             && whitelist
                 .iter()
-                .filter(|x| x.parse() == Ok(addr.ip()))
+                .filter(|x| IpCidr::from_str(x).map_or(false, |y| y.contains(addr.ip())))
                 .next()
                 .is_none()
         {
@@ -1099,6 +1099,21 @@ impl Connection {
             }
             if !crate::is_ip(&lr.username) && lr.username != Config::get_id() {
                 self.send_login_error("Offline").await;
+            } else if password::approve_mode() == ApproveMode::Click
+                || password::approve_mode() == ApproveMode::Both && !password::has_valid_password()
+            {
+                self.try_start_cm(lr.my_id, lr.my_name, false);
+                if hbb_common::get_version_number(&lr.version)
+                    >= hbb_common::get_version_number("1.2.0")
+                {
+                    self.send_login_error("No Password Access").await;
+                }
+                return true;
+            } else if password::approve_mode() == ApproveMode::Password
+                && !password::has_valid_password()
+            {
+                self.send_login_error("Connection not allowed").await;
+                return false;
             } else if self.is_of_recent_session() {
                 self.try_start_cm(lr.my_id, lr.my_name, true);
                 self.send_logon_response().await;
@@ -1108,10 +1123,6 @@ impl Connection {
             } else if lr.password.is_empty() {
                 self.try_start_cm(lr.my_id, lr.my_name, false);
             } else {
-                if !password::has_valid_password() {
-                    self.send_login_error("Connection not allowed").await;
-                    return false;
-                }
                 let mut failure = LOGIN_FAILURES
                     .lock()
                     .unwrap()
@@ -1617,17 +1628,21 @@ async fn start_ipc(
     if let Ok(s) = crate::ipc::connect(1000, "_cm").await {
         stream = Some(s);
     } else {
+        let mut args = vec!["--cm"];
+        if password::hide_cm() {
+            args.push("--hide");
+        };
         let run_done;
         if crate::platform::is_root() {
             let mut res = Ok(None);
             for _ in 0..10 {
                 #[cfg(not(target_os = "linux"))]
                 {
-                    res = crate::platform::run_as_user("--cm");
+                    res = crate::platform::run_as_user(args.clone());
                 }
                 #[cfg(target_os = "linux")]
                 {
-                    res = crate::platform::run_as_user("--cm", None);
+                    res = crate::platform::run_as_user(args.clone(), None);
                 }
                 if res.is_ok() {
                     break;
@@ -1645,7 +1660,7 @@ async fn start_ipc(
             super::CHILD_PROCESS
                 .lock()
                 .unwrap()
-                .push(crate::run_me(vec!["--cm"])?);
+                .push(crate::run_me(args)?);
         }
         for _ in 0..10 {
             sleep(0.3).await;
@@ -1688,7 +1703,8 @@ async fn start_ipc(
                             file_num,
                             data,
                             compressed}) = data {
-                                stream.send(&Data::FS(ipc::FS::WriteBlock{id, file_num, data, compressed})).await?;
+                                stream.send(&Data::FS(ipc::FS::WriteBlock{id, file_num, data: Bytes::new(), compressed})).await?;
+                                stream.send_raw(data).await?;
                         } else {
                             stream.send(&data).await?;
                         }

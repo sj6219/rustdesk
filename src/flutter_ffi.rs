@@ -156,6 +156,7 @@ pub fn session_reconnect(id: String) {
 
 pub fn session_toggle_option(id: String, value: String) {
     if let Some(session) = SESSIONS.write().unwrap().get_mut(&id) {
+        log::warn!("toggle option {}", value);
         session.toggle_option(value);
     }
 }
@@ -170,7 +171,7 @@ pub fn session_get_flutter_config(id: String, k: String) -> Option<String> {
 
 pub fn session_set_flutter_config(id: String, k: String, v: String) {
     if let Some(session) = SESSIONS.write().unwrap().get_mut(&id) {
-        session.set_flutter_config(k, v);
+        session.save_flutter_config(k, v);
     }
 }
 
@@ -180,6 +181,34 @@ pub fn get_local_flutter_config(k: String) -> SyncReturn<String> {
 
 pub fn set_local_flutter_config(k: String, v: String) {
     ui_interface::set_local_flutter_config(k, v);
+}
+
+pub fn session_get_view_style(id: String) -> Option<String> {
+    if let Some(session) = SESSIONS.read().unwrap().get(&id) {
+        Some(session.get_view_style())
+    } else {
+        None
+    }
+}
+
+pub fn session_set_view_style(id: String, value: String) {
+    if let Some(session) = SESSIONS.write().unwrap().get_mut(&id) {
+        session.save_view_style(value);
+    }
+}
+
+pub fn session_get_scroll_style(id: String) -> Option<String> {
+    if let Some(session) = SESSIONS.read().unwrap().get(&id) {
+        Some(session.get_scroll_style())
+    } else {
+        None
+    }
+}
+
+pub fn session_set_scroll_style(id: String, value: String) {
+    if let Some(session) = SESSIONS.write().unwrap().get_mut(&id) {
+        session.save_scroll_style(value);
+    }
 }
 
 pub fn session_get_image_quality(id: String) -> Option<String> {
@@ -534,7 +563,7 @@ pub fn main_get_connect_status() -> String {
 
 pub fn main_check_connect_status() {
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    check_mouse_time(); // avoid multi calls
+    start_option_status_sync(); // avoid multi calls
 }
 
 pub fn main_is_using_public_server() -> bool {
@@ -591,7 +620,11 @@ pub fn main_set_peer_option_sync(id: String, key: String, value: String) -> Sync
 }
 
 pub fn main_set_peer_alias(id: String, alias: String) {
-    main_broadcast_message(&HashMap::from([("name", "alias"), ("id", &id), ("alias", &alias)]));
+    main_broadcast_message(&HashMap::from([
+        ("name", "alias"),
+        ("id", &id),
+        ("alias", &alias),
+    ]));
     set_peer_option(id, "alias".to_owned(), alias)
 }
 
@@ -875,6 +908,7 @@ pub fn session_send_mouse(id: String, msg: String) {
                 "down" => 1,
                 "up" => 2,
                 "wheel" => 3,
+                "trackpad" => 4,
                 _ => 0,
             };
         }
@@ -1025,6 +1059,10 @@ pub fn main_get_icon() -> String {
     return String::new();
 }
 
+pub fn main_get_build_date() -> String {
+    crate::BUILD_DATE.to_string()
+}
+
 #[no_mangle]
 unsafe extern "C" fn translate(name: *const c_char, locale: *const c_char) -> *const c_char {
     let name = CStr::from_ptr(name);
@@ -1058,6 +1096,10 @@ pub fn query_onlines(ids: Vec<String>) {
 
 pub fn version_to_number(v: String) -> i64 {
     hbb_common::get_version_number(&v)
+}
+
+pub fn option_synced() -> bool {
+    crate::ui_interface::option_synced()
 }
 
 pub fn main_is_installed() -> SyncReturn<bool> {
@@ -1139,6 +1181,12 @@ pub fn main_account_auth_cancel() {
 
 pub fn main_account_auth_result() -> String {
     account_auth_result()
+}
+
+pub fn main_on_main_window_close() {
+    // may called more than one times
+    #[cfg(windows)]
+    crate::portable_service::client::drop_portable_service_shared_memory();
 }
 
 #[cfg(target_os = "android")]

@@ -79,6 +79,10 @@ impl<T: InvokeUiSession> Session<T> {
         self.lc.read().unwrap().view_style.clone()
     }
 
+    pub fn get_scroll_style(&self) -> String {
+        self.lc.read().unwrap().scroll_style.clone()
+    }
+
     pub fn get_image_quality(&self) -> String {
         self.lc.read().unwrap().image_quality.clone()
     }
@@ -99,8 +103,12 @@ impl<T: InvokeUiSession> Session<T> {
         self.lc.write().unwrap().save_view_style(value);
     }
 
-    pub fn set_flutter_config(&mut self, k: String, v: String) {
-        self.lc.write().unwrap().set_ui_flutter(k, v);
+    pub fn save_scroll_style(&mut self, value: String) {
+        self.lc.write().unwrap().save_scroll_style(value);
+    }
+
+    pub fn save_flutter_config(&mut self, k: String, v: String) {
+        self.lc.write().unwrap().save_ui_flutter(k, v);
     }
 
     pub fn get_flutter_config(&self, k: String) -> String {
@@ -192,6 +200,7 @@ impl<T: InvokeUiSession> Session<T> {
             h265 = h265 && encoding_265;
             return (h264, h265);
         }
+        #[allow(dead_code)]
         (false, false)
     }
 
@@ -730,8 +739,6 @@ impl<T: InvokeUiSession> Session<T> {
             RdevKey::MetaLeft => RdevKey::ControlLeft,
             RdevKey::ControlRight => RdevKey::MetaRight,
             RdevKey::MetaRight => RdevKey::ControlRight,
-            RdevKey::Alt => RdevKey::AltGr,
-            RdevKey::AltGr => RdevKey::Alt,
             _ => key,
         };
 

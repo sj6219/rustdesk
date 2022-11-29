@@ -93,6 +93,8 @@ impl<T: InvokeUiSession> Remote<T> {
         } else {
             ConnType::default()
         };
+        //..m::::::1.1
+        //..a::::::1.1
         match Client::start(
             &self.handler.id,
             key,
@@ -917,13 +919,8 @@ impl<T: InvokeUiSession> Remote<T> {
                             }
                         }
                         Some(file_response::Union::Block(block)) => {
-                            log::info!(
-                                "file response block, file id:{}, file num: {}",
-                                block.id,
-                                block.file_num
-                            );
                             if let Some(job) = fs::get_job(block.id, &mut self.write_jobs) {
-                                if let Err(_err) = job.write(block, None).await {
+                                if let Err(_err) = job.write(block).await {
                                     // to-do: add "skip" for writing job
                                 }
                                 self.update_jobs_status();
@@ -1194,7 +1191,7 @@ impl<T: InvokeUiSession> Remote<T> {
     #[cfg(windows)]
     fn handle_cliprdr_msg(&self, clip: hbb_common::message_proto::Cliprdr) {
         if !self.handler.lc.read().unwrap().disable_clipboard {
-            #[cfg(any(target_os = "android", target_os = "ios", feature = "flutter"))]
+            #[cfg(feature = "flutter")]
             if let Some(hbb_common::message_proto::cliprdr::Union::FormatList(_)) = &clip.union {
                 if self.client_conn_id
                     != clipboard::get_client_conn_id(&crate::flutter::get_cur_session_id())
