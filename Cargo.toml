@@ -165,6 +165,10 @@ strip = true
 #opt-level = 'z' # only have smaller size after strip
 rpath = true
 
+[profile.dev-android]
+inherits = "dev"
+codegen-units = 1 # for flutter android debug build
+
 [patch.crates-io]
 ring = { git = "https://github.com/sj6219/ring", branch = "0.16.20_alpha" }
 winapi = { git = "https://github.com/sj6219/winapi-rs", branch = "0.2.8_alpha" }
