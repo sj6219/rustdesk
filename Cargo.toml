@@ -165,7 +165,8 @@ strip = true
 #opt-level = 'z' # only have smaller size after strip
 rpath = true
 
-[profile.dev]
+[profile.dev-android]
+inherits = "dev"
 codegen-units = 1 # for flutter android debug build
 
 [patch.crates-io]
