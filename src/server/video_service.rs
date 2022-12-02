@@ -74,6 +74,10 @@ fn is_capturer_mag_supported() -> bool {
     false
 }
 
+pub fn capture_cursor_embeded() -> bool {
+    scrap::is_cursor_embeded()
+}
+
 pub fn notify_video_frame_feched(conn_id: i32, frame_tm: Option<Instant>) {
     FRAME_FETCHED_NOTIFIER.0.send((conn_id, frame_tm)).unwrap()
 }
@@ -455,6 +459,7 @@ fn run(sp: GenericService) -> ResultType<()> {
             y: c.origin.1 as _,
             width: c.width as _,
             height: c.height as _,
+            cursor_embeded: capture_cursor_embeded(),
             ..Default::default()
         });
         let mut msg_out = Message::new();
@@ -655,6 +660,12 @@ fn run(sp: GenericService) -> ResultType<()> {
             std::thread::sleep(spf - elapsed);
         }
     }
+
+    #[cfg(target_os = "linux")]
+    if !scrap::is_x11() {
+        super::wayland::release_resouce();
+    }
+
     Ok(())
 }
 
@@ -759,16 +770,6 @@ fn get_display_num() -> usize {
     }
 }
 
-pub async fn check_init() -> ResultType<()> {
-    #[cfg(target_os = "linux")]
-    {
-        if !scrap::is_x11() {
-            return super::wayland::check_init().await;
-        }
-    }
-    Ok(())
-}
-
 pub(super) fn get_displays_2(all: &Vec<Display>) -> (usize, Vec<DisplayInfo>) {
     let mut displays = Vec::new();
     let mut primary = 0;
@@ -783,6 +784,7 @@ pub(super) fn get_displays_2(all: &Vec<Display>) -> (usize, Vec<DisplayInfo>) {
             height: d.height() as _,
             name: d.name(),
             online: d.is_online(),
+            cursor_embeded: false,
             ..Default::default()
         });
     }

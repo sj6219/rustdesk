@@ -49,7 +49,7 @@ sudo apt install gcc-multilib
 
 #ios
 flutter/ios/Runnder.xcworkspace/View/Navigators/Project/targets:Runner/Signing & Capability/Teams
-cargo build --target aarch64-apple-ios --release
+cargo build --target aarch64-apple-ios --features flutter --release
 // cp target/aarch64-apple-ios/debug/liblibrustdesk.a target/aarch64-apple-ios/release/liblibrustdesk.a
 flutter build ios // --debug
 xcode/Window/Devices and Simulators/INSTALLED APPS
