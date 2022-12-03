@@ -35,7 +35,7 @@ security find-identity -p basic -v
 #android
 BINDGEN_EXTRA_CLANG_ARGS_aarch64_linux_android="--target=arm64-apple-macos --sysroot=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk" RUST_LOG=debug cargo ndk --platform 21 --target aarch64-linux-android rustc --lib --features flutter --release 
 cp target/aarch64-linux-android/release/liblibrustdesk.so flutter/android/app/src/main/jniLibs/arm64-v8a/librustdesk.so
-pushd flutter; flutter build apk --target-platform android-arm64; popd
+pushd flutter; flutter build apk --target-platform android-arm64 --release; popd
 adb install flutter/build/app/outputs/flutter-apk/app-release.apk
 
 sudo  mount -t drvfs '\\192.168.111.10\Macintosh HD' /mnt/mac
@@ -50,8 +50,7 @@ sudo apt install gcc-multilib
 #ios
 flutter/ios/Runnder.xcworkspace/View/Navigators/Project/targets:Runner/Signing & Capability/Teams
 cargo build --target aarch64-apple-ios --features flutter --release
-// cp target/aarch64-apple-ios/debug/liblibrustdesk.a target/aarch64-apple-ios/release/liblibrustdesk.a
-flutter build ios // --debug
+pushd flutter; flutter build ios --release; popd
 xcode/Window/Devices and Simulators/INSTALLED APPS
 
 xcrun simctl list
