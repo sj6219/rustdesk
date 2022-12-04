@@ -219,24 +219,48 @@ lazy_static::lazy_static! {
     static ref IS_SERVER: bool =  std::env::args().nth(1) == Some("--server".to_owned());
 }
 
+// First call set_uinput() will create keyboard and mouse clients.
+// The clients are ipc connections that must live shorter than tokio runtime.
+// Thus this funtion must not be called in a temporary runtime.
 #[cfg(target_os = "linux")]
-pub async fn set_uinput() -> ResultType<()> {
+pub async fn setup_uinput(minx: i32, maxx: i32, miny: i32, maxy: i32) -> ResultType<()> {
     // Keyboard and mouse both open /dev/uinput
     // TODO: Make sure there's no race
+    set_uinput_resolution(minx, maxx, miny, maxy).await?;
+
     let keyboard = super::uinput::client::UInputKeyboard::new().await?;
     log::info!("UInput keyboard created");
     let mouse = super::uinput::client::UInputMouse::new().await?;
     log::info!("UInput mouse created");
 
-    let xxx = ENIGO.lock();
-    let mut en = xxx.unwrap();
-    en.set_uinput_keyboard(Some(Box::new(keyboard)));
-    en.set_uinput_mouse(Some(Box::new(mouse)));
+    ENIGO
+        .lock()
+        .unwrap()
+        .set_custom_keyboard(Box::new(keyboard));
+    ENIGO.lock().unwrap().set_custom_mouse(Box::new(mouse));
     Ok(())
 }
 
 #[cfg(target_os = "linux")]
-pub async fn set_uinput_resolution(minx: i32, maxx: i32, miny: i32, maxy: i32) -> ResultType<()> {
+pub async fn update_mouse_resolution(minx: i32, maxx: i32, miny: i32, maxy: i32) -> ResultType<()> {
+    set_uinput_resolution(minx, maxx, miny, maxy).await?;
+
+    if let Some(mouse) = ENIGO.lock().unwrap().get_custom_mouse() {
+        if let Some(mouse) = mouse
+            .as_mut_any()
+            .downcast_mut::<super::uinput::client::UInputMouse>()
+        {
+            allow_err!(mouse.send_refresh());
+        } else {
+            log::error!("failed downcast uinput mouse");
+        }
+    }
+
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+async fn set_uinput_resolution(minx: i32, maxx: i32, miny: i32, maxy: i32) -> ResultType<()> {
     super::uinput::client::set_resolution(minx, maxx, miny, maxy).await
 }
 
@@ -714,6 +738,7 @@ pub fn handle_key(evt: &KeyEvent) {
     #[cfg(target_os = "macos")]
     if !*IS_SERVER {
         // having GUI, run main GUI thread, otherwise crash
+        //..m======2.4
         let evt = evt.clone();
         QUEUE.exec_async(move || handle_key_(&evt));
         return;
@@ -977,6 +1002,7 @@ fn legacy_keyboard_mode(evt: &KeyEvent) {
 }
 
 pub fn handle_key_(evt: &KeyEvent) {
+    //..m======2.5
     if EXITING.load(Ordering::SeqCst) {
         return;
     }

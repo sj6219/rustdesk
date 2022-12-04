@@ -235,12 +235,14 @@ class _RemotePageState extends State<RemotePage>
       }))
     ];
 
-    paints.add(Obx(() => Visibility(
-        visible: _showRemoteCursor.isTrue && _remoteCursorMoved.isTrue,
-        child: CursorPaint(
-          id: widget.id,
-          zoomCursor: _zoomCursor,
-        ))));
+    if (!_ffi.canvasModel.cursorEmbeded) {
+      paints.add(Obx(() => Visibility(
+          visible: _showRemoteCursor.isTrue && _remoteCursorMoved.isTrue,
+          child: CursorPaint(
+            id: widget.id,
+            zoomCursor: _zoomCursor,
+          ))));
+    }
     paints.add(QualityMonitor(_ffi.qualityMonitorModel));
     paints.add(RemoteMenubar(
       id: widget.id,
@@ -300,20 +302,22 @@ class _ImagePaintState extends State<ImagePaint> {
 
     mouseRegion({child}) => Obx(() => MouseRegion(
         cursor: cursorOverImage.isTrue
-            ? keyboardEnabled.isTrue
-                ? (() {
-                    if (remoteCursorMoved.isTrue) {
-                      _lastRemoteCursorMoved = true;
-                      return SystemMouseCursors.none;
-                    } else {
-                      if (_lastRemoteCursorMoved) {
-                        _lastRemoteCursorMoved = false;
-                        _firstEnterImage.value = true;
-                      }
-                      return _buildCustomCursor(context, s);
-                    }
-                  }())
-                : _buildDisabledCursor(context, s)
+            ? c.cursorEmbeded
+                ? SystemMouseCursors.none
+                : keyboardEnabled.isTrue
+                    ? (() {
+                        if (remoteCursorMoved.isTrue) {
+                          _lastRemoteCursorMoved = true;
+                          return SystemMouseCursors.none;
+                        } else {
+                          if (_lastRemoteCursorMoved) {
+                            _lastRemoteCursorMoved = false;
+                            _firstEnterImage.value = true;
+                          }
+                          return _buildCustomCursor(context, s);
+                        }
+                      }())
+                    : _buildDisabledCursor(context, s)
             : MouseCursor.defer,
         onHover: (evt) {},
         child: child));
@@ -409,8 +413,12 @@ class _ImagePaintState extends State<ImagePaint> {
       );
     } else {
       widget = Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [widget],
+        children: [
+          Container(
+            width: ((layoutSize.width - size.width) ~/ 2).toDouble(),
+          ),
+          widget,
+        ],
       );
     }
     if (layoutSize.height < size.height) {
@@ -426,8 +434,12 @@ class _ImagePaintState extends State<ImagePaint> {
       );
     } else {
       widget = Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [widget],
+        children: [
+          Container(
+            height: ((layoutSize.height - size.height) ~/ 2).toDouble(),
+          ),
+          widget,
+        ],
       );
     }
     if (layoutSize.width < size.width) {
@@ -506,7 +518,6 @@ class CursorPaint extends StatelessWidget {
   Widget build(BuildContext context) {
     final m = Provider.of<CursorModel>(context);
     final c = Provider.of<CanvasModel>(context);
-    // final adjust = m.adjustForKeyboard();
     double hotx = m.hotx;
     double hoty = m.hoty;
     if (m.image == null) {
@@ -515,21 +526,34 @@ class CursorPaint extends StatelessWidget {
         hoty = preDefaultCursor.image!.height / 2;
       }
     }
-    return zoomCursor.isTrue
-        ? CustomPaint(
-            painter: ImagePainter(
-                image: m.image ?? preDefaultCursor.image,
-                x: m.x - hotx + c.x / c.scale,
-                y: m.y - hoty + c.y / c.scale,
-                scale: c.scale),
-          )
-        : CustomPaint(
-            painter: ImagePainter(
-                image: m.image ?? preDefaultCursor.image,
-                x: (m.x - hotx) * c.scale + c.x,
-                y: (m.y - hoty) * c.scale + c.y,
-                scale: 1.0),
-          );
+
+    double cx = c.x;
+    double cy = c.y;
+    if (c.scrollStyle == ScrollStyle.scrollbar) {
+      final d = c.parent.target!.ffiModel.display;
+      final imageWidth = d.width * c.scale;
+      final imageHeight = d.height * c.scale;
+      cx = -imageWidth * c.scrollX;
+      cy = -imageHeight * c.scrollY;
+    }
+
+    double x = (m.x - hotx) * c.scale + cx;
+    double y = (m.y - hoty) * c.scale + cx;
+    double scale = 1.0;
+    if (zoomCursor.isTrue) {
+      x = m.x - hotx + cx / c.scale;
+      y = m.y - hoty + cy / c.scale;
+      scale = c.scale;
+    }
+
+    return CustomPaint(
+      painter: ImagePainter(
+        image: m.image ?? preDefaultCursor.image,
+        x: x,
+        y: y,
+        scale: scale,
+      ),
+    );
   }
 }
 
@@ -560,7 +584,8 @@ class ImagePainter extends CustomPainter {
         paint.filterQuality = FilterQuality.high;
       }
     }
-    canvas.drawImage(image!, Offset(x, y), paint);
+    canvas.drawImage(
+        image!, Offset(x.toInt().toDouble(), y.toInt().toDouble()), paint);
   }
 
   @override
