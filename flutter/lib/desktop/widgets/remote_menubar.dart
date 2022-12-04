@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_hbb/models/chat_model.dart';
 import 'package:flutter_hbb/models/state_model.dart';
 import 'package:flutter_hbb/consts.dart';
+import 'package:flutter_hbb/utils/multi_window_manager.dart';
 import 'package:get/get.dart';
 import 'package:provider/provider.dart';
 import 'package:rxdart/rxdart.dart' as rxdart;
@@ -201,7 +202,8 @@ class _RemoteMenubarState extends State<RemoteMenubar> {
   }
 
   _updateScreen() async {
-    final v = await DesktopMultiWindow.invokeMethod(0, 'get_window_info', '');
+    final v = await rustDeskWinManager.call(
+        WindowType.Main, kWindowGetWindowInfo, '');
     final String valueStr = v;
     if (valueStr.isEmpty) {
       _screen = null;
@@ -1088,23 +1090,25 @@ class _RemoteMenubarState extends State<RemoteMenubar> {
     }
 
     /// Show remote cursor
-    displayMenu.add(() {
-      final state = ShowRemoteCursorState.find(widget.id);
-      return MenuEntrySwitch2<String>(
-        switchType: SwitchType.scheckbox,
-        text: translate('Show remote cursor'),
-        getter: () {
-          return state;
-        },
-        setter: (bool v) async {
-          state.value = v;
-          await bind.sessionToggleOption(
-              id: widget.id, value: 'show-remote-cursor');
-        },
-        padding: padding,
-        dismissOnClicked: true,
-      );
-    }());
+    if (!widget.ffi.canvasModel.cursorEmbeded) {
+      displayMenu.add(() {
+        final state = ShowRemoteCursorState.find(widget.id);
+        return MenuEntrySwitch2<String>(
+          switchType: SwitchType.scheckbox,
+          text: translate('Show remote cursor'),
+          getter: () {
+            return state;
+          },
+          setter: (bool v) async {
+            state.value = v;
+            await bind.sessionToggleOption(
+                id: widget.id, value: 'show-remote-cursor');
+          },
+          padding: padding,
+          dismissOnClicked: true,
+        );
+      }());
+    }
 
     /// Show remote cursor scaling with image
     if (widget.state.viewStyle.value != kRemoteViewStyleOriginal) {
@@ -1166,7 +1170,7 @@ class _RemoteMenubarState extends State<RemoteMenubar> {
       }
       displayMenu.add(_createSwitchMenuEntry(
           'Lock after session end', 'lock-after-session-end', padding, true));
-      if (pi.platform == 'Windows') {
+      if (pi.features.privacyMode) {
         displayMenu.add(MenuEntrySwitch2<String>(
           switchType: SwitchType.scheckbox,
           text: translate('Privacy mode'),
