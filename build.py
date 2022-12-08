@@ -38,13 +38,15 @@ def get_version():
 def parse_rc_features(feature):
     available_features = {
         'IddDriver': {
-            'zip_url': 'https://github.com/fufesou/RustDeskIddDriver/releases/download/v0.1/RustDeskIddDriver_x64_pic_en.zip',
-            'checksum_url': 'https://github.com/fufesou/RustDeskTempTopMostWindow/releases/download/v0.1/checksum_md5',
+            'zip_url': 'https://github.com/fufesou/RustDeskIddDriver/releases/download/v0.1/RustDeskIddDriver_x64.zip',
+            'checksum_url': 'https://github.com/fufesou/RustDeskIddDriver/releases/download/v0.1/checksum_md5',
+            'exclude': ['README.md'],
         },
         'PrivacyMode': {
             'zip_url': 'https://github.com/fufesou/RustDeskTempTopMostWindow/releases/download/v0.1'
                        '/TempTopMostWindow_x64_pic_en.zip',
             'checksum_url': 'https://github.com/fufesou/RustDeskTempTopMostWindow/releases/download/v0.1/checksum_md5',
+            'include': ['WindowInjection.dll'],
         }
     }
     apply_features = {}
@@ -142,8 +144,9 @@ def generate_build_script_for_docker():
 
 
 def download_extract_features(features, res_dir):
-    proxy = ''
+    import re
 
+    proxy = ''
     def req(url):
         if not proxy:
             return url
@@ -154,6 +157,11 @@ def download_extract_features(features, res_dir):
             return r
 
     for (feat, feat_info) in features.items():
+        includes = feat_info['include'] if 'include' in feat_info and feat_info['include'] else []
+        includes = [ re.compile(p) for p in includes ]
+        excludes = feat_info['exclude'] if 'exclude' in feat_info and feat_info['exclude'] else []
+        excludes = [ re.compile(p) for p in excludes ]
+
         print(f'{feat} download begin')
         download_filename = feat_info['zip_url'].split('/')[-1]
         checksum_md5_response = urllib.request.urlopen(
@@ -170,7 +178,22 @@ def download_extract_features(features, res_dir):
                 zip_file = zipfile.ZipFile(filename)
                 zip_list = zip_file.namelist()
                 for f in zip_list:
-                    zip_file.extract(f, res_dir)
+                    file_exclude = False
+                    for p in excludes:
+                        if p.match(f) is not None:
+                            file_exclude = True
+                            break
+                    if file_exclude:
+                        continue
+
+                    file_include = False if includes else True
+                    for p in includes:
+                        if p.match(f) is not None:
+                            file_include = True
+                            break
+                    if file_include:
+                        print(f'extract file {f}')
+                        zip_file.extract(f, res_dir)
                 zip_file.close()
                 os.remove(download_filename)
                 print(f'{feat} extract end')
@@ -461,9 +484,9 @@ def main():
     #rcodesign sign --p12-file ~/.p12/rustdesk-developer-id.p12 --p12-password-file ~/.p12/.cert-pass --code-signature-flags runtime ./rustdesk-{1}.dmg
     codesign -s "Developer ID Application: {0}" --force --options runtime ./rustdesk-{1}.dmg
     # https://pyoxidizer.readthedocs.io/en/latest/apple_codesign_rcodesign.html
-    rcodesign notarize --api-issuer 69a6de7d-2907-47e3-e053-5b8c7c11a4d1 --api-key 9JBRHG3JHT --staple ./rustdesk-{1}.dmg
+    rcodesign notarize --api-issuer {2} --api-key {3} --staple ./rustdesk-{1}.dmg
     # verify:  spctl -a -t exec -v /Applications/RustDesk.app
-    '''.format(pa, version))
+    '''.format(pa, version, os.environ.get('api-issuer'), os.environ.get('api-key')))
                 else:
                     print('Not signed')
             else:

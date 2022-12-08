@@ -529,6 +529,7 @@ pub fn main_get_app_name() -> String {
 pub fn main_get_app_name_sync() -> SyncReturn<String> {
     SyncReturn(get_app_name())
 }
+
 pub fn main_get_license() -> String {
     get_license()
 }
@@ -640,45 +641,11 @@ pub fn main_peer_has_password(id: String) -> bool {
     peer_has_password(id)
 }
 
-pub fn main_get_recent_peers() -> String {
-    if !config::APP_DIR.read().unwrap().is_empty() {
-        let peers: Vec<HashMap<&str, String>> = PeerConfig::peers()
-            .drain(..)
-            .map(|(id, _, p)| {
-                HashMap::<&str, String>::from_iter([
-                    ("id", id),
-                    ("username", p.info.username.clone()),
-                    ("hostname", p.info.hostname.clone()),
-                    ("platform", p.info.platform.clone()),
-                    (
-                        "alias",
-                        p.options.get("alias").unwrap_or(&"".to_owned()).to_owned(),
-                    ),
-                ])
-            })
-            .collect();
-        serde_json::ser::to_string(&peers).unwrap_or("".to_owned())
-    } else {
-        String::new()
-    }
-}
-
 pub fn main_load_recent_peers() {
     if !config::APP_DIR.read().unwrap().is_empty() {
         let peers: Vec<HashMap<&str, String>> = PeerConfig::peers()
             .drain(..)
-            .map(|(id, _, p)| {
-                HashMap::<&str, String>::from_iter([
-                    ("id", id),
-                    ("username", p.info.username.clone()),
-                    ("hostname", p.info.hostname.clone()),
-                    ("platform", p.info.platform.clone()),
-                    (
-                        "alias",
-                        p.options.get("alias").unwrap_or(&"".to_owned()).to_owned(),
-                    ),
-                ])
-            })
+            .map(|(id, _, p)| peer_to_map(id, p))
             .collect();
         if let Some(s) = flutter::GLOBAL_EVENT_STREAM
             .read()
@@ -704,16 +671,7 @@ pub fn main_load_fav_peers() {
             .into_iter()
             .filter_map(|(id, _, p)| {
                 if favs.contains(&id) {
-                    Some(HashMap::<&str, String>::from_iter([
-                        ("id", id),
-                        ("username", p.info.username.clone()),
-                        ("hostname", p.info.hostname.clone()),
-                        ("platform", p.info.platform.clone()),
-                        (
-                            "alias",
-                            p.options.get("alias").unwrap_or(&"".to_owned()).to_owned(),
-                        ),
-                    ]))
+                    Some(peer_to_map(id, p))
                 } else {
                     None
                 }
@@ -1205,6 +1163,14 @@ pub fn main_on_main_window_close() {
     // may called more than one times
     #[cfg(windows)]
     crate::portable_service::client::drop_portable_service_shared_memory();
+}
+
+pub fn main_current_is_wayland() -> SyncReturn<bool> {
+    SyncReturn(current_is_wayland())
+}
+
+pub fn main_is_login_wayland() -> SyncReturn<bool> {
+    SyncReturn(is_login_wayland())
 }
 
 #[cfg(target_os = "android")]

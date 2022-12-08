@@ -215,18 +215,15 @@ class MyTheme {
   }
 
   static void changeDarkMode(ThemeMode mode) {
-    final preference = getThemeModePreference();
-    if (preference != mode) {
+    Get.changeThemeMode(mode);
+    if (desktopType == DesktopType.main) {
       if (mode == ThemeMode.system) {
         bind.mainSetLocalOption(key: kCommConfKeyTheme, value: '');
       } else {
         bind.mainSetLocalOption(
             key: kCommConfKeyTheme, value: mode.toShortString());
       }
-      Get.changeThemeMode(mode);
-      if (desktopType == DesktopType.main) {
-        bind.mainChangeTheme(dark: currentThemeMode().toShortString());
-      }
+      bind.mainChangeTheme(dark: currentThemeMode().toShortString());
     }
   }
 
@@ -926,7 +923,8 @@ bool option2bool(String option, String value) {
   } else if (option.startsWith("allow-") ||
       option == "stop-service" ||
       option == "direct-server" ||
-      option == "stop-rendezvous-service") {
+      option == "stop-rendezvous-service" ||
+      option == "force-always-relay") {
     res = value == "Y";
   } else {
     assert(false);
@@ -942,7 +940,8 @@ String bool2option(String option, bool b) {
   } else if (option.startsWith('allow-') ||
       option == "stop-service" ||
       option == "direct-server" ||
-      option == "stop-rendezvous-service") {
+      option == "stop-rendezvous-service" ||
+      option == "force-always-relay") {
     res = b ? 'Y' : '';
   } else {
     assert(false);
