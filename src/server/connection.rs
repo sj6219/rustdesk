@@ -560,6 +560,19 @@ impl Connection {
                                 };
                                 hbb_common::protobuf::EnumOrUnknown::new(ck)
                             }).collect();
+                            
+                            let code = msg.chr();
+                            if code != 0 {
+                                let key = rdev::key_from_scancode(code);
+                                let key = match key {
+                                    rdev::Key::ControlLeft => rdev::Key::MetaLeft,
+                                    rdev::Key::MetaLeft => rdev::Key::ControlLeft,
+                                    rdev::Key::ControlRight => rdev::Key::MetaRight,
+                                    rdev::Key::MetaRight => rdev::Key::ControlRight,
+                                    _ => key,
+                                };
+                                msg.set_chr(rdev::macos_keycode_from_key(key).unwrap_or_default());
+                            }
                         }
                         // todo: press and down have similar meanings.
                         if press && msg.mode.unwrap() == KeyboardMode::Legacy {
