@@ -706,11 +706,13 @@ impl<T: InvokeUiSession> Session<T> {
         
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         let (alt, ctrl, shift, command) = get_all_hotkey_state(alt, ctrl, shift, command);
-        self.legacy_modifiers(&mut key_event, alt, ctrl, shift, command);
 
         //..
         #[cfg(target_os = "macos")]
         let (ctrl, command) = (command, ctrl);
+
+        self.legacy_modifiers(&mut key_event, alt, ctrl, shift, command);
+
 
         if down_or_up == true {
             key_event.down = true;
