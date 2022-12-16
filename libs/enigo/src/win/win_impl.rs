@@ -21,6 +21,7 @@ static mut LAYOUT: HKL = std::ptr::null_mut();
 pub const ENIGO_INPUT_EXTRA_VALUE: ULONG_PTR = 100;
 
 fn mouse_event(flags: u32, data: u32, dx: i32, dy: i32) -> DWORD {
+    //..w!!!!!!4.4
     let mut input: INPUT = unsafe { std::mem::MaybeUninit::zeroed().assume_init() };
     input.type_ = INPUT_MOUSE;
     unsafe {

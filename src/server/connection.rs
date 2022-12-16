@@ -515,6 +515,7 @@ impl Connection {
             match receiver.recv_timeout(std::time::Duration::from_millis(500)) {
                 Ok(v) => match v {
                     MessageInput::Mouse((msg, id)) => {
+                        //..w!!!!!!4.3
                         #[cfg(target_os = "macos")]
                         let msg = {
                             let mut msg = msg;
@@ -945,6 +946,7 @@ impl Connection {
 
     #[inline]
     fn input_mouse(&self, msg: MouseEvent, conn_id: i32) {
+        //..w!!!!!!!4.2
         self.tx_input.send(MessageInput::Mouse((msg, conn_id))).ok();
     }
 
@@ -1193,6 +1195,7 @@ impl Connection {
             }
         } else if self.authorized {
             match msg.union {
+                //..w!!!!!!4.1
                 Some(message::Union::MouseEvent(me)) => {
                     #[cfg(any(target_os = "android", target_os = "ios"))]
                     if let Err(e) = call_main_service_mouse_input(me.mask, me.x, me.y) {
