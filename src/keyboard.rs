@@ -195,6 +195,45 @@ pub fn start_grab_loop() {
                 return Some(event);
             }
             if KEYBOARD_HOOKED.load(Ordering::SeqCst) {
+                //..m======1.1
+                match event.event_type {
+                    EventType::KeyPress(key) => {
+                        #[cfg(target_os = "macos")]
+                        {
+                            let key = match key {
+                                rdev::Key::ControlLeft => rdev::Key::MetaLeft,
+                                rdev::Key::MetaLeft => rdev::Key::ControlLeft,
+                                rdev::Key::ControlRight => rdev::Key::MetaRight,
+                                rdev::Key::MetaRight => rdev::Key::ControlRight,
+                                _ => key,
+                            };
+                            event.event_type = EventType::KeyPress(key);
+                        }
+                    }
+                    EventType::KeyRelease(key) => {
+                        #[cfg(target_os = "macos")]
+                        {
+                            let key = match key {
+                                rdev::Key::ControlLeft => rdev::Key::MetaLeft,
+                                rdev::Key::MetaLeft => rdev::Key::ControlLeft,
+                                rdev::Key::ControlRight => rdev::Key::MetaRight,
+                                rdev::Key::MetaRight => rdev::Key::ControlRight,
+                                _ => key,
+                            };
+                            event.event_type = EventType::KeyPress(key);
+                        }
+                    }
+                    _ => ,
+                };
+                //..m======1.
+    #[cfg(target_os = "macos")]
+    let key = match key {
+        rdev::Key::ControlLeft => rdev::Key::MetaLeft,
+        rdev::Key::MetaLeft => rdev::Key::ControlLeft,
+        rdev::Key::ControlRight => rdev::Key::MetaRight,
+        rdev::Key::MetaRight => rdev::Key::ControlRight,
+        _ => key,
+    };
                 client::process_event(&event);
                 if is_press {
                     return None;
