@@ -99,22 +99,28 @@ class IconFont {
 class ColorThemeExtension extends ThemeExtension<ColorThemeExtension> {
   const ColorThemeExtension({
     required this.border,
+    required this.highlight,
   });
 
   final Color? border;
+  final Color? highlight;
 
   static const light = ColorThemeExtension(
     border: Color(0xFFCCCCCC),
+    highlight: Color(0xFFE5E5E5),
   );
 
   static const dark = ColorThemeExtension(
     border: Color(0xFF555555),
+    highlight: Color(0xFF3F3F3F),
   );
 
   @override
-  ThemeExtension<ColorThemeExtension> copyWith({Color? border}) {
+  ThemeExtension<ColorThemeExtension> copyWith(
+      {Color? border, Color? highlight}) {
     return ColorThemeExtension(
       border: border ?? this.border,
+      highlight: highlight ?? this.highlight,
     );
   }
 
@@ -126,6 +132,7 @@ class ColorThemeExtension extends ThemeExtension<ColorThemeExtension> {
     }
     return ColorThemeExtension(
       border: Color.lerp(border, other.border, t),
+      highlight: Color.lerp(highlight, other.highlight, t),
     );
   }
 }
@@ -215,18 +222,15 @@ class MyTheme {
   }
 
   static void changeDarkMode(ThemeMode mode) {
-    final preference = getThemeModePreference();
-    if (preference != mode) {
+    Get.changeThemeMode(mode);
+    if (desktopType == DesktopType.main) {
       if (mode == ThemeMode.system) {
         bind.mainSetLocalOption(key: kCommConfKeyTheme, value: '');
       } else {
         bind.mainSetLocalOption(
             key: kCommConfKeyTheme, value: mode.toShortString());
       }
-      Get.changeThemeMode(mode);
-      if (desktopType == DesktopType.main) {
-        bind.mainChangeTheme(dark: currentThemeMode().toShortString());
-      }
+      bind.mainChangeTheme(dark: currentThemeMode().toShortString());
     }
   }
 
@@ -926,7 +930,8 @@ bool option2bool(String option, String value) {
   } else if (option.startsWith("allow-") ||
       option == "stop-service" ||
       option == "direct-server" ||
-      option == "stop-rendezvous-service") {
+      option == "stop-rendezvous-service" ||
+      option == "force-always-relay") {
     res = value == "Y";
   } else {
     assert(false);
@@ -942,7 +947,8 @@ String bool2option(String option, bool b) {
   } else if (option.startsWith('allow-') ||
       option == "stop-service" ||
       option == "direct-server" ||
-      option == "stop-rendezvous-service") {
+      option == "stop-rendezvous-service" ||
+      option == "force-always-relay") {
     res = b ? 'Y' : '';
   } else {
     assert(false);
@@ -1014,7 +1020,7 @@ class LastWindowPosition {
       return LastWindowPosition(m["width"], m["height"], m["offsetWidth"],
           m["offsetHeight"], m["isMaximized"]);
     } catch (e) {
-      debugPrint(e.toString());
+      debugPrintStack(label: e.toString());
       return null;
     }
   }
@@ -1148,7 +1154,7 @@ Future<bool> restoreWindowPosition(WindowType type, {int? windowId}) async {
   final pos = bind.getLocalFlutterConfig(k: kWindowPrefix + type.name);
   var lpos = LastWindowPosition.loadFromString(pos);
   if (lpos == null) {
-    debugPrint("window position saved, but cannot be parsed");
+    debugPrint("no window position saved, ignoring position restoration");
     return false;
   }
 
@@ -1213,7 +1219,7 @@ Future<void> initUniLinks() async {
     }
     parseRustdeskUri(initialLink);
   } catch (err) {
-    debugPrint("$err");
+    debugPrintStack(label: "$err");
   }
 }
 
@@ -1423,7 +1429,7 @@ void onActiveWindowChanged() async {
         rustDeskWinManager.closeAllSubWindows()
       ]);
     } catch (err) {
-      debugPrint("$err");
+      debugPrintStack(label: "$err");
     } finally {
       await windowManager.setPreventClose(false);
       await windowManager.close();

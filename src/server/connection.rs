@@ -506,7 +506,11 @@ impl Connection {
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     fn handle_input(receiver: std_mpsc::Receiver<MessageInput>, tx: Sender) {
         let mut block_input_mode = false;
-
+        #[cfg(target_os = "windows")]
+        {
+            rdev::set_dw_mouse_extra_info(enigo::ENIGO_INPUT_EXTRA_VALUE);
+            rdev::set_dw_keyboard_extra_info(enigo::ENIGO_INPUT_EXTRA_VALUE);
+        }
         loop {
             match receiver.recv_timeout(std::time::Duration::from_millis(500)) {
                 Ok(v) => match v {
@@ -556,6 +560,19 @@ impl Connection {
                                 };
                                 hbb_common::protobuf::EnumOrUnknown::new(ck)
                             }).collect();
+                            
+                            let code = msg.chr();
+                            if code != 0 {
+                                let key = rdev::key_from_scancode(code);
+                                let key = match key {
+                                    rdev::Key::ControlLeft => rdev::Key::MetaLeft,
+                                    rdev::Key::MetaLeft => rdev::Key::ControlLeft,
+                                    rdev::Key::ControlRight => rdev::Key::MetaRight,
+                                    rdev::Key::MetaRight => rdev::Key::ControlRight,
+                                    _ => key,
+                                };
+                                msg.set_chr(rdev::macos_keycode_from_key(key).unwrap_or_default());
+                            }
                         }
                         // todo: press and down have similar meanings.
                         if press && msg.mode.unwrap() == KeyboardMode::Legacy {
@@ -1357,6 +1374,13 @@ impl Connection {
                         last_modified: d.last_modified,
                         is_upload: true,
                     }),
+                    Some(file_response::Union::Error(e)) => {
+                        self.send_fs(ipc::FS::WriteError {
+                            id: e.id,
+                            file_num: e.file_num,
+                            err: e.error,
+                        });
+                    }
                     _ => {}
                 },
                 Some(message::Union::Misc(misc)) => match misc.union {

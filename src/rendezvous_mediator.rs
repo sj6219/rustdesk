@@ -75,7 +75,7 @@ impl RendezvousMediator {
             Config::reset_online();
             if Config::get_option("stop-service").is_empty() {
             //..
-              if Config::get_option("direct-server").is_empty() {
+              if Config::get_option("custom-rendezvous-server") != "localhost" {
                 if !nat_tested {
                     crate::test_nat_type();
                     nat_tested = true;
@@ -383,7 +383,9 @@ impl RendezvousMediator {
             )
             .await?;
             let local_addr = socket.local_addr();
-            allow_err!(socket_client::connect_tcp(peer_addr, local_addr, 300).await);
+            // key important here for punch hole to tell my gateway incoming peer is safe.
+            // it can not be async here, because local_addr can not be reused, we must close the connection before use it again.
+            allow_err!(socket_client::connect_tcp(peer_addr, local_addr, 30).await);
             socket
         };
         let mut msg_out = Message::new();
@@ -499,7 +501,7 @@ async fn direct_server(server: ServerPtr) {
     let mut listener = None;
     let mut port = 0;
     loop {
-        let disabled = false; // Config::get_option("direct-server").is_empty();
+        let disabled = Config::get_option("direct-server").is_empty();
         if !disabled && listener.is_none() {
             port = get_direct_port();
             let addr = format!("0.0.0.0:{}", port);
