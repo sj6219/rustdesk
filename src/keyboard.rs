@@ -196,6 +196,32 @@ pub fn start_grab_loop() {
             }
             if KEYBOARD_HOOKED.load(Ordering::SeqCst) {
                 //..m======1.1
+                #[cfg(target_os = "macos")] 
+                let mut event = event;
+                #[cfg(target_os = "macos")] 
+                match event.event_type {
+                    EventType::KeyPress(key) => {
+                        let key = match key {
+                            rdev::Key::ControlLeft => rdev::Key::MetaLeft,
+                            rdev::Key::MetaLeft => rdev::Key::ControlLeft,
+                            rdev::Key::ControlRight => rdev::Key::MetaRight,
+                            rdev::Key::MetaRight => rdev::Key::ControlRight,
+                            _ => key,
+                        };
+                        event.event_type = EventType::KeyPress(key);
+                    }
+                    EventType::KeyRelease(key) => {
+                        let key = match key {
+                            rdev::Key::ControlLeft => rdev::Key::MetaLeft,
+                            rdev::Key::MetaLeft => rdev::Key::ControlLeft,
+                            rdev::Key::ControlRight => rdev::Key::MetaRight,
+                            rdev::Key::MetaRight => rdev::Key::ControlRight,
+                            _ => key,
+                        };
+                        event.event_type = EventType::KeyRelease(key);
+                    }
+                    _ => {}
+                };
                 client::process_event(&event);
                 if is_press {
                     return None;
@@ -610,16 +636,6 @@ pub fn map_keyboard_mode(event: &Event, key_event: &mut KeyEvent) {
             key
         }
         _ => return,
-    };
-
-    //..m======1.
-    #[cfg(target_os = "macos")]
-    let key = match key {
-        rdev::Key::ControlLeft => rdev::Key::MetaLeft,
-        rdev::Key::MetaLeft => rdev::Key::ControlLeft,
-        rdev::Key::ControlRight => rdev::Key::MetaRight,
-        rdev::Key::MetaRight => rdev::Key::ControlRight,
-        _ => key,
     };
     
     let keycode: u32 = match peer.as_str() {
