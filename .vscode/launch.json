@@ -9,7 +9,7 @@
             "request": "launch",
             "name": "launch 'rustdesk'",
             "args": [],
-            //"args": ["--connect", "192.168.111.8"],
+            "args": ["--connect", "192.168.111.8"],
             "cwd": "${workspaceFolder}",
             "sourceLanguages": ["rust"],     
             "cargo": {

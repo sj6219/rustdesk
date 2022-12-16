@@ -6,6 +6,7 @@ use dispatch::Queue;
 use enigo::{Enigo, Key, KeyboardControllable, MouseButton, MouseControllable};
 use hbb_common::{config::COMPRESS_LEVEL, get_time, protobuf::EnumOrUnknown};
 use rdev::{simulate, EventType, Key as RdevKey};
+use std::time::Duration;
 use std::{
     convert::TryFrom,
     ops::Sub,
@@ -756,7 +757,7 @@ fn rdev_key_down_or_up(key: RdevKey, down_or_up: bool) {
         true => EventType::KeyPress(key),
         false => EventType::KeyRelease(key),
     };
-    let delay = std::time::Duration::from_millis(20);
+    
     //..w======2.
     #[cfg(debug_assertions)]
     log::error!("rdev {:?}", &event_type);
@@ -767,17 +768,11 @@ fn rdev_key_down_or_up(key: RdevKey, down_or_up: bool) {
             log::error!("Could not send {:?}", &event_type);
         }
     }
-    // Let ths OS catchup (at least MacOS)
-    std::thread::sleep(delay);
+    #[cfg(target_os = "macos")]
+    std::thread::sleep(Duration::from_millis(20));
 }
 
-fn rdev_key_click(key: RdevKey) {
-    rdev_key_down_or_up(key, true);
-    rdev_key_down_or_up(key, false);
-}
-
-fn sync_status(evt: &KeyEvent) -> (bool, bool) {
-    /* todo! Shift+delete */
+fn sync_status(evt: &KeyEvent) {
     let mut en = ENIGO.lock().unwrap();
 
     // remote caps status
@@ -815,7 +810,18 @@ fn sync_status(evt: &KeyEvent) -> (bool, bool) {
             _ => click_numlock,
         }
     };
-    return (click_capslock, click_numlock);
+
+    if click_capslock {
+        #[cfg(not(target_os = "macos"))]
+        en.key_click(enigo::Key::CapsLock);
+        #[cfg(target_os = "macos")]
+        en.key_down(enigo::Key::CapsLock);
+    }
+
+    if click_numlock {
+        #[cfg(not(target_os = "macos"))]
+        en.key_click(enigo::Key::NumLock);
+    }
 }
 
 fn map_keyboard_mode(evt: &KeyEvent) {
@@ -823,24 +829,11 @@ fn map_keyboard_mode(evt: &KeyEvent) {
     #[cfg(windows)]
     crate::platform::windows::try_change_desktop();
 
-    let (click_capslock, click_numlock) = sync_status(evt);
-
     // Wayland
     #[cfg(target_os = "linux")]
     if !*IS_X11.lock().unwrap() {
         let mut en = ENIGO.lock().unwrap();
         let code = evt.chr() as u16;
-
-        #[cfg(not(target_os = "macos"))]
-        if click_capslock {
-            en.key_click(enigo::Key::CapsLock);
-        }
-        #[cfg(not(target_os = "macos"))]
-        if click_numlock {
-            en.key_click(enigo::Key::NumLock);
-        }
-        #[cfg(target_os = "macos")]
-        en.key_down(enigo::Key::CapsLock);
 
         if evt.down {
             en.key_down(enigo::Key::Raw(code)).ok();
@@ -850,35 +843,14 @@ fn map_keyboard_mode(evt: &KeyEvent) {
         return;
     }
 
-    #[cfg(not(target_os = "macos"))]
-    if click_capslock {
-        rdev_key_click(RdevKey::CapsLock);
-    }
-    #[cfg(not(target_os = "macos"))]
-    if click_numlock {
-        rdev_key_click(RdevKey::NumLock);
-    }
-    #[cfg(target_os = "macos")]
-    if evt.down && click_capslock {
-        rdev_key_down_or_up(RdevKey::CapsLock, evt.down);
-    }
-
     rdev_key_down_or_up(RdevKey::Unknown(evt.chr()), evt.down);
     return;
 }
 
 fn legacy_keyboard_mode(evt: &KeyEvent) {
-    let (click_capslock, click_numlock) = sync_status(evt);
-
     #[cfg(windows)]
     crate::platform::windows::try_change_desktop();
     let mut en = ENIGO.lock().unwrap();
-    if click_capslock {
-        en.key_click(Key::CapsLock);
-    }
-    if click_numlock {
-        en.key_click(Key::NumLock);
-    }
     // disable numlock if press home etc when numlock is on,
     // because we will get numpad value (7,8,9 etc) if not
     #[cfg(windows)]
@@ -1009,10 +981,10 @@ pub fn handle_key_(evt: &KeyEvent) {
         return;
     }
 
+    if evt.down {
+        sync_status(evt)
+    }
     match evt.mode.unwrap() {
-        KeyboardMode::Legacy => {
-            legacy_keyboard_mode(evt);
-        }
         KeyboardMode::Map => {
             map_keyboard_mode(evt);
         }
