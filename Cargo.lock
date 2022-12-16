@@ -2986,7 +2986,8 @@ dependencies = [
 [[package]]
 name = "libsodium-sys"
 version = "0.2.7"
-source = "git+https://github.com/sj6219/sodiumoxide?branch=0.2.7_alpha#ccc2d3cbc02e6a9affbc563825957aed23030c72"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6b779387cd56adfbc02ea4a668e704f729be8d6a6abd2c27ca5ee537849a92fd"
 dependencies = [
  "cc",
  "libc",
@@ -3994,9 +3995,9 @@ dependencies = [
 
 [[package]]
 name = "protobuf"
-version = "3.1.0"
+version = "3.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4ee4a7d8b91800c8f167a6268d1a1026607368e1adc84e98fe044aeb905302f7"
+checksum = "b55bad9126f378a853655831eb7363b7b01b81d19f8cb1218861086ca4a1a61e"
 dependencies = [
  "bytes",
  "once_cell",
@@ -4006,9 +4007,9 @@ dependencies = [
 
 [[package]]
 name = "protobuf-codegen"
-version = "3.1.0"
+version = "3.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "07b893e5e7d3395545d5244f8c0d33674025bd566b26c03bfda49b82c6dec45e"
+checksum = "0dd418ac3c91caa4032d37cb80ff0d44e2ebe637b2fb243b6234bf89cdac4901"
 dependencies = [
  "anyhow",
  "once_cell",
@@ -4021,9 +4022,9 @@ dependencies = [
 
 [[package]]
 name = "protobuf-parse"
-version = "3.1.0"
+version = "3.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9b1447dd751c434cc1b415579837ebd0411ed7d67d465f38010da5d7cd33af4d"
+checksum = "9d39b14605eaa1f6a340aec7f320b34064feb26c93aec35d6a9a2272a8ddfa49"
 dependencies = [
  "anyhow",
  "indexmap",
@@ -4037,9 +4038,9 @@ dependencies = [
 
 [[package]]
 name = "protobuf-support"
-version = "3.1.0"
+version = "3.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8ca157fe12fc7ee2e315f2f735e27df41b3d97cdd70ea112824dac1ffb08ee1c"
+checksum = "a5d4d7b8601c814cfb36bcebb79f0e61e45e1e93640cf778837833bbed05c372"
 dependencies = [
  "thiserror",
 ]
@@ -4439,13 +4440,15 @@ dependencies = [
 [[package]]
 name = "ring"
 version = "0.16.20"
-source = "git+https://github.com/sj6219/ring?branch=0.16.20_alpha#ec80db0d72b09b638fcc8b44eecd6fc9d13cd25e"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3053cf52e236a3ed746dfc745aa9cacf1b791d846bdaf412f60a8d7d6e17c8fc"
 dependencies = [
  "cc",
  "libc",
  "once_cell",
  "spin",
  "untrusted",
+ "web-sys",
  "winapi 0.3.9",
 ]
 
@@ -4747,7 +4750,7 @@ dependencies = [
 [[package]]
 name = "sciter-rs"
 version = "0.5.57"
-source = "git+https://github.com/sj6219/rust-sciter?branch=0.5.57_alpha#480ed410d179a17746098a7ff2121d98a778c0d2"
+source = "git+https://github.com/open-trade/rust-sciter?branch=dyn#82025b9ba77d5ae14543009444033036dbe25917"
 dependencies = [
  "lazy_static",
  "libc",
@@ -5095,7 +5098,8 @@ dependencies = [
 [[package]]
 name = "sodiumoxide"
 version = "0.2.7"
-source = "git+https://github.com/sj6219/sodiumoxide?branch=0.2.7_alpha#ccc2d3cbc02e6a9affbc563825957aed23030c72"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e26be3acb6c2d9a7aac28482586a7856436af4cfe7100031d219de2d2ecb0028"
 dependencies = [
  "ed25519",
  "libc",
@@ -5105,9 +5109,9 @@ dependencies = [
 
 [[package]]
 name = "spin"
-version = "0.9.4"
+version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7f6002a767bff9e83f8eeecf883ecb8011875a21ae8da43bffb817a57e78cc09"
+checksum = "6e63cff320ae2c57904679ba7cb63280a3dc4613885beafb148ee7bf9aa9042d"
 
 [[package]]
 name = "static_assertions"
@@ -6077,7 +6081,8 @@ dependencies = [
 [[package]]
 name = "winapi"
 version = "0.2.8"
-source = "git+https://github.com/sj6219/winapi-rs?branch=0.2.8_alpha#08ed6ee430de632a8d610c15cc1ea2864e1c3cd1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "167dc9d6949a9b857f3451275e911c3f44255842c1f7a76f33c55103a909087a"
 
 [[package]]
 name = "winapi"
@@ -6369,7 +6374,8 @@ checksum = "f40009d85759725a34da6d89a94e63d7bdc50a862acf0dbc7c8e488f1edcb6f5"
 [[package]]
 name = "winit"
 version = "0.26.1"
-source = "git+https://github.com/sj6219/winit?branch=0.26.1_alpha#760bb9ba18c3f40e6d190bde82beb416afb641cf"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9b43cc931d58b99461188607efd7acb2a093e65fc621f54cad78517a6063e73a"
 dependencies = [
  "bitflags",
  "cocoa",
