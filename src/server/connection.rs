@@ -534,8 +534,8 @@ impl Connection {
                         handle_mouse(&msg, id);
                     }
                     MessageInput::Key((mut msg, press)) => {
-                        //..m======2.3
-                        //..w======2.3
+                        //..m!!!!!!2.3
+                        //..w!!!!!!2.3
                         #[cfg(target_os = "macos")]
                         {
                             if let Some(key_event::Union::ControlKey(ck)) = msg.union {
@@ -950,8 +950,8 @@ impl Connection {
 
     #[inline]
     fn input_key(&self, msg: KeyEvent, press: bool) {
-        //..m======2.2
-        //..w======2.2
+        //..m!!!!!!2.2
+        //..w!!!!!!2.2
         self.tx_input.send(MessageInput::Key((msg, press))).ok();
     }
 
@@ -1209,8 +1209,8 @@ impl Connection {
                     }
                 }
                 Some(message::Union::KeyEvent(me)) => {
-                    //..m======2.1
-                    //..w======2.1
+                    //..m!!!!!!2.1
+                    //..w!!!!!!2.1
                     #[cfg(debug_assertions)]
                     log::error!("recvkey {:?}", me);
                     #[cfg(not(any(target_os = "android", target_os = "ios")))]

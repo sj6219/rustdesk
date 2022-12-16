@@ -42,7 +42,7 @@ fn mouse_event(flags: u32, data: u32, dx: i32, dy: i32) -> DWORD {
 fn keybd_event(flags: u32, vk: u16, scan: u16) -> DWORD {
     let mut vk = vk;
     let mut scan = scan;
-    //..w======2.4
+    //..w!!!!!!2.4
 
     unsafe {
         // https://github.com/rustdesk/rustdesk/issues/366

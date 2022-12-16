@@ -21,8 +21,8 @@ fn main() {
 fn main() {
     #[cfg(debug_assertions)]
     {
-        //..m======0
-        //..w======0
+        //..m!!!!!!!0
+        //..w!!!!!!!0
         {
             use std::io::Write;
     

@@ -195,12 +195,12 @@ pub fn start_grab_loop() {
                 return Some(event);
             }
             if KEYBOARD_HOOKED.load(Ordering::SeqCst) {
-                //..m======1.1
+                //..m!!!!!!1.1
                 #[cfg(target_os = "macos")] 
                 let mut event = event;
                 #[cfg(target_os = "macos")] 
                 match event.event_type {
-                    EventType::KeyPress(key) => {
+                    EventType::KeyPress( key) => {
                         let key = match key {
                             rdev::Key::ControlLeft => rdev::Key::MetaLeft,
                             rdev::Key::MetaLeft => rdev::Key::ControlLeft,
