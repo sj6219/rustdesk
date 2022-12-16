@@ -294,8 +294,14 @@ impl<T: InvokeUiSession> Session<T> {
 
     pub fn send_key_event(&self, evt: &KeyEvent) {
         // mode: legacy(0), map(1), translate(2), auto(3)
+
         let mut msg_out = Message::new();
         msg_out.set_key_event(evt.clone());
+
+        //..m======1.2
+        #[cfg(debug_assertions)]
+        log::error!("send_key_event {:?}", msg_out);
+        
         self.send(Data::Message(msg_out));
     }
 
