@@ -7,9 +7,9 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug executable 'rustdesk'",
+            "name": "launch 'rustdesk'",
             "args": [],
-            //"args": ["--connect", "192.168.111.11"],
+            //"args": ["--connect", "192.168.111.10"],
             "cwd": "${workspaceFolder}",
             "sourceLanguages": ["rust"],     
             // "cargo": {
@@ -27,13 +27,13 @@
             //"preLaunchTask": "build",   
         },
         {
-            "name": "(Windows) Launch",
+            "name": "(Windows) cpp Launch",
             "type": "cppvsdbg",
             "request": "launch",
             "program": "${workspaceFolder}/target/debug/rustdesk.exe",
             //"program": "${workspaceFolder}/flutter/build/windows/runner/Release/rustdesk.exe",
             "args": [],
-            //"args": ["--connect", "192.168.111.11"],
+            "args": ["--connect", "192.168.111.10"],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
