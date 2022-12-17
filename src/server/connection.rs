@@ -696,12 +696,6 @@ impl Connection {
                 .filter(|x| IpCidr::from_str(x).map_or(false, |y| y.contains(addr.ip())))
                 .next()
                 .is_none()
-            //..
-            || !whitelist.is_empty() && whitelist
-                .iter()
-                .filter(|x| x != &"0.0.0.0")
-                .next()
-                .is_none()
         {
             self.send_login_error("Your ip is blocked by the peer")
                 .await;
