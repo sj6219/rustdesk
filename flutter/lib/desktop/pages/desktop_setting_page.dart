@@ -63,7 +63,7 @@ class DesktopSettingPage extends StatefulWidget {
         DesktopTabPage.onAddSetting(initialPage: page);
       }
     } catch (e) {
-      debugPrint('$e');
+      debugPrintStack(label: '$e');
     }
   }
 }
@@ -434,7 +434,7 @@ class _SafetyState extends State<_Safety> with AutomaticKeepAliveClientMixin {
   bool get wantKeepAlive => true;
   bool locked = bind.mainIsInstalled();
   final scrollController = ScrollController();
-  final RxBool serviceStop = Get.find<RxBool>(tag: 'service-stop');
+  final RxBool serviceStop = Get.find<RxBool>(tag: 'stop-service');
 
   @override
   Widget build(BuildContext context) {
@@ -932,6 +932,10 @@ class _NetworkState extends State<_Network> with AutomaticKeepAliveClientMixin {
             return false;
           }
         }
+        final old = await bind.mainGetOption(key: 'custom-rendezvous-server');
+        if (old.isNotEmpty && old != idServer) {
+          await gFFI.userModel.logOut();
+        }
         // should set one by one
         await bind.mainSetOption(
             key: 'custom-rendezvous-server', value: idServer);
@@ -1059,21 +1063,13 @@ class _AccountState extends State<_Account> {
   }
 
   Widget accountAction() {
-    return _futureBuilder(future: () async {
-      return await gFFI.userModel.getUserName();
-    }(), hasData: (_) {
-      return Obx(() => _Button(
-          gFFI.userModel.userName.value.isEmpty ? 'Login' : 'Logout',
-          () => {
-                gFFI.userModel.userName.value.isEmpty
-                    ? loginDialog().then((success) {
-                        if (success) {
-                          gFFI.abModel.pullAb();
-                        }
-                      })
-                    : gFFI.userModel.logOut()
-              }));
-    });
+    return Obx(() => _Button(
+        gFFI.userModel.userName.value.isEmpty ? 'Login' : 'Logout',
+        () => {
+              gFFI.userModel.userName.value.isEmpty
+                  ? loginDialog()
+                  : gFFI.userModel.logOut()
+            }));
   }
 }
 

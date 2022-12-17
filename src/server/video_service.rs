@@ -21,9 +21,13 @@
 use super::{video_qos::VideoQoS, *};
 #[cfg(windows)]
 use crate::portable_service::client::PORTABLE_SERVICE_RUNNING;
-use hbb_common::tokio::sync::{
-    mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
-    Mutex as TokioMutex,
+#[cfg(windows)]
+use hbb_common::get_version_number;
+use hbb_common::{
+    tokio::sync::{
+        mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
+        Mutex as TokioMutex,
+    },
 };
 #[cfg(not(windows))]
 use scrap::Capturer;
@@ -74,6 +78,10 @@ fn is_capturer_mag_supported() -> bool {
     false
 }
 
+pub fn capture_cursor_embeded() -> bool {
+    scrap::is_cursor_embeded()
+}
+
 pub fn notify_video_frame_feched(conn_id: i32, frame_tm: Option<Instant>) {
     FRAME_FETCHED_NOTIFIER.0.send((conn_id, frame_tm)).unwrap()
 }
@@ -88,7 +96,8 @@ pub fn get_privacy_mode_conn_id() -> i32 {
 
 pub fn is_privacy_mode_supported() -> bool {
     #[cfg(windows)]
-    return *IS_CAPTURER_MAGNIFIER_SUPPORTED;
+    return *IS_CAPTURER_MAGNIFIER_SUPPORTED
+        && get_version_number(&crate::VERSION) > get_version_number("1.1.9");
     #[cfg(not(windows))]
     return false;
 }
@@ -455,6 +464,7 @@ fn run(sp: GenericService) -> ResultType<()> {
             y: c.origin.1 as _,
             width: c.width as _,
             height: c.height as _,
+            cursor_embeded: capture_cursor_embeded(),
             ..Default::default()
         });
         let mut msg_out = Message::new();
@@ -472,22 +482,7 @@ fn run(sp: GenericService) -> ResultType<()> {
     #[cfg(windows)]
     log::info!("gdi: {}", c.is_gdi());
     let codec_name = Encoder::current_hw_encoder_name();
-    #[cfg(not(target_os = "ios"))]
-    let recorder = if !Config::get_option("allow-auto-record-incoming").is_empty() {
-        Recorder::new(RecorderContext {
-            id: "local".to_owned(),
-            default_dir: crate::ui_interface::default_video_save_directory(),
-            filename: "".to_owned(),
-            width: c.width,
-            height: c.height,
-            codec_id: scrap::record::RecordCodecID::VP9,
-        })
-        .map_or(Default::default(), |r| Arc::new(Mutex::new(Some(r))))
-    } else {
-        Default::default()
-    };
-    #[cfg(target_os = "ios")]
-    let recorder: Arc<Mutex<Option<Recorder>>> = Default::default();
+    let recorder = get_recorder(c.width, c.height, &codec_name);
     #[cfg(windows)]
     start_uac_elevation_check();
 
@@ -599,14 +594,11 @@ fn run(sp: GenericService) -> ResultType<()> {
                     }
                     try_gdi += 1;
                 }
-
                 #[cfg(target_os = "linux")]
                 {
                     would_block_count += 1;
                     if !scrap::is_x11() {
                         if would_block_count >= 100 {
-                            // For now, the user should choose and agree screen sharing agiain.
-                            // to-do: Remember choice, attendless...
                             super::wayland::release_resouce();
                             bail!("Wayland capturer none 100 times, try restart captuere");
                         }
@@ -658,7 +650,60 @@ fn run(sp: GenericService) -> ResultType<()> {
             std::thread::sleep(spf - elapsed);
         }
     }
+
+    #[cfg(target_os = "linux")]
+    if !scrap::is_x11() {
+        super::wayland::release_resouce();
+    }
+
     Ok(())
+}
+
+fn get_recorder(
+    width: usize,
+    height: usize,
+    codec_name: &Option<String>,
+) -> Arc<Mutex<Option<Recorder>>> {
+    #[cfg(not(target_os = "ios"))]
+    let recorder = if !Config::get_option("allow-auto-record-incoming").is_empty() {
+        use crate::hbbs_http::record_upload;
+        use scrap::record::RecordCodecID::*;
+
+        let tx = if record_upload::is_enable() {
+            let (tx, rx) = std::sync::mpsc::channel();
+            record_upload::run(rx);
+            Some(tx)
+        } else {
+            None
+        };
+        let codec_id = match codec_name {
+            Some(name) => {
+                if name.contains("264") {
+                    H264
+                } else {
+                    H265
+                }
+            }
+            None => VP9,
+        };
+        Recorder::new(RecorderContext {
+            server: true,
+            id: Config::get_id(),
+            default_dir: crate::ui_interface::default_video_save_directory(),
+            filename: "".to_owned(),
+            width,
+            height,
+            codec_id,
+            tx,
+        })
+        .map_or(Default::default(), |r| Arc::new(Mutex::new(Some(r))))
+    } else {
+        Default::default()
+    };
+    #[cfg(target_os = "ios")]
+    let recorder: Arc<Mutex<Option<Recorder>>> = Default::default();
+
+    recorder
 }
 
 fn check_privacy_mode_changed(sp: &GenericService, privacy_mode_id: i32) -> ResultType<()> {
@@ -776,6 +821,7 @@ pub(super) fn get_displays_2(all: &Vec<Display>) -> (usize, Vec<DisplayInfo>) {
             height: d.height() as _,
             name: d.name(),
             online: d.is_online(),
+            cursor_embeded: false,
             ..Default::default()
         });
     }

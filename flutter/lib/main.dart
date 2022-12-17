@@ -117,14 +117,23 @@ void runMainApp(bool startService) async {
     // await windowManager.ensureInitialized();
     gFFI.serverModel.startService();
   }
+  gFFI.userModel.refreshCurrentUser();
   runApp(App());
+  // restore the location of the main window before window hide or show
+  await restoreWindowPosition(WindowType.Main);
+  // check the startup argument, if we successfully handle the argument, we keep the main window hidden.
+  if (checkArguments()) {
+    windowManager.hide();
+  } else {
+    windowManager.show();
+    windowManager.focus();
+    // move registration of active main window here to prevent async visible check.
+    rustDeskWinManager.registerActiveWindow(kWindowMainId);
+  }
   // set window option
   WindowOptions windowOptions = getHiddenTitleBarWindowOptions();
   windowManager.waitUntilReadyToShow(windowOptions, () async {
-    restoreWindowPosition(WindowType.Main);
-    await windowManager.show();
-    await windowManager.focus();
-    await windowManager.setOpacity(1);
+    windowManager.setOpacity(1);
   });
 }
 
@@ -168,6 +177,10 @@ void runMultiWindow(
     widget,
     MyTheme.currentThemeMode(),
   );
+  // we do not hide titlebar on win7 because of the frame overflow.
+  if (kUseCompatibleUiMode) {
+    WindowController.fromWindowId(windowId!).showTitleBar(true);
+  }
   switch (appType) {
     case kAppTypeDesktopRemote:
       await restoreWindowPosition(WindowType.RemoteDesktop,
@@ -268,12 +281,17 @@ void runInstallPage() async {
 }
 
 WindowOptions getHiddenTitleBarWindowOptions({Size? size}) {
+  var defaultTitleBarStyle = TitleBarStyle.hidden;
+  // we do not hide titlebar on win7 because of the frame overflow.
+  if (kUseCompatibleUiMode) {
+    defaultTitleBarStyle = TitleBarStyle.normal;
+  }
   return WindowOptions(
     size: size,
     center: false,
     backgroundColor: Colors.transparent,
     skipTaskbar: false,
-    titleBarStyle: TitleBarStyle.hidden,
+    titleBarStyle: defaultTitleBarStyle,
   );
 }
 

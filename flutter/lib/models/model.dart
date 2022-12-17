@@ -12,6 +12,7 @@ import 'package:flutter_hbb/generated_bridge.dart';
 import 'package:flutter_hbb/models/ab_model.dart';
 import 'package:flutter_hbb/models/chat_model.dart';
 import 'package:flutter_hbb/models/file_model.dart';
+import 'package:flutter_hbb/models/group_model.dart';
 import 'package:flutter_hbb/models/server_model.dart';
 import 'package:flutter_hbb/models/user_model.dart';
 import 'package:flutter_hbb/models/state_model.dart';
@@ -19,7 +20,7 @@ import 'package:flutter_hbb/common/shared_state.dart';
 import 'package:flutter_hbb/utils/multi_window_manager.dart';
 import 'package:tuple/tuple.dart';
 import 'package:image/image.dart' as img2;
-import 'package:flutter_custom_cursor/flutter_custom_cursor.dart';
+import 'package:flutter_custom_cursor/cursor_manager.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import '../common.dart';
@@ -221,6 +222,7 @@ class FfiModel with ChangeNotifier {
     _display.y = double.parse(evt['y']);
     _display.width = int.parse(evt['width']);
     _display.height = int.parse(evt['height']);
+    _display.cursorEmbeded = int.parse(evt['cursor_embeded']) == 1;
     if (old != _pi.currentDisplay) {
       parent.target?.cursorModel.updateDisplayOrigin(_display.x, _display.y);
     }
@@ -330,6 +332,7 @@ class FfiModel with ChangeNotifier {
         d.y = d0['y'].toDouble();
         d.width = d0['width'];
         d.height = d0['height'];
+        d.cursorEmbeded = d0['cursor_embeded'] == 1;
         _pi.displays.add(d);
       }
       if (_pi.currentDisplay < _pi.displays.length) {
@@ -342,6 +345,8 @@ class FfiModel with ChangeNotifier {
         _waitForImage[peerId] = true;
         _reconnects = 1;
       }
+      Map<String, dynamic> features = json.decode(evt['features']);
+      _pi.features.privacyMode = features['privacy_mode'] == 1;
     }
     notifyListeners();
   }
@@ -581,6 +586,9 @@ class CanvasModel with ChangeNotifier {
     _scale = scale;
     notifyListeners();
   }
+
+  bool get cursorEmbeded =>
+      parent.target?.ffiModel.display.cursorEmbeded ?? false;
 
   int getDisplayWidth() {
     final defaultWidth = (isDesktop || isWebDesktop)
@@ -1106,7 +1114,8 @@ class CursorModel with ChangeNotifier {
   _clearCache() {
     final keys = {...cachedKeys};
     for (var k in keys) {
-      customCursorController.freeCache(k);
+      debugPrint("deleting cursor with key $k");
+      CursorManager.instance.deleteCursor(k);
     }
   }
 }
@@ -1213,6 +1222,7 @@ class FFI {
   late final ChatModel chatModel; // session
   late final FileModel fileModel; // session
   late final AbModel abModel; // global
+  late final GroupModel groupModel; // global
   late final UserModel userModel; // global
   late final QualityMonitorModel qualityMonitorModel; // session
   late final RecordingModel recordingModel; // recording
@@ -1226,8 +1236,9 @@ class FFI {
     serverModel = ServerModel(WeakReference(this));
     chatModel = ChatModel(WeakReference(this));
     fileModel = FileModel(WeakReference(this));
-    abModel = AbModel(WeakReference(this));
     userModel = UserModel(WeakReference(this));
+    abModel = AbModel(WeakReference(this));
+    groupModel = GroupModel(WeakReference(this));
     qualityMonitorModel = QualityMonitorModel(WeakReference(this));
     recordingModel = RecordingModel(WeakReference(this));
     inputModel = InputModel(WeakReference(this));
@@ -1311,6 +1322,7 @@ class Display {
   double y = 0;
   int width = 0;
   int height = 0;
+  bool cursorEmbeded = false;
 
   Display() {
     width = (isDesktop || isWebDesktop)
@@ -1322,6 +1334,10 @@ class Display {
   }
 }
 
+class Features {
+  bool privacyMode = false;
+}
+
 class PeerInfo {
   String version = '';
   String username = '';
@@ -1330,6 +1346,7 @@ class PeerInfo {
   bool sasEnabled = false;
   int currentDisplay = 0;
   List<Display> displays = [];
+  Features features = Features();
 }
 
 const canvasKey = 'canvas';

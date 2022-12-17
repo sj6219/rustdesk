@@ -1,11 +1,15 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:ffi' hide Size;
 import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:back_button_interceptor/back_button_interceptor.dart';
 import 'package:desktop_multi_window/desktop_multi_window.dart';
+import 'package:ffi/ffi.dart';
+import 'package:flutter/foundation.dart';
+import 'package:win32/win32.dart' as win32;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -41,6 +45,9 @@ var isWeb = false;
 var isWebDesktop = false;
 var version = "";
 int androidVersion = 0;
+
+/// only avaliable for Windows target
+int windowsBuildNumber = 0;
 DesktopType? desktopType;
 
 /// * debug or test only, DO NOT enable in release build
@@ -92,22 +99,28 @@ class IconFont {
 class ColorThemeExtension extends ThemeExtension<ColorThemeExtension> {
   const ColorThemeExtension({
     required this.border,
+    required this.highlight,
   });
 
   final Color? border;
+  final Color? highlight;
 
   static const light = ColorThemeExtension(
     border: Color(0xFFCCCCCC),
+    highlight: Color(0xFFE5E5E5),
   );
 
   static const dark = ColorThemeExtension(
     border: Color(0xFF555555),
+    highlight: Color(0xFF3F3F3F),
   );
 
   @override
-  ThemeExtension<ColorThemeExtension> copyWith({Color? border}) {
+  ThemeExtension<ColorThemeExtension> copyWith(
+      {Color? border, Color? highlight}) {
     return ColorThemeExtension(
       border: border ?? this.border,
+      highlight: highlight ?? this.highlight,
     );
   }
 
@@ -119,6 +132,7 @@ class ColorThemeExtension extends ThemeExtension<ColorThemeExtension> {
     }
     return ColorThemeExtension(
       border: Color.lerp(border, other.border, t),
+      highlight: Color.lerp(highlight, other.highlight, t),
     );
   }
 }
@@ -208,18 +222,15 @@ class MyTheme {
   }
 
   static void changeDarkMode(ThemeMode mode) {
-    final preference = getThemeModePreference();
-    if (preference != mode) {
+    Get.changeThemeMode(mode);
+    if (desktopType == DesktopType.main) {
       if (mode == ThemeMode.system) {
         bind.mainSetLocalOption(key: kCommConfKeyTheme, value: '');
       } else {
         bind.mainSetLocalOption(
             key: kCommConfKeyTheme, value: mode.toShortString());
       }
-      Get.changeThemeMode(mode);
-      if (desktopType == DesktopType.main) {
-        bind.mainChangeTheme(dark: currentThemeMode().toShortString());
-      }
+      bind.mainChangeTheme(dark: currentThemeMode().toShortString());
     }
   }
 
@@ -321,7 +332,7 @@ void window_on_top(int? id) {
     windowManager.restore();
     windowManager.show();
     windowManager.focus();
-    rustDeskWinManager.registerActiveWindow(0);
+    rustDeskWinManager.registerActiveWindow(kWindowMainId);
   } else {
     WindowController.fromWindowId(id)
       ..focus()
@@ -919,7 +930,8 @@ bool option2bool(String option, String value) {
   } else if (option.startsWith("allow-") ||
       option == "stop-service" ||
       option == "direct-server" ||
-      option == "stop-rendezvous-service") {
+      option == "stop-rendezvous-service" ||
+      option == "force-always-relay") {
     res = value == "Y";
   } else {
     assert(false);
@@ -935,7 +947,8 @@ String bool2option(String option, bool b) {
   } else if (option.startsWith('allow-') ||
       option == "stop-service" ||
       option == "direct-server" ||
-      option == "stop-rendezvous-service") {
+      option == "stop-rendezvous-service" ||
+      option == "force-always-relay") {
     res = b ? 'Y' : '';
   } else {
     assert(false);
@@ -1007,7 +1020,7 @@ class LastWindowPosition {
       return LastWindowPosition(m["width"], m["height"], m["offsetWidth"],
           m["offsetHeight"], m["isMaximized"]);
     } catch (e) {
-      debugPrint(e.toString());
+      debugPrintStack(label: e.toString());
       return null;
     }
   }
@@ -1141,7 +1154,7 @@ Future<bool> restoreWindowPosition(WindowType type, {int? windowId}) async {
   final pos = bind.getLocalFlutterConfig(k: kWindowPrefix + type.name);
   var lpos = LastWindowPosition.loadFromString(pos);
   if (lpos == null) {
-    debugPrint("window position saved, but cannot be parsed");
+    debugPrint("no window position saved, ignoring position restoration");
     return false;
   }
 
@@ -1206,7 +1219,7 @@ Future<void> initUniLinks() async {
     }
     parseRustdeskUri(initialLink);
   } catch (err) {
-    debugPrint("$err");
+    debugPrintStack(label: "$err");
   }
 }
 
@@ -1227,41 +1240,50 @@ StreamSubscription? listenUniLinks() {
   return sub;
 }
 
-void checkArguments() {
+/// Returns true if we successfully handle the startup arguments.
+bool checkArguments() {
   // check connect args
   final connectIndex = bootArgs.indexOf("--connect");
   if (connectIndex == -1) {
-    return;
+    return false;
   }
   String? arg =
       bootArgs.length < connectIndex + 1 ? null : bootArgs[connectIndex + 1];
   if (arg != null) {
     if (arg.startsWith(kUniLinksPrefix)) {
-      parseRustdeskUri(arg);
+      return parseRustdeskUri(arg);
     } else {
+      // remove "--connect xxx" in the `bootArgs` array
+      bootArgs.removeAt(connectIndex);
+      bootArgs.removeAt(connectIndex);
       // fallback to peer id
-      rustDeskWinManager.newRemoteDesktop(arg);
-      bootArgs.removeAt(connectIndex);
-      bootArgs.removeAt(connectIndex);
+      Future.delayed(Duration.zero, () {
+        rustDeskWinManager.newRemoteDesktop(arg);
+      });
+      return true;
     }
   }
+  return false;
 }
 
 /// Parse `rustdesk://` unilinks
 ///
+/// Returns true if we successfully handle the uri provided.
 /// [Functions]
 /// 1. New Connection: rustdesk://connection/new/your_peer_id
-void parseRustdeskUri(String uriPath) {
+bool parseRustdeskUri(String uriPath) {
   final uri = Uri.tryParse(uriPath);
   if (uri == null) {
     print("uri is not valid: $uriPath");
-    return;
+    return false;
   }
-  callUniLinksUriHandler(uri);
+  return callUniLinksUriHandler(uri);
 }
 
 /// uri handler
-void callUniLinksUriHandler(Uri uri) {
+///
+/// Returns true if we successfully handle the uri provided.
+bool callUniLinksUriHandler(Uri uri) {
   debugPrint("uni links called: $uri");
   // new connection
   if (uri.authority == "connection" && uri.path.startsWith("/new/")) {
@@ -1269,6 +1291,21 @@ void callUniLinksUriHandler(Uri uri) {
     Future.delayed(Duration.zero, () {
       rustDeskWinManager.newRemoteDesktop(peerId);
     });
+    return true;
+  }
+  return false;
+}
+
+connectMainDesktop(String id,
+    {required bool isFileTransfer,
+    required bool isTcpTunneling,
+    required bool isRDP}) async {
+  if (isFileTransfer) {
+    await rustDeskWinManager.newFileTransfer(id);
+  } else if (isTcpTunneling || isRDP) {
+    await rustDeskWinManager.newPortForward(id, isRDP);
+  } else {
+    await rustDeskWinManager.newRemoteDesktop(id);
   }
 }
 
@@ -1276,7 +1313,7 @@ void callUniLinksUriHandler(Uri uri) {
 /// If [isFileTransfer], starts a session only for file transfer.
 /// If [isTcpTunneling], starts a session only for tcp tunneling.
 /// If [isRDP], starts a session only for rdp.
-void connect(BuildContext context, String id,
+connect(BuildContext context, String id,
     {bool isFileTransfer = false,
     bool isTcpTunneling = false,
     bool isRDP = false}) async {
@@ -1286,12 +1323,20 @@ void connect(BuildContext context, String id,
       "more than one connect type");
 
   if (isDesktop) {
-    if (isFileTransfer) {
-      await rustDeskWinManager.newFileTransfer(id);
-    } else if (isTcpTunneling || isRDP) {
-      await rustDeskWinManager.newPortForward(id, isRDP);
+    if (desktopType == DesktopType.main) {
+      await connectMainDesktop(
+        id,
+        isFileTransfer: isFileTransfer,
+        isTcpTunneling: isTcpTunneling,
+        isRDP: isRDP,
+      );
     } else {
-      await rustDeskWinManager.newRemoteDesktop(id);
+      await rustDeskWinManager.call(WindowType.Main, kWindowConnect, {
+        'id': id,
+        'isFileTransfer': isFileTransfer,
+        'isTcpTunneling': isTcpTunneling,
+        'isRDP': isRDP,
+      });
     }
   } else {
     if (isFileTransfer) {
@@ -1384,10 +1429,84 @@ void onActiveWindowChanged() async {
         rustDeskWinManager.closeAllSubWindows()
       ]);
     } catch (err) {
-      debugPrint("$err");
+      debugPrintStack(label: "$err");
     } finally {
       await windowManager.setPreventClose(false);
       await windowManager.close();
     }
   }
 }
+
+Timer periodic_immediate(Duration duration, Future<void> Function() callback) {
+  Future.delayed(Duration.zero, callback);
+  return Timer.periodic(duration, (timer) async {
+    await callback();
+  });
+}
+
+/// return a human readable windows version
+WindowsTarget getWindowsTarget(int buildNumber) {
+  if (!Platform.isWindows) {
+    return WindowsTarget.naw;
+  }
+  if (buildNumber >= 22000) {
+    return WindowsTarget.w11;
+  } else if (buildNumber >= 10240) {
+    return WindowsTarget.w10;
+  } else if (buildNumber >= 9600) {
+    return WindowsTarget.w8_1;
+  } else if (buildNumber >= 9200) {
+    return WindowsTarget.w8;
+  } else if (buildNumber >= 7601) {
+    return WindowsTarget.w7;
+  } else if (buildNumber >= 6002) {
+    return WindowsTarget.vista;
+  } else {
+    // minimum support
+    return WindowsTarget.xp;
+  }
+}
+
+/// Get windows target build number.
+///
+/// [Note]
+/// Please use this function wrapped with `Platform.isWindows`.
+int getWindowsTargetBuildNumber() {
+  final rtlGetVersion = DynamicLibrary.open('ntdll.dll').lookupFunction<
+      Void Function(Pointer<win32.OSVERSIONINFOEX>),
+      void Function(Pointer<win32.OSVERSIONINFOEX>)>('RtlGetVersion');
+  final osVersionInfo = getOSVERSIONINFOEXPointer();
+  rtlGetVersion(osVersionInfo);
+  int buildNumber = osVersionInfo.ref.dwBuildNumber;
+  calloc.free(osVersionInfo);
+  return buildNumber;
+}
+
+/// Get Windows OS version pointer
+///
+/// [Note]
+/// Please use this function wrapped with `Platform.isWindows`.
+Pointer<win32.OSVERSIONINFOEX> getOSVERSIONINFOEXPointer() {
+  final pointer = calloc<win32.OSVERSIONINFOEX>();
+  pointer.ref
+    ..dwOSVersionInfoSize = sizeOf<win32.OSVERSIONINFOEX>()
+    ..dwBuildNumber = 0
+    ..dwMajorVersion = 0
+    ..dwMinorVersion = 0
+    ..dwPlatformId = 0
+    ..szCSDVersion = ''
+    ..wServicePackMajor = 0
+    ..wServicePackMinor = 0
+    ..wSuiteMask = 0
+    ..wProductType = 0
+    ..wReserved = 0;
+  return pointer;
+}
+
+/// Indicating we need to use compatible ui mode.
+///
+/// [Conditions]
+/// - Windows 7, window will overflow when we use frameless ui.
+bool get kUseCompatibleUiMode =>
+    Platform.isWindows &&
+    const [WindowsTarget.w7].contains(windowsBuildNumber.windowsVersion);

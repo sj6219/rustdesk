@@ -21,6 +21,7 @@ static mut LAYOUT: HKL = std::ptr::null_mut();
 pub const ENIGO_INPUT_EXTRA_VALUE: ULONG_PTR = 100;
 
 fn mouse_event(flags: u32, data: u32, dx: i32, dy: i32) -> DWORD {
+    //..w!!!!!!4.4
     let mut input: INPUT = unsafe { std::mem::MaybeUninit::zeroed().assume_init() };
     input.type_ = INPUT_MOUSE;
     unsafe {
@@ -42,7 +43,7 @@ fn mouse_event(flags: u32, data: u32, dx: i32, dy: i32) -> DWORD {
 fn keybd_event(flags: u32, vk: u16, scan: u16) -> DWORD {
     let mut vk = vk;
     let mut scan = scan;
-    //..w======2.4
+    //..w!!!!!!2.4
 
     unsafe {
         // https://github.com/rustdesk/rustdesk/issues/366
@@ -111,6 +112,14 @@ fn get_error() -> String {
 }
 
 impl MouseControllable for Enigo {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_mut_any(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+
     fn mouse_move_to(&mut self, x: i32, y: i32) {
         mouse_event(
             MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK,
@@ -176,6 +185,14 @@ impl MouseControllable for Enigo {
 }
 
 impl KeyboardControllable for Enigo {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_mut_any(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+    
     fn key_sequence(&mut self, sequence: &str) {
         let mut buffer = [0; 2];
 

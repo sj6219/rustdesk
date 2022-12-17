@@ -506,11 +506,16 @@ impl Connection {
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     fn handle_input(receiver: std_mpsc::Receiver<MessageInput>, tx: Sender) {
         let mut block_input_mode = false;
-
+        #[cfg(target_os = "windows")]
+        {
+            rdev::set_dw_mouse_extra_info(enigo::ENIGO_INPUT_EXTRA_VALUE);
+            rdev::set_dw_keyboard_extra_info(enigo::ENIGO_INPUT_EXTRA_VALUE);
+        }
         loop {
             match receiver.recv_timeout(std::time::Duration::from_millis(500)) {
                 Ok(v) => match v {
                     MessageInput::Mouse((msg, id)) => {
+                        //..w!!!!!!4.3
                         #[cfg(target_os = "macos")]
                         let msg = {
                             let mut msg = msg;
@@ -530,8 +535,8 @@ impl Connection {
                         handle_mouse(&msg, id);
                     }
                     MessageInput::Key((mut msg, press)) => {
-                        //..m======2.3
-                        //..w======2.3
+                        //..m!!!!!!2.3
+                        //..w!!!!!!2.3
                         #[cfg(target_os = "macos")]
                         {
                             if let Some(key_event::Union::ControlKey(ck)) = msg.union {
@@ -556,6 +561,19 @@ impl Connection {
                                 };
                                 hbb_common::protobuf::EnumOrUnknown::new(ck)
                             }).collect();
+                            
+                            let code = msg.chr();
+                            if code != 0 {
+                                let key = rdev::key_from_scancode(code);
+                                let key = match key {
+                                    rdev::Key::ControlLeft => rdev::Key::MetaLeft,
+                                    rdev::Key::MetaLeft => rdev::Key::ControlLeft,
+                                    rdev::Key::ControlRight => rdev::Key::MetaRight,
+                                    rdev::Key::MetaRight => rdev::Key::ControlRight,
+                                    _ => key,
+                                };
+                                msg.set_chr(rdev::macos_keycode_from_key(key).unwrap_or_default());
+                            }
                         }
                         // todo: press and down have similar meanings.
                         if press && msg.mode.unwrap() == KeyboardMode::Legacy {
@@ -928,13 +946,14 @@ impl Connection {
 
     #[inline]
     fn input_mouse(&self, msg: MouseEvent, conn_id: i32) {
+        //..w!!!!!!!4.2
         self.tx_input.send(MessageInput::Mouse((msg, conn_id))).ok();
     }
 
     #[inline]
     fn input_key(&self, msg: KeyEvent, press: bool) {
-        //..m======2.2
-        //..w======2.2
+        //..m!!!!!!2.2
+        //..w!!!!!!2.2
         self.tx_input.send(MessageInput::Key((msg, press))).ok();
     }
 
@@ -1176,6 +1195,7 @@ impl Connection {
             }
         } else if self.authorized {
             match msg.union {
+                //..w!!!!!!4.1
                 Some(message::Union::MouseEvent(me)) => {
                     #[cfg(any(target_os = "android", target_os = "ios"))]
                     if let Err(e) = call_main_service_mouse_input(me.mask, me.x, me.y) {
@@ -1192,8 +1212,8 @@ impl Connection {
                     }
                 }
                 Some(message::Union::KeyEvent(me)) => {
-                    //..m======2.1
-                    //..w======2.1
+                    //..m!!!!!!2.1
+                    //..w!!!!!!2.1
                     #[cfg(debug_assertions)]
                     log::error!("recvkey {:?}", me);
                     #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -1357,6 +1377,13 @@ impl Connection {
                         last_modified: d.last_modified,
                         is_upload: true,
                     }),
+                    Some(file_response::Union::Error(e)) => {
+                        self.send_fs(ipc::FS::WriteError {
+                            id: e.id,
+                            file_num: e.file_num,
+                            err: e.error,
+                        });
+                    }
                     _ => {}
                 },
                 Some(message::Union::Misc(misc)) => match misc.union {
@@ -1628,18 +1655,21 @@ async fn start_ipc(
     if let Ok(s) = crate::ipc::connect(1000, "_cm").await {
         stream = Some(s);
     } else {
-        let extra_args = if password::hide_cm() { "--hide" } else { "" };
+        let mut args = vec!["--cm"];
+        if password::hide_cm() {
+            args.push("--hide");
+        };
         let run_done;
         if crate::platform::is_root() {
             let mut res = Ok(None);
             for _ in 0..10 {
                 #[cfg(not(target_os = "linux"))]
                 {
-                    res = crate::platform::run_as_user(&format!("--cm {}", extra_args));
+                    res = crate::platform::run_as_user(args.clone());
                 }
                 #[cfg(target_os = "linux")]
                 {
-                    res = crate::platform::run_as_user(&format!("--cm {}", extra_args), None);
+                    res = crate::platform::run_as_user(args.clone(), None);
                 }
                 if res.is_ok() {
                     break;
@@ -1654,10 +1684,6 @@ async fn start_ipc(
             run_done = false;
         }
         if !run_done {
-            let mut args = vec!["--cm"];
-            if !extra_args.is_empty() {
-                args.push(&extra_args);
-            }
             super::CHILD_PROCESS
                 .lock()
                 .unwrap()

@@ -439,6 +439,7 @@ extern "C" {
     fn win32_disable_lowlevel_keyboard(hwnd: HWND);
     fn win_stop_system_key_propagate(v: BOOL);
     fn is_win_down() -> BOOL;
+    fn is_local_system() -> BOOL;
 }
 
 extern "system" {
@@ -580,11 +581,11 @@ async fn launch_server(session_id: DWORD, close_first: bool) -> ResultType<HANDL
     Ok(h)
 }
 
-pub fn run_as_user(arg: &str) -> ResultType<Option<std::process::Child>> {
+pub fn run_as_user(arg: Vec<&str>) -> ResultType<Option<std::process::Child>> {
     let cmd = format!(
         "\"{}\" {}",
         std::env::current_exe()?.to_str().unwrap_or(""),
-        arg,
+        arg.join(" "),
     );
     let session_id = unsafe { get_current_session(share_rdp()) };
     use std::os::windows::ffi::OsStrExt;
@@ -596,7 +597,7 @@ pub fn run_as_user(arg: &str) -> ResultType<Option<std::process::Child>> {
     let h = unsafe { LaunchProcessWin(wstr, session_id, TRUE) };
     if h.is_null() {
         bail!(
-            "Failed to launch {} with session id {}: {}",
+            "Failed to launch {:?} with session id {}: {}",
             arg,
             session_id,
             get_error()
@@ -718,10 +719,10 @@ pub fn set_share_rdp(enable: bool) {
 }
 
 pub fn get_active_username() -> String {
-    let name = crate::username();
-    if name != "SYSTEM" {
-        return name;
+    if !is_root() {
+        return crate::username();
     }
+
     extern "C" {
         fn get_active_user(path: *mut u16, n: u32, rdp: BOOL) -> u32;
     }
@@ -757,7 +758,8 @@ pub fn is_prelogin() -> bool {
 }
 
 pub fn is_root() -> bool {
-    crate::username() == "SYSTEM"
+    // https://stackoverflow.com/questions/4023586/correct-way-to-find-out-if-a-service-is-running-as-the-system-user
+    unsafe { is_local_system() == TRUE }
 }
 
 pub fn lock_screen() {

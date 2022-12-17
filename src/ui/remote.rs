@@ -79,8 +79,8 @@ impl InvokeUiSession for SciterHandler {
         }
     }
 
-    fn set_display(&self, x: i32, y: i32, w: i32, h: i32) {
-        self.call("setDisplay", &make_args!(x, y, w, h));
+    fn set_display(&self, x: i32, y: i32, w: i32, h: i32, cursor_embeded: bool) {
+        self.call("setDisplay", &make_args!(x, y, w, h, cursor_embeded));
         // https://sciter.com/forums/topic/color_spaceiyuv-crash
         // Nothing spectacular in decoder – done on CPU side.
         // So if you can do BGRA translation on your side – the better.
@@ -223,11 +223,23 @@ impl InvokeUiSession for SciterHandler {
             display.set_item("y", d.y);
             display.set_item("width", d.width);
             display.set_item("height", d.height);
+            display.set_item("cursor_embeded", d.cursor_embeded);
             displays.push(display);
         }
         pi_sciter.set_item("displays", displays);
         pi_sciter.set_item("current_display", pi.current_display);
         self.call("updatePi", &make_args!(pi_sciter));
+    }
+
+    fn on_connected(&self, conn_type: ConnType) {
+        match conn_type {
+            ConnType::RDP => {},
+            ConnType::PORT_FORWARD => {},
+            ConnType::FILE_TRANSFER => {},
+            ConnType::DEFAULT_CONN => {
+                crate::keyboard::client::start_grab_loop();
+            },
+        }
     }
 
     fn msgbox(&self, msgtype: &str, title: &str, text: &str, link: &str, retry: bool) {
@@ -433,6 +445,10 @@ impl SciterSession {
         Self(session)
     }
 
+    pub fn inner(&self) -> Session<SciterHandler> {
+        self.0.clone()
+    }
+
     fn get_custom_image_quality(&mut self) -> Value {
         let mut v = Value::array(0);
         for x in self.lc.read().unwrap().custom_image_quality.iter() {
@@ -551,7 +567,6 @@ impl SciterSession {
     }
 
     fn get_key_event(&self, down_or_up: i32, name: &str, code: i32) -> Option<KeyEvent> {
-		//..w======3
         let mut key_event = KeyEvent::new();
         if down_or_up == 2 {
             /* windows send both keyup/keydown and keychar, so here we avoid keychar
