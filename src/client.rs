@@ -1681,8 +1681,8 @@ pub fn send_mouse(
             let ck = ck.enum_value_or_default();
             let ck = match ck {
                 ControlKey::Control => ControlKey::Meta,
-                ControlKey::Meta => ControlKey::RControl,
-                ControlKey::RControl => ControlKey::RWin,
+                ControlKey::Meta => ControlKey::Control,
+                ControlKey::RControl => ControlKey::Win,
                 ControlKey::RWin => ControlKey::Control,
                 _ => ck,
             };

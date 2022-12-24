@@ -523,8 +523,8 @@ impl Connection {
                                 let ck = ck.enum_value_or_default();
                                 let ck = match ck {
                                     ControlKey::Control => ControlKey::Meta,
-                                    ControlKey::Meta => ControlKey::RControl,
-                                    ControlKey::RControl => ControlKey::RWin,
+                                    ControlKey::Meta => ControlKey::Control,
+                                    ControlKey::RControl => ControlKey::Win,
                                     ControlKey::RWin => ControlKey::Control,
                                     _ => ck,
                                 };
@@ -543,8 +543,8 @@ impl Connection {
                                 let ck = ck.enum_value_or_default();
                                 let ck = match ck {
                                     ControlKey::Control => ControlKey::Meta,
-                                    ControlKey::Meta => ControlKey::RControl,
-                                    ControlKey::RControl => ControlKey::RWin,
+                                    ControlKey::Meta => ControlKey::Control,
+                                    ControlKey::RControl => ControlKey::Win,
                                     ControlKey::RWin => ControlKey::Control,
                                     _ => ck,
                                 };
@@ -554,8 +554,8 @@ impl Connection {
                                 let ck = ck.enum_value_or_default();
                                 let ck = match ck {
                                     ControlKey::Control => ControlKey::Meta,
-                                    ControlKey::Meta => ControlKey::RControl,
-                                    ControlKey::RControl => ControlKey::RWin,
+                                    ControlKey::Meta => ControlKey::Control,
+                                    ControlKey::RControl => ControlKey::Win,
                                     ControlKey::RWin => ControlKey::Control,
                                     _ => ck,
                                 };
@@ -567,8 +567,8 @@ impl Connection {
                                 let key = rdev::key_from_code(code);
                                 let key = match key {
                                     rdev::Key::ControlLeft => rdev::Key::MetaLeft,
-                                    rdev::Key::MetaLeft => rdev::Key::ControlRight,
-                                    rdev::Key::ControlRight => rdev::Key::MetaRight,
+                                    rdev::Key::MetaLeft => rdev::Key::ControlLeft,
+                                    rdev::Key::ControlRight => rdev::Key::MetaLeft,
                                     rdev::Key::MetaRight => rdev::Key::ControlLeft,
                                     _ => key,
                                 };
