@@ -204,8 +204,8 @@ pub fn start_grab_loop() {
                     EventType::KeyPress( key) => {
                         let key = match key {
                             rdev::Key::ControlLeft => rdev::Key::MetaLeft,
-                            rdev::Key::MetaLeft => rdev::Key::ControlLeft,
-                            rdev::Key::ControlRight => rdev::Key::MetaLeft,
+                            rdev::Key::MetaLeft => rdev::Key::ControlRight,
+                            rdev::Key::ControlRight => rdev::Key::MetaRight,
                             rdev::Key::MetaRight => rdev::Key::ControlLeft,
                             _ => key,
                         };
@@ -216,8 +216,8 @@ pub fn start_grab_loop() {
                     EventType::KeyRelease(key) => {
                         let key = match key {
                             rdev::Key::ControlLeft => rdev::Key::MetaLeft,
-                            rdev::Key::MetaLeft => rdev::Key::ControlLeft,
-                            rdev::Key::ControlRight => rdev::Key::MetaLeft,
+                            rdev::Key::MetaLeft => rdev::Key::ControlRight,
+                            rdev::Key::ControlRight => rdev::Key::MetaRight,
                             rdev::Key::MetaRight => rdev::Key::ControlLeft,
                             _ => key,
                         };

@@ -1681,9 +1681,9 @@ pub fn send_mouse(
             let ck = ck.enum_value_or_default();
             let ck = match ck {
                 ControlKey::Control => ControlKey::Meta,
-                ControlKey::Meta => ControlKey::Control,
+                ControlKey::Meta => ControlKey::RControl,
                 ControlKey::RControl => ControlKey::RWin,
-                ControlKey::RWin => ControlKey::RControl,
+                ControlKey::RWin => ControlKey::Control,
                 _ => ck,
             };
             hbb_common::protobuf::EnumOrUnknown::new(ck)
