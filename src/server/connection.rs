@@ -564,7 +564,7 @@ impl Connection {
                             
                             let code = msg.chr();
                             if code != 0 {
-                                let key = rdev::key_from_scancode(code);
+                                let key = rdev::key_from_code(code);
                                 let key = match key {
                                     rdev::Key::ControlLeft => rdev::Key::MetaLeft,
                                     rdev::Key::MetaLeft => rdev::Key::ControlLeft,
