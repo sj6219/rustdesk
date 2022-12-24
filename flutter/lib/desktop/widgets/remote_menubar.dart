@@ -171,6 +171,8 @@ class _RemoteMenubarState extends State<RemoteMenubar> {
 
   @override
   Widget build(BuildContext context) {
+    // No need to use future builder here.
+    _updateScreen();
     return Align(
       alignment: Alignment.topCenter,
       child: Obx(() => show.value
@@ -827,7 +829,7 @@ class _RemoteMenubarState extends State<RemoteMenubar> {
               qualityInitValue = qualityMaxValue;
             }
             final RxDouble qualitySliderValue = RxDouble(qualityInitValue);
-            final debouncerQuanlity = Debouncer<double>(
+            final debouncerQuality = Debouncer<double>(
               Duration(milliseconds: 1000),
               onChanged: (double v) {
                 setCustomValues(quality: v);
@@ -843,7 +845,7 @@ class _RemoteMenubarState extends State<RemoteMenubar> {
                       divisions: 90,
                       onChanged: (double value) {
                         qualitySliderValue.value = value;
-                        debouncerQuanlity.value = value;
+                        debouncerQuality.value = value;
                       },
                     ),
                     SizedBox(
@@ -1032,7 +1034,9 @@ class _RemoteMenubarState extends State<RemoteMenubar> {
         final h265 = codecsJson['h265'] ?? false;
         codecs.add(h264);
         codecs.add(h265);
-      } finally {}
+      } catch (e) {
+        debugPrint("Show Codec Preference err=$e");
+      }
       if (codecs.length == 2 && (codecs[0] || codecs[1])) {
         displayMenu.add(MenuEntryRadios<String>(
           text: translate('Codec Preference'),

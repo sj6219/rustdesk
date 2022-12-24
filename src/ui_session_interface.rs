@@ -382,7 +382,7 @@ impl<T: InvokeUiSession> Session<T> {
         let scancode: u32 = scancode as u32;
 
         #[cfg(not(target_os = "windows"))]
-        let key = rdev::key_from_scancode(scancode) as rdev::Key;
+        let key = rdev::key_from_code(keycode) as rdev::Key;
         // Windows requires special handling
         #[cfg(target_os = "windows")]
         let key = rdev::get_win_key(keycode, scancode);
@@ -664,7 +664,10 @@ impl<T: InvokeUiSession> Interface for Session<T> {
     }
 
     fn msgbox(&self, msgtype: &str, title: &str, text: &str, link: &str) {
-        let retry = check_if_retry(msgtype, title, text);
+        let direct = self.lc.read().unwrap().direct.unwrap_or_default();
+        let received = self.lc.read().unwrap().received;
+        let retry_for_relay = direct && !received;
+        let retry = check_if_retry(msgtype, title, text, retry_for_relay);
         self.ui_handler.msgbox(msgtype, title, text, link, retry);
     }
 
@@ -752,6 +755,12 @@ impl<T: InvokeUiSession> Interface for Session<T> {
         }
     }
 
+    fn set_connection_info(&mut self, direct: bool, received: bool) {
+        let mut lc = self.lc.write().unwrap();
+        lc.direct = Some(direct);
+        lc.received = received;
+    }
+
     fn set_force_relay(&mut self, direct: bool, received: bool) {
         let mut lc = self.lc.write().unwrap();
         lc.force_relay = false;
@@ -773,12 +782,10 @@ impl<T: InvokeUiSession> Interface for Session<T> {
 
 impl<T: InvokeUiSession> Session<T> {
     pub fn lock_screen(&self) {
-        log::info!("Sending key even");
         crate::keyboard::client::lock_screen();
     }
     pub fn ctrl_alt_del(&self) {
-        log::info!("Sending key even");
-        crate::keyboard::client::lock_screen();
+        crate::keyboard::client::ctrl_alt_del();
     }
 }
 

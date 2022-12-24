@@ -25,22 +25,25 @@ fn main() {
         //..w!!!!!!!0
         {
             use std::io::Write;
-    
             println!("======================0 {}", std::process::id());
             std::io::stdout().flush().unwrap();
-            
-            //platform::macos::is_can_screen_recording(false);
+        }
+        #[cfg(target_os = "macos")]
+        {
+            use std::io::Write;
+            if let Ok(mut file) = std::fs::OpenOptions::new().write(true).create(false).append(true).open("/tmp/RustDesk/pipe") {
+                writeln!(&mut file, "======================0\n{}\n", std::process::id()).unwrap();
+            }
         }
         #[cfg(windows)]
         {
-            use std::io::Write;
-    
-            let mut path = std::env::current_exe().unwrap_or_default();
-            path.pop();
-    
-            if let Ok(mut file) = std::fs::OpenOptions::new().write(true).create(true).append(true).open(&format!(
-                "{}/rustdesk.log", path.to_str().unwrap_or_default())) {
-                writeln!(&mut file, "======================0\n{}\n", std::process::id()).unwrap();
+            // $npipeServer = new-object System.IO.Pipes.NamedPipeServerStream('RustDesk', [System.IO.Pipes.PipeDirection]::InOut)
+            // $npipeServer.Dispose()
+            use std::fs::File;
+            use std::io::prelude::*;
+            if let Ok(mut file) = std::fs::OpenOptions::new().read(true).open("\\\\.\\pipe\\RustDesk") {
+                let mut contents = String::new();
+                file.read_to_string(&mut contents);
             }
         }
         #[cfg(windows)]
