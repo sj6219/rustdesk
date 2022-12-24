@@ -1421,11 +1421,6 @@ impl LoginConfigHandler {
                 config.keyboard_mode = "legacy".to_string();
             } else {
                 config.keyboard_mode = "map".to_string();
-                //..
-                #[cfg(windows)] 
-                {
-                    config.keyboard_mode = "legacy".to_string();
-                }
             }
         }
         self.conn_id = pi.conn_id;
