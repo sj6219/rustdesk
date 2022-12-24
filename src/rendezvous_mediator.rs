@@ -74,8 +74,6 @@ impl RendezvousMediator {
         loop {
             Config::reset_online();
             if Config::get_option("stop-service").is_empty() {
-            //..
-              if Config::get_option("custom-rendezvous-server") != "localhost" {
                 if !nat_tested {
                     crate::test_nat_type();
                     nat_tested = true;
@@ -92,7 +90,6 @@ impl RendezvousMediator {
                     }));
                 }
                 join_all(futs).await;
-              }
             } else {
                 server.write().unwrap().close_connections();
             }
