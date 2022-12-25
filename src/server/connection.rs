@@ -524,8 +524,8 @@ impl Connection {
                                 let ck = match ck {
                                     ControlKey::Control => ControlKey::Meta,
                                     ControlKey::Meta => ControlKey::Control,
-                                    ControlKey::RControl => ControlKey::RWin,
-                                    ControlKey::RWin => ControlKey::RControl,
+                                    ControlKey::RControl => ControlKey::Meta,
+                                    ControlKey::RWin => ControlKey::Control,
                                     _ => ck,
                                 };
                                 hbb_common::protobuf::EnumOrUnknown::new(ck)
@@ -544,8 +544,8 @@ impl Connection {
                                 let ck = match ck {
                                     ControlKey::Control => ControlKey::Meta,
                                     ControlKey::Meta => ControlKey::Control,
-                                    ControlKey::RControl => ControlKey::RWin,
-                                    ControlKey::RWin => ControlKey::RControl,
+                                    ControlKey::RControl => ControlKey::Meta,
+                                    ControlKey::RWin => ControlKey::Control,
                                     _ => ck,
                                 };
                                 msg.set_control_key(ck);
@@ -555,8 +555,8 @@ impl Connection {
                                 let ck = match ck {
                                     ControlKey::Control => ControlKey::Meta,
                                     ControlKey::Meta => ControlKey::Control,
-                                    ControlKey::RControl => ControlKey::RWin,
-                                    ControlKey::RWin => ControlKey::RControl,
+                                    ControlKey::RControl => ControlKey::Meta,
+                                    ControlKey::RWin => ControlKey::Control,
                                     _ => ck,
                                 };
                                 hbb_common::protobuf::EnumOrUnknown::new(ck)
@@ -568,8 +568,8 @@ impl Connection {
                                 let key = match key {
                                     rdev::Key::ControlLeft => rdev::Key::MetaLeft,
                                     rdev::Key::MetaLeft => rdev::Key::ControlLeft,
-                                    rdev::Key::ControlRight => rdev::Key::MetaRight,
-                                    rdev::Key::MetaRight => rdev::Key::ControlRight,
+                                    rdev::Key::ControlRight => rdev::Key::MetaLeft,
+                                    rdev::Key::MetaRight => rdev::Key::ControlLeft,
                                     _ => key,
                                 };
                                 msg.set_chr(rdev::macos_keycode_from_key(key).unwrap_or_default());

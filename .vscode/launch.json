@@ -7,7 +7,7 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug executable 'rustdesk'",
+            "name": "Launch rustdesk",
             "args": [],
             //"args": ["--connect", "192.168.111.11"],
             "cwd": "${workspaceFolder}",
@@ -32,29 +32,11 @@
             "request": "launch",
             "program": "${workspaceFolder}/target/debug/rustdesk.exe",
             "args": [],
-            //"args": ["--connect", "192.168.111.8"],
+            "args": ["--connect", "192.168.111.8"],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
             // "console": "externalTerminal"
-        },
-        {
-            "type": "lldb",
-            "request": "launch",
-            "name": "Debug executable 'rustdesk'",
-            "cargo": {
-                "args": [
-                    "build",
-                    "--bin=rustdesk",
-                    "--package=rustdesk"
-                ],
-                "filter": {
-                    "name": "rustdesk",
-                    "kind": "bin"
-                }
-            },
-            "args": [],
-            "cwd": "${workspaceFolder}"
         },
    ]
 }
