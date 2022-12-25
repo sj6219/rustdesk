@@ -1677,7 +1677,7 @@ pub fn send_mouse(
             let ck = match ck {
                 ControlKey::Control => ControlKey::Meta,
                 ControlKey::Meta => ControlKey::Control,
-                ControlKey::RControl => ControlKey::Win,
+                ControlKey::RControl => ControlKey::Meta,
                 ControlKey::RWin => ControlKey::Control,
                 _ => ck,
             };
