@@ -205,21 +205,25 @@ pub fn start_grab_loop() {
                         let key = match key {
                             rdev::Key::ControlLeft => rdev::Key::MetaLeft,
                             rdev::Key::MetaLeft => rdev::Key::ControlLeft,
-                            rdev::Key::ControlRight => rdev::Key::MetaRight,
-                            rdev::Key::MetaRight => rdev::Key::ControlRight,
+                            rdev::Key::ControlRight => rdev::Key::MetaLeft,
+                            rdev::Key::MetaRight => rdev::Key::ControlLeft,
                             _ => key,
                         };
                         event.event_type = EventType::KeyPress(key);
+                        event.scan_code = rdev::macos_keycode_from_key(key).unwrap_or_default();
+                        event.code = event.scan_code as _;
                     }
                     EventType::KeyRelease(key) => {
                         let key = match key {
                             rdev::Key::ControlLeft => rdev::Key::MetaLeft,
                             rdev::Key::MetaLeft => rdev::Key::ControlLeft,
-                            rdev::Key::ControlRight => rdev::Key::MetaRight,
-                            rdev::Key::MetaRight => rdev::Key::ControlRight,
+                            rdev::Key::ControlRight => rdev::Key::MetaLeft,
+                            rdev::Key::MetaRight => rdev::Key::ControlLeft,
                             _ => key,
                         };
                         event.event_type = EventType::KeyRelease(key);
+                        event.scan_code = rdev::macos_keycode_from_key(key).unwrap_or_default();
+                        event.code = event.scan_code as _;
                     }
                     _ => {}
                 };
@@ -367,7 +371,13 @@ pub fn event_to_key_event(event: &Event) -> Option<KeyEvent> {
         }
         _ => {
             #[cfg(not(any(target_os = "android", target_os = "ios")))]
-            legacy_keyboard_mode(event, key_event)?
+            {
+                legacy_keyboard_mode(event, key_event)?
+            }
+            #[cfg(any(target_os = "android", target_os = "ios"))]
+            {
+                None?
+            }
         }
     };
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -656,6 +666,8 @@ pub fn map_keyboard_mode(event: &Event, mut key_event: KeyEvent) -> Option<KeyEv
         "macos" => rdev::linux_code_to_macos_code(event.code as _)?,
         _ => event.code as _,
     };
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    let keycode = 0;
 
     key_event.set_chr(keycode);
     Some(key_event)
