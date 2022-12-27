@@ -1342,32 +1342,6 @@ impl LoginConfigHandler {
         }
     }
 
-    /// Handle login error.
-    /// Return true if the password is wrong, return false if there's an actual error.
-    pub fn handle_login_error(&mut self, err: &str, interface: &impl Interface) -> bool {
-        if err == "Wrong Password" {
-            self.password = Default::default();
-            interface.msgbox("re-input-password", err, "Do you want to enter again?", "");
-            true
-        } else if err == "No Password Access" {
-            self.password = Default::default();
-            interface.msgbox(
-                "wait-remote-accept-nook",
-                "Prompt",
-                "Please wait for the remote side to accept your session request...",
-                "",
-            );
-            true
-        } else {
-            if err.contains(SCRAP_X11_REQUIRED) {
-                interface.msgbox("error", "Login Error", err, SCRAP_X11_REF_URL);
-            } else {
-                interface.msgbox("error", "Login Error", err, "");
-            }
-            false
-        }
-    }
-
     /// Get user name.
     /// Return the name of the given peer. If the peer has no name, return the name in the config.
     ///
@@ -1746,6 +1720,36 @@ fn _input_os_password(p: String, activate: bool, interface: impl Interface) {
     key_event.set_control_key(ControlKey::Return);
     msg_out.set_key_event(key_event);
     interface.send(Data::Message(msg_out));
+}
+
+/// Handle login error.
+/// Return true if the password is wrong, return false if there's an actual error.
+pub fn handle_login_error(
+    lc: Arc<RwLock<LoginConfigHandler>>,
+    err: &str,
+    interface: &impl Interface,
+) -> bool {
+    if err == "Wrong Password" {
+        lc.write().unwrap().password = Default::default();
+        interface.msgbox("re-input-password", err, "Do you want to enter again?", "");
+        true
+    } else if err == "No Password Access" {
+        lc.write().unwrap().password = Default::default();
+        interface.msgbox(
+            "wait-remote-accept-nook",
+            "Prompt",
+            "Please wait for the remote side to accept your session request...",
+            "",
+        );
+        true
+    } else {
+        if err.contains(SCRAP_X11_REQUIRED) {
+            interface.msgbox("error", "Login Error", err, SCRAP_X11_REF_URL);
+        } else {
+            interface.msgbox("error", "Login Error", err, "");
+        }
+        false
+    }
 }
 
 /// Handle hash message sent by peer.
