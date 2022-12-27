@@ -181,6 +181,14 @@ pub fn set_local_flutter_config(k: String, v: String) {
     ui_interface::set_local_flutter_config(k, v);
 }
 
+pub fn get_local_kb_layout_type() -> SyncReturn<String> {
+    SyncReturn(ui_interface::get_kb_layout_type())
+}
+
+pub fn set_local_kb_layout_type(kb_layout_type: String) {
+    ui_interface::set_kb_layout_type(kb_layout_type)
+}
+
 pub fn session_get_view_style(id: String) -> Option<String> {
     if let Some(session) = SESSIONS.read().unwrap().get(&id) {
         Some(session.get_view_style())
@@ -894,9 +902,9 @@ pub fn session_restart_remote_device(id: String) {
     }
 }
 
-pub fn session_get_audit_server_sync(id: String) -> SyncReturn<String> {
+pub fn session_get_audit_server_sync(id: String, typ: String) -> SyncReturn<String> {
     let res = if let Some(session) = SESSIONS.read().unwrap().get(&id) {
-        session.get_audit_server()
+        session.get_audit_server(typ)
     } else {
         "".to_owned()
     };
