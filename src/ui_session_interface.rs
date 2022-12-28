@@ -1,8 +1,8 @@
 use crate::client::io_loop::Remote;
 use crate::client::{
-    check_if_retry, handle_hash, handle_login_from_ui, handle_test_delay, input_os_password,
-    load_config, send_mouse, start_video_audio_threads, FileManager, Key, LoginConfigHandler,
-    QualityStatus, KEY_MAP,
+    check_if_retry, handle_hash, handle_login_error, handle_login_from_ui, handle_test_delay,
+    input_os_password, load_config, send_mouse, start_video_audio_threads, FileManager, Key,
+    LoginConfigHandler, QualityStatus, KEY_MAP,
 };
 use crate::common::GrabState;
 use crate::keyboard;
@@ -173,7 +173,7 @@ impl<T: InvokeUiSession> Session<T> {
         self.send(Data::Message(msg));
     }
 
-    pub fn get_audit_server(&self) -> String {
+    pub fn get_audit_server(&self, typ: String) -> String {
         if self.lc.read().unwrap().conn_id <= 0
             || LocalConfig::get_option("access_token").is_empty()
         {
@@ -182,11 +182,12 @@ impl<T: InvokeUiSession> Session<T> {
         crate::get_audit_server(
             Config::get_option("api-server"),
             Config::get_option("custom-rendezvous-server"),
+            typ,
         )
     }
 
     pub fn send_note(&self, note: String) {
-        let url = self.get_audit_server();
+        let url = self.get_audit_server("conn".to_string());
         let id = self.id.clone();
         let conn_id = self.lc.read().unwrap().conn_id;
         std::thread::spawn(move || {
@@ -382,7 +383,7 @@ impl<T: InvokeUiSession> Session<T> {
         let scancode: u32 = scancode as u32;
 
         #[cfg(not(target_os = "windows"))]
-        let key = rdev::key_from_scancode(scancode) as rdev::Key;
+        let key = rdev::key_from_code(keycode) as rdev::Key;
         // Windows requires special handling
         #[cfg(target_os = "windows")]
         let key = rdev::get_win_key(keycode, scancode);
@@ -664,12 +665,15 @@ impl<T: InvokeUiSession> Interface for Session<T> {
     }
 
     fn msgbox(&self, msgtype: &str, title: &str, text: &str, link: &str) {
-        let retry = check_if_retry(msgtype, title, text);
+        let direct = self.lc.read().unwrap().direct.unwrap_or_default();
+        let received = self.lc.read().unwrap().received;
+        let retry_for_relay = direct && !received;
+        let retry = check_if_retry(msgtype, title, text, retry_for_relay);
         self.ui_handler.msgbox(msgtype, title, text, link, retry);
     }
 
     fn handle_login_error(&mut self, err: &str) -> bool {
-        self.lc.write().unwrap().handle_login_error(err, self)
+        handle_login_error(self.lc.clone(), err, self)
     }
 
     fn handle_peer_info(&mut self, mut pi: PeerInfo) {
@@ -752,6 +756,12 @@ impl<T: InvokeUiSession> Interface for Session<T> {
         }
     }
 
+    fn set_connection_info(&mut self, direct: bool, received: bool) {
+        let mut lc = self.lc.write().unwrap();
+        lc.direct = Some(direct);
+        lc.received = received;
+    }
+
     fn set_force_relay(&mut self, direct: bool, received: bool) {
         let mut lc = self.lc.write().unwrap();
         lc.force_relay = false;
@@ -773,12 +783,10 @@ impl<T: InvokeUiSession> Interface for Session<T> {
 
 impl<T: InvokeUiSession> Session<T> {
     pub fn lock_screen(&self) {
-        log::info!("Sending key even");
         crate::keyboard::client::lock_screen();
     }
     pub fn ctrl_alt_del(&self) {
-        log::info!("Sending key even");
-        crate::keyboard::client::lock_screen();
+        crate::keyboard::client::ctrl_alt_del();
     }
 }
 

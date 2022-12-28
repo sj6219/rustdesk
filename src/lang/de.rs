@@ -39,6 +39,8 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Change ID", "ID ändern"),
         ("Website", "Webseite"),
         ("About", "Über"),
+        ("Slogan_tip", "Mit Herzblut programmiert - in einer Welt, die im Chaos versinkt"),
+        ("Privacy Statement", "Datenschutz"),
         ("Mute", "Stummschalten"),
         ("Audio Input", "Audioeingang"),
         ("Enhancements", "Verbesserungen"),
@@ -367,9 +369,9 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Enable LAN Discovery", "LAN-Erkennung aktivieren"),
         ("Deny LAN Discovery", "LAN-Erkennung verbieten"),
         ("Write a message", "Nachricht schreiben"),
-        ("Prompt", ""), //Aufforderung???
+        ("Prompt", "Meldung"),
         ("Please wait for confirmation of UAC...", "Bitte auf die Bestätigung des Nutzers warten..."),
-        ("elevated_foreground_window_tip", ""),
+        ("elevated_foreground_window_tip", "Das aktuell geöffnete Fenster des ferngesteuerten Computers benötigt höhere Rechte. Deshalb ist es derzeit nicht möglich, die Maus und die Tastatur zu verwenden. Bitten Sie den Nutzer, dessen Computer Sie fernsteuern, das Fenster zu minimieren oder die Rechte zu erhöhen. Um dieses Problem zunünftig zu vermeiden, wird empfohlen, die Software auf dem ferngesteuerten Computer zu installieren."),
         ("Disconnected", "Verbindung abgebrochen"),
         ("Other", "Weitere Einstellungen"),
         ("Confirm before closing multiple tabs", "Nachfragen, wenn mehrere Tabs geschlossen werden"),
@@ -399,8 +401,12 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("hide_cm_tip", "Dies ist nur möglich, wenn der Zugriff nur über ein permanentes Passwort erfolgt."),
         ("wayland_experiment_tip", "Die Unterstützung von Wayland ist nur experimentell. Bitte nutzen Sie X11, wenn Sie einen unbeaufsichtigten Zugriff benötigen."),
         ("Right click to select tabs", "Register mit rechtem Mausklick auswählen"),
+        ("Skipped", "Übersprungen"),
         ("Add to Address Book", "Zum Adressbuch hinzufügen"),
         ("Group", "Gruppe"),
         ("Search", "Suchen"),
+        ("Closed manually by the web console", "Manuell über die Webkonsole beendet"),
+        ("Local keyboard type", "Lokaler Tastaturtyp"),
+        ("Select local keyboard type", "Lokalen Tastaturtyp Auswählen"),
     ].iter().cloned().collect();
 }

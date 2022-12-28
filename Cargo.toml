@@ -63,7 +63,7 @@ default-net = "0.11.0"
 wol-rs = "0.9.1"
 flutter_rust_bridge = { git = "https://github.com/SoLongAndThanksForAllThePizza/flutter_rust_bridge", optional = true }
 errno = "0.2.8"
-rdev = { git = "https://github.com/asur4s/rdev" }
+rdev = { git = "https://github.com/fufesou/rdev" }
 url = { version = "2.1", features = ["serde"] }
 
 reqwest = { version = "0.11", features = ["blocking", "json", "rustls-tls"], default-features=false }
@@ -175,8 +175,9 @@ winapi = { git = "https://github.com/sj6219/winapi-rs", branch = "0.2.8_alpha" }
 winit = { git = "https://github.com/sj6219/winit", branch = "0.26.1_alpha" }
 sodiumoxide = { git = "https://github.com/sj6219/sodiumoxide", branch = "0.2.7_alpha" }
 
-[patch."https://github.com/rustdesk/rdev"]
+[patch."https://github.com/asur4s/rdev"]
 #rdev = { path = "../rdev" }
+#rdev = { git = "https://github.com/sj6219/rdev", branch = "alpha" }
 
 [patch."https://github.com/open-trade/rust-sciter"]
 sciter-rs = { git = "https://github.com/sj6219/rust-sciter" , branch = "0.5.57_alpha" }
