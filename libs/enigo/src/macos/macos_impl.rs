@@ -212,6 +212,7 @@ impl MouseControllable for Enigo {
     }
 
     fn mouse_down(&mut self, button: MouseButton) -> crate::ResultType {
+        //..m!!!!!!4.6
         let now = std::time::Instant::now();
         if let Some(t) = self.last_click_time {
             if t.elapsed().as_millis() as u32 <= self.double_click_interval {

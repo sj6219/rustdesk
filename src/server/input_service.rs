@@ -337,6 +337,7 @@ pub fn handle_mouse(evt: &MouseEvent, conn: i32) {
     if !*IS_SERVER {
         // having GUI, run main GUI thread, otherwise crash
         let evt = evt.clone();
+        //..m!!!!!!4.4
         QUEUE.exec_async(move || handle_mouse_(&evt));
         return;
     }
@@ -520,6 +521,7 @@ fn active_mouse_(conn: i32) -> bool {
 }
 
 pub fn handle_mouse_(evt: &MouseEvent) {
+    //..m!!!!!!4.5
     if EXITING.load(Ordering::SeqCst) {
         return;
     }
