@@ -744,6 +744,7 @@ fn sim_rdev_rawkey(code: u32, keydown: bool) {
 #[cfg(target_os = "macos")]
 #[inline]
 fn simulate_(event_type: &EventType) {
+    //..m!!!!!!2.6
     unsafe {
         let _lock = VIRTUAL_INPUT_MTX.lock();
         if let Some(virtual_input) = &VIRTUAL_INPUT {
