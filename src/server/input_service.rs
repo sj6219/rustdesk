@@ -749,7 +749,11 @@ fn simulate_(event_type: &EventType) {
     //..m!!!!!!2.6
     unsafe {
         let _lock = VIRTUAL_INPUT_MTX.lock();
-        if let Some(virtual_input) = &VIRTUAL_INPUT {
+        if let Some(virtual_input) = &VIRTUAL_INPUT {            
+            //..
+            #[cfg(debug_assertions)]
+            log::error!("rdev {:?}", &event_type);
+            
             let _ = virtual_input.simulate(&event_type);
         }
     }
