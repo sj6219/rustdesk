@@ -125,6 +125,7 @@ class _DesktopSettingPageState extends State<DesktopSettingPage>
                   scrollController: controller,
                   child: PageView(
                     controller: controller,
+                    physics: NeverScrollableScrollPhysics(),
                     children: const [
                       _General(),
                       _Safety(),
@@ -1096,16 +1097,16 @@ class _AboutState extends State<_About> {
           child: SingleChildScrollView(
             controller: scrollController,
             physics: NeverScrollableScrollPhysics(),
-            child: _Card(title: 'About RustDesk', children: [
+            child: _Card(title: '${translate('About')} RustDesk', children: [
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const SizedBox(
                     height: 8.0,
                   ),
-                  Text(translate('Version') + ': $version')
+                  Text('${translate('Version')}: $version')
                       .marginSymmetric(vertical: 4.0),
-                  Text(translate('Build Date') + ': $buildDate')
+                  Text('${translate('Build Date')}: $buildDate')
                       .marginSymmetric(vertical: 4.0),
                   InkWell(
                       onTap: () {

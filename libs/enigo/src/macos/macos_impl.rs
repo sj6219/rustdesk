@@ -40,6 +40,7 @@ const BUF_LEN: usize = 4;
 #[allow(improper_ctypes)]
 #[allow(non_snake_case)]
 #[link(name = "ApplicationServices", kind = "framework")]
+#[link(name = "Carbon", kind = "framework")]
 extern "C" {
     fn CFDataGetBytePtr(theData: CFDataRef) -> *const u8;
     fn TISCopyCurrentKeyboardInputSource() -> TISInputSourceRef;
@@ -68,7 +69,7 @@ extern "C" {
     ) -> Boolean;
 
     fn CGEventPost(tapLocation: CGEventTapLocation, event: *mut MyCGEvent);
-    // Actually return CFDataRef which is const here, but for coding convienence, return *mut c_void
+    // Actually return CFDataRef which is const here, but for coding convenience, return *mut c_void
     fn TISGetInputSourceProperty(source: TISInputSourceRef, property: *const c_void)
         -> *mut c_void;
     // not present in servo/core-graphics
@@ -211,6 +212,7 @@ impl MouseControllable for Enigo {
     }
 
     fn mouse_down(&mut self, button: MouseButton) -> crate::ResultType {
+        //..m!!!!!!4.6
         let now = std::time::Instant::now();
         if let Some(t) = self.last_click_time {
             if t.elapsed().as_millis() as u32 <= self.double_click_interval {
