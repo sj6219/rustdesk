@@ -365,8 +365,6 @@ class _RemoteMenubarState extends State<RemoteMenubar> {
                     RxInt display = CurrentDisplayState.find(widget.id);
                     if (display.value != i) {
                       bind.sessionSwitchDisplay(id: widget.id, value: i);
-                      pi.currentDisplay = i;
-                      display.value = i;
                     }
                   },
                 )
@@ -1088,7 +1086,7 @@ class _RemoteMenubarState extends State<RemoteMenubar> {
     }
 
     /// Show remote cursor
-    if (!widget.ffi.canvasModel.cursorEmbeded) {
+    if (!widget.ffi.canvasModel.cursorEmbedded) {
       displayMenu.add(() {
         final state = ShowRemoteCursorState.find(widget.id);
         return MenuEntrySwitch2<String>(

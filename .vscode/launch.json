@@ -38,5 +38,15 @@
             "environment": [],
             // "console": "externalTerminal"
         },
+        {
+            "name": "Python Build",
+            "type": "python",
+            "request": "launch",
+            "program" : "${workspaceFolder}/build.py",
+            "args": [
+                //"--flutter",
+            ],
+            "justMyCode": false,
+        },   
    ]
 }
