@@ -294,6 +294,16 @@ class _RemotePageState extends State<RemotePage>
             onEnter: enterView,
             onExit: leaveView,
             onPointerDown: (event) {
+              // A double check for blur status.
+              // Note: If there's an `onPointerDown` event is triggered, `_isWindowBlur` is expected being false.
+              // Sometimes the system does not send the necessary focus event to flutter. We should manually
+              // handle this inconsistent status by setting `_isWindowBlur` to false. So we can
+              // ensure the grab-key thread is running when our users are clicking the remote canvas.
+              if (_isWindowBlur) {
+                debugPrint(
+                    "Unexpected status: onPointerDown is triggered while the remote window is in blur status");
+                _isWindowBlur = false;
+              }
               if (!_rawKeyFocusNode.hasFocus) {
                 _rawKeyFocusNode.requestFocus();
               }
@@ -305,9 +315,9 @@ class _RemotePageState extends State<RemotePage>
       }))
     ];
 
-    if (!_ffi.canvasModel.cursorEmbeded) {
-      paints.add(Obx(() => Visibility(
-          visible: _showRemoteCursor.isTrue && _remoteCursorMoved.isTrue,
+    if (!_ffi.canvasModel.cursorEmbedded) {
+      paints.add(Obx(() => Offstage(
+          offstage: _showRemoteCursor.isFalse || _remoteCursorMoved.isFalse,
           child: CursorPaint(
             id: widget.id,
             zoomCursor: _zoomCursor,
@@ -372,7 +382,7 @@ class _ImagePaintState extends State<ImagePaint> {
 
     mouseRegion({child}) => Obx(() => MouseRegion(
         cursor: cursorOverImage.isTrue
-            ? c.cursorEmbeded
+            ? c.cursorEmbedded
                 ? SystemMouseCursors.none
                 : keyboardEnabled.isTrue
                     ? (() {
@@ -607,7 +617,8 @@ class CursorPaint extends StatelessWidget {
 
     double cx = c.x;
     double cy = c.y;
-    if (c.scrollStyle == ScrollStyle.scrollbar) {
+    if (c.viewStyle.style == kRemoteViewStyleOriginal &&
+        c.scrollStyle == ScrollStyle.scrollbar) {
       final d = c.parent.target!.ffiModel.display;
       final imageWidth = d.width * c.scale;
       final imageHeight = d.height * c.scale;
@@ -616,7 +627,7 @@ class CursorPaint extends StatelessWidget {
     }
 
     double x = (m.x - hotx) * c.scale + cx;
-    double y = (m.y - hoty) * c.scale + cx;
+    double y = (m.y - hoty) * c.scale + cy;
     double scale = 1.0;
     if (zoomCursor.isTrue) {
       x = m.x - hotx + cx / c.scale;

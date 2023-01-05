@@ -22,7 +22,7 @@ use hbb_common::{
     anyhow::bail,
     compress::compress as compress_func,
     config::{self, Config, COMPRESS_LEVEL, RENDEZVOUS_TIMEOUT},
-    get_version_number, log,
+    get_version_number, is_ipv6_str, log,
     message_proto::*,
     protobuf::Enum,
     protobuf::Message as _,
@@ -330,15 +330,9 @@ async fn test_nat_type_() -> ResultType<bool> {
     });
     let mut port1 = 0;
     let mut port2 = 0;
-    let server1 = socket_client::get_target_addr(&server1)?;
-    let server2 = socket_client::get_target_addr(&server2)?;
     for i in 0..2 {
         let mut socket = socket_client::connect_tcp(
-            if i == 0 {
-                server1.clone()
-            } else {
-                server2.clone()
-            },
+            if i == 0 { &*server1 } else { &*server2 },
             RENDEZVOUS_TIMEOUT,
         )
         .await?;
@@ -503,8 +497,39 @@ pub fn username() -> String {
 #[inline]
 pub fn check_port<T: std::string::ToString>(host: T, port: i32) -> String {
     let host = host.to_string();
+    if is_ipv6_str(&host) {
+        if host.starts_with("[") {
+            return host;
+        }
+        return format!("[{}]:{}", host, port);
+    }
     if !host.contains(":") {
         return format!("{}:{}", host, port);
+    }
+    return host;
+}
+
+#[inline]
+pub fn increase_port<T: std::string::ToString>(host: T, offset: i32) -> String {
+    let host = host.to_string();
+    if is_ipv6_str(&host) {
+        if host.starts_with("[") {
+            let tmp: Vec<&str> = host.split("]:").collect();
+            if tmp.len() == 2 {
+                let port: i32 = tmp[1].parse().unwrap_or(0);
+                if port > 0 {
+                    return format!("{}]:{}", tmp[0], port + offset);
+                }
+            }
+        }
+    } else if host.contains(":") {
+        let tmp: Vec<&str> = host.split(":").collect();
+        if tmp.len() == 2 {
+            let port: i32 = tmp[1].parse().unwrap_or(0);
+            if port > 0 {
+                return format!("{}:{}", tmp[0], port + offset);
+            }
+        }
     }
     return host;
 }
@@ -545,9 +570,9 @@ pub fn check_software_update() {
 async fn check_software_update_() -> hbb_common::ResultType<()> {
     sleep(3.).await;
 
-    let rendezvous_server =
-        socket_client::get_target_addr(&format!("rs-sg.rustdesk.com:{}", config::RENDEZVOUS_PORT))?;
-    let mut socket = socket_client::new_udp_for(&rendezvous_server, RENDEZVOUS_TIMEOUT).await?;
+    let rendezvous_server = format!("rs-sg.rustdesk.com:{}", config::RENDEZVOUS_PORT);
+    let (mut socket, rendezvous_server) =
+        socket_client::new_udp_for(&rendezvous_server, RENDEZVOUS_TIMEOUT).await?;
 
     let mut msg_out = RendezvousMessage::new();
     msg_out.set_software_update(SoftwareUpdate {
@@ -712,4 +737,46 @@ lazy_static::lazy_static! {
 #[cfg(target_os = "linux")]
 lazy_static::lazy_static! {
     pub static ref IS_X11: Mutex<bool> = Mutex::new("x11" == hbb_common::platform::linux::get_display_server());
+}
+
+pub fn make_fd_to_json(id: i32, path: String, entries: &Vec<FileEntry>) -> String {
+    use serde_json::json;
+    let mut fd_json = serde_json::Map::new();
+    fd_json.insert("id".into(), json!(id));
+    fd_json.insert("path".into(), json!(path));
+
+    let mut entries_out = vec![];
+    for entry in entries {
+        let mut entry_map = serde_json::Map::new();
+        entry_map.insert("entry_type".into(), json!(entry.entry_type.value()));
+        entry_map.insert("name".into(), json!(entry.name));
+        entry_map.insert("size".into(), json!(entry.size));
+        entry_map.insert("modified_time".into(), json!(entry.modified_time));
+        entries_out.push(entry_map);
+    }
+    fd_json.insert("entries".into(), json!(entries_out));
+    serde_json::to_string(&fd_json).unwrap_or("".into())
+}
+
+#[cfg(test)]
+mod test_common {
+    use super::*;
+
+    #[test]
+    fn test_check_port() {
+        assert_eq!(check_port("[1:2]:12", 32), "[1:2]:12");
+        assert_eq!(check_port("1:2", 32), "[1:2]:32");
+        assert_eq!(check_port("z1:2", 32), "z1:2");
+        assert_eq!(check_port("1.1.1.1", 32), "1.1.1.1:32");
+        assert_eq!(check_port("1.1.1.1:32", 32), "1.1.1.1:32");
+        assert_eq!(check_port("test.com:32", 0), "test.com:32");
+        assert_eq!(increase_port("[1:2]:12", 1), "[1:2]:13");
+        assert_eq!(increase_port("1.2.2.4:12", 1), "1.2.2.4:13");
+        assert_eq!(increase_port("1.2.2.4", 1), "1.2.2.4");
+        assert_eq!(increase_port("test.com", 1), "test.com");
+        assert_eq!(increase_port("test.com:13", 4), "test.com:17");
+        assert_eq!(increase_port("1:13", 4), "1:13");
+        assert_eq!(increase_port("22:1:13", 4), "22:1:13");
+        assert_eq!(increase_port("z1:2", 1), "z1:3");
+    }
 }

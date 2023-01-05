@@ -85,7 +85,7 @@ pub fn new() -> ServerPtr {
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
         server.add_service(Box::new(clipboard_service::new()));
-        if !video_service::capture_cursor_embeded() {
+        if !video_service::capture_cursor_embedded() {
             server.add_service(Box::new(input_service::new_cursor()));
             server.add_service(Box::new(input_service::new_pos()));
         }
@@ -194,6 +194,11 @@ pub async fn create_tcp_connection(
         }
     }
 
+    #[cfg(target_os = "macos")]{
+        use std::process::Command;
+        Command::new("/usr/bin/caffeinate").arg("-u").arg("-t 5").spawn().ok();
+        log::info!("wake up macos");
+    }
     Connection::start(addr, stream, id, Arc::downgrade(&server)).await;
     Ok(())
 }

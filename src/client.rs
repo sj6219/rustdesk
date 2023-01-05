@@ -167,7 +167,7 @@ impl Client {
         interface: impl Interface,
     ) -> ResultType<(Stream, bool)> {
         // to-do: remember the port for each peer, so that we can retry easier
-        if hbb_common::is_ipv4_str(peer) {
+        if hbb_common::is_ip_str(peer) {
             return Ok((
                 socket_client::connect_tcp(
                     crate::check_port(peer, RELAY_PORT + 1),
@@ -376,7 +376,8 @@ impl Client {
         log::info!("peer address: {}, timeout: {}", peer, connect_timeout);
         let start = std::time::Instant::now();
         // NOTICE: Socks5 is be used event in intranet. Which may be not a good way.
-        let mut conn = socket_client::connect_tcp_local(peer, local_addr, connect_timeout).await;
+        let mut conn =
+            socket_client::connect_tcp_local(peer, Some(local_addr), connect_timeout).await;
         let mut direct = !conn.is_err();
         if interface.is_force_relay() || conn.is_err() {
             if !relay_server.is_empty() {
@@ -420,7 +421,7 @@ impl Client {
         key: &str,
         conn: &mut Stream,
         direct: bool,
-        mut interface: impl Interface,
+        interface: impl Interface,
     ) -> ResultType<()> {
         let rs_pk = get_rs_pk(if key.is_empty() {
             hbb_common::config::RS_PUB_KEY
@@ -1484,6 +1485,19 @@ impl LoginConfigHandler {
         msg_out.set_misc(misc);
         msg_out
     }
+
+    pub fn set_force_relay(&mut self, direct: bool, received: bool) {
+        self.force_relay = false;
+        if direct && !received {
+            let errno = errno::errno().0;
+            log::info!("errno is {}", errno);
+            // TODO: check mac and ios
+            if cfg!(windows) && errno == 10054 || !cfg!(windows) && errno == 104 {
+                self.force_relay = true;
+                self.set_option("force-always-relay".to_owned(), "Y".to_owned());
+            }
+        }
+    }
 }
 
 /// Media data.
@@ -1843,18 +1857,23 @@ pub trait Interface: Send + Clone + 'static + Sized {
     fn msgbox(&self, msgtype: &str, title: &str, text: &str, link: &str);
     fn handle_login_error(&mut self, err: &str) -> bool;
     fn handle_peer_info(&mut self, pi: PeerInfo);
-    fn set_force_relay(&mut self, direct: bool, received: bool);
-    fn set_connection_info(&mut self, direct: bool, received: bool);
-    fn is_file_transfer(&self) -> bool;
-    fn is_port_forward(&self) -> bool;
-    fn is_rdp(&self) -> bool;
     fn on_error(&self, err: &str) {
         self.msgbox("error", "Error", err, "");
     }
-    fn is_force_relay(&self) -> bool;
     async fn handle_hash(&mut self, pass: &str, hash: Hash, peer: &mut Stream);
     async fn handle_login_from_ui(&mut self, password: String, remember: bool, peer: &mut Stream);
     async fn handle_test_delay(&mut self, t: TestDelay, peer: &mut Stream);
+
+    fn get_login_config_handler(&self) -> Arc<RwLock<LoginConfigHandler>>;
+    fn set_force_relay(&self, direct: bool, received: bool) {
+        self.get_login_config_handler()
+            .write()
+            .unwrap()
+            .set_force_relay(direct, received);
+    }
+    fn is_force_relay(&self) -> bool {
+        self.get_login_config_handler().read().unwrap().force_relay
+    }
 }
 
 /// Data used by the client interface.
