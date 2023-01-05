@@ -469,6 +469,7 @@ def main():
                 if pa:
                     os.system('''
     # buggy: rcodesign sign ... path/*, have to sign one by one
+    # install rcodesign via cargo install apple-codesign
     #rcodesign sign --p12-file ~/.p12/rustdesk-developer-id.p12 --p12-password-file ~/.p12/.cert-pass --code-signature-flags runtime ./target/release/bundle/osx/RustDesk.app/Contents/MacOS/rustdesk
     #rcodesign sign --p12-file ~/.p12/rustdesk-developer-id.p12 --p12-password-file ~/.p12/.cert-pass --code-signature-flags runtime ./target/release/bundle/osx/RustDesk.app/Contents/MacOS/libsciter.dylib
     #rcodesign sign --p12-file ~/.p12/rustdesk-developer-id.p12 --p12-password-file ~/.p12/.cert-pass --code-signature-flags runtime ./target/release/bundle/osx/RustDesk.app
@@ -481,9 +482,15 @@ def main():
                           version, 'rustdesk-%s.dmg' % version)
                 if pa:
                     os.system('''
+    # https://pyoxidizer.readthedocs.io/en/apple-codesign-0.14.0/apple_codesign.html
+    # https://pyoxidizer.readthedocs.io/en/stable/tugger_code_signing.html
+    # https://developer.apple.com/developer-id/
+    # goto xcode and login with apple id, manager certificates (Developer ID Application and/or Developer ID Installer) online there (only download and double click (install) cer file can not export p12 because no private key)
     #rcodesign sign --p12-file ~/.p12/rustdesk-developer-id.p12 --p12-password-file ~/.p12/.cert-pass --code-signature-flags runtime ./rustdesk-{1}.dmg
     codesign -s "Developer ID Application: {0}" --force --options runtime ./rustdesk-{1}.dmg
-    # https://pyoxidizer.readthedocs.io/en/latest/apple_codesign_rcodesign.html
+    # https://appstoreconnect.apple.com/access/api
+    # https://gregoryszorc.com/docs/apple-codesign/0.16.0/apple_codesign_rcodesign.html#notarizing-and-stapling
+    # p8 file is generated when you generate api key, download and put it under ~/.private_keys/
     rcodesign notarize --api-issuer {2} --api-key {3} --staple ./rustdesk-{1}.dmg
     # verify:  spctl -a -t exec -v /Applications/RustDesk.app
     '''.format(pa, version, os.environ.get('api-issuer'), os.environ.get('api-key')))
