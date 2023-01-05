@@ -476,15 +476,7 @@ impl RendezvousMediator {
             relay_server = provided_by_rendzvous_server;
         }
         if relay_server.is_empty() {
-            if self.host.contains(":") {
-                let tmp: Vec<&str> = self.host.split(":").collect();
-                if tmp.len() == 2 {
-                    let port: u16 = tmp[1].parse().unwrap_or(0);
-                    relay_server = format!("{}:{}", tmp[0], port + 1);
-                }
-            } else {
-                relay_server = self.host.clone();
-            }
+            relay_server = crate::increase_port(&self.host, 1);
         }
         relay_server
     }
@@ -507,8 +499,7 @@ async fn direct_server(server: ServerPtr) {
         let disabled = Config::get_option("direct-server").is_empty();
         if !disabled && listener.is_none() {
             port = get_direct_port();
-            let addr = format!("0.0.0.0:{}", port);
-            match hbb_common::tcp::new_listener(&addr, false).await {
+            match hbb_common::tcp::listen_any(port as _).await {
                 Ok(l) => {
                     listener = Some(l);
                     log::info!(
@@ -519,8 +510,8 @@ async fn direct_server(server: ServerPtr) {
                 Err(err) => {
                     // to-do: pass to ui
                     log::error!(
-                        "Failed to start direct server on : {}, error: {}",
-                        addr,
+                        "Failed to start direct server on port: {}, error: {}",
+                        port,
                         err
                     );
                     // loop {
