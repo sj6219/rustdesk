@@ -22,7 +22,7 @@ use hbb_common::{
     anyhow::bail,
     compress::compress as compress_func,
     config::{self, Config, COMPRESS_LEVEL, RENDEZVOUS_TIMEOUT},
-    get_version_number, log,
+    get_version_number, is_ipv6_str, log,
     message_proto::*,
     protobuf::Enum,
     protobuf::Message as _,
@@ -497,8 +497,39 @@ pub fn username() -> String {
 #[inline]
 pub fn check_port<T: std::string::ToString>(host: T, port: i32) -> String {
     let host = host.to_string();
+    if is_ipv6_str(&host) {
+        if host.starts_with("[") {
+            return host;
+        }
+        return format!("[{}]:{}", host, port);
+    }
     if !host.contains(":") {
         return format!("{}:{}", host, port);
+    }
+    return host;
+}
+
+#[inline]
+pub fn increase_port<T: std::string::ToString>(host: T, offset: i32) -> String {
+    let host = host.to_string();
+    if is_ipv6_str(&host) {
+        if host.starts_with("[") {
+            let tmp: Vec<&str> = host.split("]:").collect();
+            if tmp.len() == 2 {
+                let port: i32 = tmp[1].parse().unwrap_or(0);
+                if port > 0 {
+                    return format!("{}]:{}", tmp[0], port + offset);
+                }
+            }
+        }
+    } else if host.contains(":") {
+        let tmp: Vec<&str> = host.split(":").collect();
+        if tmp.len() == 2 {
+            let port: i32 = tmp[1].parse().unwrap_or(0);
+            if port > 0 {
+                return format!("{}:{}", tmp[0], port + offset);
+            }
+        }
     }
     return host;
 }
@@ -725,4 +756,27 @@ pub fn make_fd_to_json(id: i32, path: String, entries: &Vec<FileEntry>) -> Strin
     }
     fd_json.insert("entries".into(), json!(entries_out));
     serde_json::to_string(&fd_json).unwrap_or("".into())
+}
+
+#[cfg(test)]
+mod test_common {
+    use super::*;
+
+    #[test]
+    fn test_check_port() {
+        assert_eq!(check_port("[1:2]:12", 32), "[1:2]:12");
+        assert_eq!(check_port("1:2", 32), "[1:2]:32");
+        assert_eq!(check_port("z1:2", 32), "z1:2");
+        assert_eq!(check_port("1.1.1.1", 32), "1.1.1.1:32");
+        assert_eq!(check_port("1.1.1.1:32", 32), "1.1.1.1:32");
+        assert_eq!(check_port("test.com:32", 0), "test.com:32");
+        assert_eq!(increase_port("[1:2]:12", 1), "[1:2]:13");
+        assert_eq!(increase_port("1.2.2.4:12", 1), "1.2.2.4:13");
+        assert_eq!(increase_port("1.2.2.4", 1), "1.2.2.4");
+        assert_eq!(increase_port("test.com", 1), "test.com");
+        assert_eq!(increase_port("test.com:13", 4), "test.com:17");
+        assert_eq!(increase_port("1:13", 4), "1:13");
+        assert_eq!(increase_port("22:1:13", 4), "22:1:13");
+        assert_eq!(increase_port("z1:2", 1), "z1:3");
+    }
 }

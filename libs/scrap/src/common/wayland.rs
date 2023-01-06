@@ -4,7 +4,8 @@ use std::{io, sync::RwLock, time::Duration};
 
 pub struct Capturer(Display, Box<dyn Recorder>, bool, Vec<u8>);
 
-pub const is_cursor_embedded: bool = true;
+#[allow(non_upper_case_globals)]
+pub const IS_CURSOR_EMBEDDED: bool = true;
 
 lazy_static::lazy_static! {
     static ref MAP_ERR: RwLock<Option<fn(err: String)-> io::Error>> = Default::default();
