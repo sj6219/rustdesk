@@ -1,5 +1,6 @@
 #windows
 %comspec% /k "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsamd64_arm64.bat" 
+python3 res/inline-sciter.py
 cargo build --release --features inline,with_rc --target=aarch64-pc-windows-msvc -vv 
 
 rustup update
