@@ -1367,7 +1367,7 @@ connect(BuildContext context, String id,
   }
 }
 
-Future<Map<String, String>> getHttpHeaders() async {
+Map<String, String> getHttpHeaders() {
   return {
     'Authorization': 'Bearer ${bind.mainGetLocalOption(key: 'access_token')}'
   };
@@ -1418,7 +1418,7 @@ bool isRunningInPortableMode() {
 }
 
 /// Window status callback
-void onActiveWindowChanged() async {
+Future<void> onActiveWindowChanged() async {
   print(
       "[MultiWindowHandler] active window changed: ${rustDeskWinManager.getActiveWindows()}");
   if (rustDeskWinManager.getActiveWindows().isEmpty) {

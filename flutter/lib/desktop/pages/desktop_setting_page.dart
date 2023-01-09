@@ -8,7 +8,6 @@ import 'package:flutter_hbb/common.dart';
 import 'package:flutter_hbb/consts.dart';
 import 'package:flutter_hbb/desktop/pages/desktop_home_page.dart';
 import 'package:flutter_hbb/desktop/pages/desktop_tab_page.dart';
-import 'package:flutter_hbb/desktop/widgets/login.dart';
 import 'package:flutter_hbb/models/platform_model.dart';
 import 'package:flutter_hbb/models/server_model.dart';
 import 'package:get/get.dart';
@@ -18,6 +17,7 @@ import 'package:url_launcher/url_launcher_string.dart';
 import 'package:flutter_hbb/desktop/widgets/scroll_wrapper.dart';
 
 import '../../common/widgets/dialog.dart';
+import '../../common/widgets/login.dart';
 
 const double _kTabWidth = 235;
 const double _kTabHeight = 42;
@@ -274,6 +274,15 @@ class _GeneralState extends State<_General> {
       _OptionCheckBox(context, 'Confirm before closing multiple tabs',
           'enable-confirm-closing-tabs'),
       _OptionCheckBox(context, 'Adaptive Bitrate', 'enable-abr'),
+      if (Platform.isLinux)
+        Tooltip(
+          message: translate('software_render_tip'),
+          child: _OptionCheckBox(
+            context,
+            "Always use software rendering",
+            'allow-always-software-render',
+          ),
+        )
     ]);
   }
 
@@ -1223,7 +1232,7 @@ Widget _OptionCheckBox(BuildContext context, String label, String key,
             ref.value = option;
             if (reverse) option = !option;
             String value = bool2option(key, option);
-            bind.mainSetOption(key: key, value: value);
+            await bind.mainSetOption(key: key, value: value);
             update?.call();
           }
         }

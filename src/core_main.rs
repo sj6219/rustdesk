@@ -38,6 +38,17 @@ pub fn core_main() -> Option<Vec<String>> {
         }
         i += 1;
     }
+    #[cfg(target_os = "linux")]
+    #[cfg(feature = "flutter")]
+    {
+        crate::platform::linux::register_breakdown_handler();
+        let (k, v) = ("LIBGL_ALWAYS_SOFTWARE", "true");
+        if !hbb_common::config::Config::get_option("allow-always-software-render").is_empty() {
+            std::env::set_var(k, v);
+        } else {
+            std::env::remove_var(k);
+        }
+    }
     #[cfg(feature = "flutter")]
     if _is_flutter_connect {
         return core_main_invoke_new_connection(std::env::args());
@@ -182,6 +193,7 @@ pub fn core_main() -> Option<Vec<String>> {
             #[cfg(target_os = "macos")]
             {
                 std::thread::spawn(move || crate::start_server(true));
+                crate::platform::macos::hide_dock();
                 crate::tray::make_tray();
                 return None;
             }
@@ -231,6 +243,8 @@ pub fn core_main() -> Option<Vec<String>> {
             #[cfg(feature = "flutter")]
             crate::flutter::connection_manager::start_listen_ipc_thread();
             crate::ui_interface::start_option_status_sync();
+            #[cfg(target_os = "macos")]
+            crate::platform::macos::hide_dock();
         }
     }
     //_async_logger_holder.map(|x| x.flush());
