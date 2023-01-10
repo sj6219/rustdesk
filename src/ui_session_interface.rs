@@ -400,6 +400,7 @@ impl<T: InvokeUiSession> Session<T> {
         name: &str,
         keycode: i32,
         scancode: i32,
+        lock_modes: i32,
         down_or_up: bool,
     ) {
         if scancode < 0 || keycode < 0 {
@@ -426,7 +427,7 @@ impl<T: InvokeUiSession> Session<T> {
             scan_code: scancode as _,
             event_type: event_type,
         };
-        keyboard::client::process_event(&event);
+        keyboard::client::process_event(&event, Some(lock_modes));
     }
 
     // flutter only TODO new input

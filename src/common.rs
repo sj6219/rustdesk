@@ -19,10 +19,9 @@ pub use arboard::Clipboard as ClipboardContext;
 use hbb_common::compress::decompress;
 use hbb_common::{
     allow_err,
-    anyhow::bail,
     compress::compress as compress_func,
     config::{self, Config, COMPRESS_LEVEL, RENDEZVOUS_TIMEOUT},
-    get_version_number, is_ipv6_str, log,
+    get_version_number, log,
     message_proto::*,
     protobuf::Enum,
     protobuf::Message as _,
@@ -57,7 +56,7 @@ lazy_static::lazy_static! {
 pub fn global_init() -> bool {
     #[cfg(target_os = "linux")]
     {
-        if !scrap::is_x11() {
+        if !*IS_X11 {
             crate::server::wayland::set_wayland_scrap_map_err();
         }
     }
@@ -313,15 +312,7 @@ async fn test_nat_type_() -> ResultType<bool> {
     let start = std::time::Instant::now();
     let (rendezvous_server, _, _) = get_rendezvous_server(1_000).await;
     let server1 = rendezvous_server;
-    let tmp: Vec<&str> = server1.split(":").collect();
-    if tmp.len() != 2 {
-        bail!("Invalid server address: {}", server1);
-    }
-    let port: u16 = tmp[1].parse()?;
-    if port == 0 {
-        bail!("Invalid server address: {}", server1);
-    }
-    let server2 = format!("{}:{}", tmp[0], port - 1);
+    let server2 = crate::increase_port(&server1, -1);
     let mut msg_out = RendezvousMessage::new();
     let serial = Config::get_serial();
     msg_out.set_test_nat_request(TestNatRequest {
@@ -384,13 +375,7 @@ pub async fn get_rendezvous_server(ms_timeout: u64) -> (String, Vec<String>, boo
     let (mut a, mut b) = get_rendezvous_server_(ms_timeout).await;
     let mut b: Vec<String> = b
         .drain(..)
-        .map(|x| {
-            if !x.contains(":") {
-                format!("{}:{}", x, config::RENDEZVOUS_PORT)
-            } else {
-                x
-            }
-        })
+        .map(|x| socket_client::check_port(x, config::RENDEZVOUS_PORT))
         .collect();
     let c = if b.contains(&a) {
         b = b.drain(..).filter(|x| x != &a).collect();
@@ -496,42 +481,12 @@ pub fn username() -> String {
 
 #[inline]
 pub fn check_port<T: std::string::ToString>(host: T, port: i32) -> String {
-    let host = host.to_string();
-    if is_ipv6_str(&host) {
-        if host.starts_with("[") {
-            return host;
-        }
-        return format!("[{}]:{}", host, port);
-    }
-    if !host.contains(":") {
-        return format!("{}:{}", host, port);
-    }
-    return host;
+    hbb_common::socket_client::check_port(host, port)
 }
 
 #[inline]
 pub fn increase_port<T: std::string::ToString>(host: T, offset: i32) -> String {
-    let host = host.to_string();
-    if is_ipv6_str(&host) {
-        if host.starts_with("[") {
-            let tmp: Vec<&str> = host.split("]:").collect();
-            if tmp.len() == 2 {
-                let port: i32 = tmp[1].parse().unwrap_or(0);
-                if port > 0 {
-                    return format!("{}]:{}", tmp[0], port + offset);
-                }
-            }
-        }
-    } else if host.contains(":") {
-        let tmp: Vec<&str> = host.split(":").collect();
-        if tmp.len() == 2 {
-            let port: i32 = tmp[1].parse().unwrap_or(0);
-            if port > 0 {
-                return format!("{}:{}", tmp[0], port + offset);
-            }
-        }
-    }
-    return host;
+    hbb_common::socket_client::increase_port(host, offset)
 }
 
 pub const POSTFIX_SERVICE: &'static str = "_service";
@@ -642,18 +597,13 @@ pub fn get_api_server(api: String, custom: String) -> String {
             return lic.api.clone();
         }
     }
-    let s = get_custom_rendezvous_server(custom);
-    if !s.is_empty() {
-        if s.contains(':') {
-            let tmp: Vec<&str> = s.split(":").collect();
-            if tmp.len() == 2 {
-                let port: u16 = tmp[1].parse().unwrap_or(0);
-                if port > 2 {
-                    return format!("http://{}:{}", tmp[0], port - 2);
-                }
-            }
+    let s0 = get_custom_rendezvous_server(custom);
+    if !s0.is_empty() {
+        let s = crate::increase_port(&s0, -2);
+        if s == s0 {
+            format!("http://{}:{}", s, config::RENDEZVOUS_PORT - 2);
         } else {
-            return format!("http://{}:{}", s, config::RENDEZVOUS_PORT - 2);
+            format!("http://{}", s);
         }
     }
     "https://admin.rustdesk.com".to_owned()
@@ -708,7 +658,7 @@ pub async fn post_request(url: String, body: String, header: &str) -> ResultType
         if !res.is_empty() {
             return Ok(res);
         }
-        bail!(String::from_utf8_lossy(&output.stderr).to_string());
+        hbb_common::bail!(String::from_utf8_lossy(&output.stderr).to_string());
     }
 }
 
@@ -730,13 +680,13 @@ pub fn make_privacy_mode_msg(state: back_notification::PrivacyModeState) -> Mess
 
 #[cfg(not(target_os = "linux"))]
 lazy_static::lazy_static! {
-    pub static ref IS_X11: Mutex<bool> = Mutex::new(false);
+    pub static ref IS_X11: bool = false;
 
 }
 
 #[cfg(target_os = "linux")]
 lazy_static::lazy_static! {
-    pub static ref IS_X11: Mutex<bool> = Mutex::new("x11" == hbb_common::platform::linux::get_display_server());
+    pub static ref IS_X11: bool = "x11" == hbb_common::platform::linux::get_display_server();
 }
 
 pub fn make_fd_to_json(id: i32, path: String, entries: &Vec<FileEntry>) -> String {
@@ -761,22 +711,4 @@ pub fn make_fd_to_json(id: i32, path: String, entries: &Vec<FileEntry>) -> Strin
 #[cfg(test)]
 mod test_common {
     use super::*;
-
-    #[test]
-    fn test_check_port() {
-        assert_eq!(check_port("[1:2]:12", 32), "[1:2]:12");
-        assert_eq!(check_port("1:2", 32), "[1:2]:32");
-        assert_eq!(check_port("z1:2", 32), "z1:2");
-        assert_eq!(check_port("1.1.1.1", 32), "1.1.1.1:32");
-        assert_eq!(check_port("1.1.1.1:32", 32), "1.1.1.1:32");
-        assert_eq!(check_port("test.com:32", 0), "test.com:32");
-        assert_eq!(increase_port("[1:2]:12", 1), "[1:2]:13");
-        assert_eq!(increase_port("1.2.2.4:12", 1), "1.2.2.4:13");
-        assert_eq!(increase_port("1.2.2.4", 1), "1.2.2.4");
-        assert_eq!(increase_port("test.com", 1), "test.com");
-        assert_eq!(increase_port("test.com:13", 4), "test.com:17");
-        assert_eq!(increase_port("1:13", 4), "1:13");
-        assert_eq!(increase_port("22:1:13", 4), "22:1:13");
-        assert_eq!(increase_port("z1:2", 1), "z1:3");
-    }
 }
