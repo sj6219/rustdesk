@@ -19,6 +19,7 @@ target/release/bundle/osx/RustDesk.app/Contents/Info.plist
   <key>LSUIElement</key>
   <string>1</string>
 
+python3 res/inline-sciter.py
 cargo build --release --features inline
 cp target/release/rustdesk ../Documents/RustDesk.app/Contents/MacOS/rustdesk 
 codesign -s "Developer ID Application" --force --options runtime  ../Documents/RustDesk.app/Contents/MacOS/*
