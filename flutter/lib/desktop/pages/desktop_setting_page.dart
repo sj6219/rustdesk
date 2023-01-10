@@ -1436,7 +1436,7 @@ Widget _lock(
 
 _LabeledTextField(
     BuildContext context,
-    String lable,
+    String label,
     TextEditingController controller,
     String errorText,
     bool enabled,
@@ -1447,7 +1447,7 @@ _LabeledTextField(
       Expanded(
         flex: 4,
         child: Text(
-          '${translate(lable)}:',
+          '${translate(label)}:',
           textAlign: TextAlign.right,
           style: TextStyle(color: _disabledTextColor(context, enabled)),
         ),
@@ -1460,6 +1460,8 @@ _LabeledTextField(
             enabled: enabled,
             obscureText: secure,
             decoration: InputDecoration(
+                isDense: true,
+                contentPadding: EdgeInsets.symmetric(vertical: 15),
                 errorText: errorText.isNotEmpty ? errorText : null),
             style: TextStyle(
               color: _disabledTextColor(context, enabled),
