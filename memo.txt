@@ -28,6 +28,11 @@ create-dmg  --window-size 1000 400  --app-drop-link 500 180 ../Documents/RustDes
 codesign -s "Developer ID Application" --force --options runtime ../Documents/RustDesk.dmg
 rcodesign notary-submit --api-key-path ~/.appstoreconnect/key.json --staple ../Documents/rustdesk.dmg
 
+rm rustdesk-1.2.0.dmg 
+codesign --force --options runtime -s "Developer ID Application" --deep ./flutter/build/macos/Build/Products/Release/rustdesk.app -v
+create-dmg --icon "rustdesk.app" 200 190 --hide-extension "rustdesk.app" --window-size 800 400 --app-drop-link 600 185 rustdesk-1.2.0.dmg ./flutter/build/macos/Build/Products/Release/rustdesk.app
+codesign --force --options runtime -s "Developer ID Application" --deep rustdesk-1.2.0.dmg -v
+
 csrutil disable
 file target\release\rustdesk
 sudo lsof -i -n -P | grep rustdesk     // netstat
