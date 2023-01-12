@@ -1,6 +1,7 @@
 #windows
 %comspec% /k "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsamd64_arm64.bat" 
-cargo build --release --features inline --target=aarch64-pc-windows-msvc -vv 
+python3 res/inline-sciter.py
+cargo build --release --features inline,with_rc --target=aarch64-pc-windows-msvc -vv 
 
 rustup update
 rustup target add aarch64-pc-windows-msvc
@@ -18,6 +19,7 @@ target/release/bundle/osx/RustDesk.app/Contents/Info.plist
   <key>LSUIElement</key>
   <string>1</string>
 
+python3 res/inline-sciter.py
 cargo build --release --features inline
 cp target/release/rustdesk ../Documents/RustDesk.app/Contents/MacOS/rustdesk 
 codesign -s "Developer ID Application" --force --options runtime  ../Documents/RustDesk.app/Contents/MacOS/*
@@ -27,6 +29,11 @@ create-dmg  --window-size 1000 400  --app-drop-link 500 180 ../Documents/RustDes
 codesign -s "Developer ID Application" --force --options runtime ../Documents/RustDesk.dmg
 rcodesign notary-submit --api-key-path ~/.appstoreconnect/key.json --staple ../Documents/rustdesk.dmg
 
+rm rustdesk-1.2.0.dmg 
+codesign --force --options runtime -s "Developer ID Application" --deep ./flutter/build/macos/Build/Products/Release/rustdesk.app -v
+create-dmg --icon "rustdesk.app" 200 190 --hide-extension "rustdesk.app" --window-size 800 400 --app-drop-link 600 185 rustdesk-1.2.0.dmg ./flutter/build/macos/Build/Products/Release/rustdesk.app
+codesign --force --options runtime -s "Developer ID Application" --deep rustdesk-1.2.0.dmg -v
+
 csrutil disable
 file target\release\rustdesk
 sudo lsof -i -n -P | grep rustdesk     // netstat
@@ -34,6 +41,9 @@ https://github.com/create-dmg/create-dmg
 security find-identity -p basic -v
 
 #android
+pushd flutter && flutter pub get && popd
+~/.cargo/bin/flutter_rust_bridge_codegen --rust-input ./src/flutter_ffi.rs --dart-output ./flutter/lib/generated_bridge.dart
+
 BINDGEN_EXTRA_CLANG_ARGS_aarch64_linux_android="--target=arm64-apple-macos --sysroot=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk" RUST_LOG=debug cargo ndk --platform 21 --target aarch64-linux-android rustc --lib --features flutter --release 
 cp target/aarch64-linux-android/release/liblibrustdesk.so flutter/android/app/src/main/jniLibs/arm64-v8a/librustdesk.so
 pushd flutter; flutter build apk --target-platform android-arm64 --release; popd

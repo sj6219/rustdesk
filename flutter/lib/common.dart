@@ -977,10 +977,10 @@ Future<bool> matchPeer(String searchText, Peer peer) async {
 
 /// Get the image for the current [platform].
 Widget getPlatformImage(String platform, {double size = 50}) {
-  platform = platform.toLowerCase();
-  if (platform == 'mac os') {
+  if (platform == kPeerPlatformMacOS) {
     platform = 'mac';
-  } else if (platform != 'linux' && platform != 'android') {
+  } else if (platform != kPeerPlatformLinux &&
+      platform != kPeerPlatformAndroid) {
     platform = 'win';
   }
   return SvgPicture.asset('assets/$platform.svg', height: size, width: size);
@@ -1367,7 +1367,7 @@ connect(BuildContext context, String id,
   }
 }
 
-Future<Map<String, String>> getHttpHeaders() async {
+Map<String, String> getHttpHeaders() {
   return {
     'Authorization': 'Bearer ${bind.mainGetLocalOption(key: 'access_token')}'
   };
@@ -1418,7 +1418,7 @@ bool isRunningInPortableMode() {
 }
 
 /// Window status callback
-void onActiveWindowChanged() async {
+Future<void> onActiveWindowChanged() async {
   print(
       "[MultiWindowHandler] active window changed: ${rustDeskWinManager.getActiveWindows()}");
   if (rustDeskWinManager.getActiveWindows().isEmpty) {

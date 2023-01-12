@@ -210,6 +210,11 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Always connect via relay", "Selalu terhubung melalui relai"),
         ("whitelist_tip", "Hanya whitelisted IP yang dapat mengakses saya"),
         ("Login", "Masuk"),
+        ("Verify", ""),
+        ("Remember me", ""),
+        ("Trust this device", ""),
+        ("Verification code", ""),
+        ("verification_tip", ""),
         ("Logout", "Keluar"),
         ("Tags", "Tag"),
         ("Search ID", "Cari ID"),
@@ -405,5 +410,8 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Closed manually by the web console", ""),
         ("Local keyboard type", ""),
         ("Select local keyboard type", ""),
+        ("software_render_tip", ""),
+        ("Always use software rendering", ""),
+        ("config_input", ""),
     ].iter().cloned().collect();
 }

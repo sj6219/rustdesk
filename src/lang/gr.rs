@@ -210,6 +210,11 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Always connect via relay", "Σύνδεση πάντα μέσω αναμετάδοσης"),
         ("whitelist_tip", "Μόνο οι IP της λίστας επιτρεπόμενων έχουν πρόσβαση"),
         ("Login", "Σύνδεση"),
+        ("Verify", ""),
+        ("Remember me", ""),
+        ("Trust this device", ""),
+        ("Verification code", ""),
+        ("verification_tip", ""),
         ("Logout", "Αποσύνδεση"),
         ("Tags", "Ετικέτες"),
         ("Search ID", "Αναζήτηση ID"),
@@ -405,5 +410,8 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Closed manually by the web console", ""),
         ("Local keyboard type", ""),
         ("Select local keyboard type", ""),
+        ("software_render_tip", ""),
+        ("Always use software rendering", ""),
+        ("config_input", ""),
     ].iter().cloned().collect();
 }

@@ -210,6 +210,11 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Always connect via relay", "Forcer la connexion relais"),
         ("whitelist_tip", "Seul l'IP dans la liste blanche peut accéder à mon appareil"),
         ("Login", "Connexion"),
+        ("Verify", ""),
+        ("Remember me", ""),
+        ("Trust this device", ""),
+        ("Verification code", ""),
+        ("verification_tip", ""),
         ("Logout", "Déconnexion"),
         ("Tags", "Étiqueter"),
         ("Search ID", "Rechercher un ID"),
@@ -405,5 +410,8 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Closed manually by the web console", "Fermé manuellement par la console Web"),
         ("Local keyboard type", "Disposition du clavier local"),
         ("Select local keyboard type", "Selectionner la disposition du clavier local"),
+        ("software_render_tip", ""),
+        ("Always use software rendering", ""),
+        ("config_input", ""),
     ].iter().cloned().collect();
 }

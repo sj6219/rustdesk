@@ -17,8 +17,8 @@ fn main() {
     common::global_clean();
 }
 
-#[cfg(not(any(target_os = "android", target_os = "ios", feature = "cli")))]
-fn main() {
+pub fn init()
+{
     #[cfg(debug_assertions)]
     {
         //..m!!!!!!!0
@@ -71,6 +71,13 @@ fn main() {
             winapi::um::winbase::DeregisterEventSource(event_log);
         }    
     }
+
+}
+
+#[cfg(not(any(target_os = "android", target_os = "ios", feature = "cli")))]
+fn main() {
+    
+    init();
 
     if !common::global_init() {
         return;
@@ -145,6 +152,7 @@ fn main() {
         let token = LocalConfig::get_option("access_token");
         cli::connect_test(p, key, token);
     } else if let Some(p) = matches.value_of("server") {
+        log::info!("id={}", hbb_common::config::Config::get_id());
         crate::start_server(true);
     }
     common::global_clean();

@@ -210,6 +210,11 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Always connect via relay", "一律透過轉送連線"),
         ("whitelist_tip", "只有白名單中的 IP 可以存取"),
         ("Login", "登入"),
+        ("Verify", ""),
+        ("Remember me", ""),
+        ("Trust this device", ""),
+        ("Verification code", ""),
+        ("verification_tip", ""),
         ("Logout", "登出"),
         ("Tags", "標籤"),
         ("Search ID", "搜尋 ID"),
@@ -405,5 +410,8 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Closed manually by the web console", "被web控制台手動關閉"),
         ("Local keyboard type", "本地鍵盤類型"),
         ("Select local keyboard type", "請選擇本地鍵盤類型"),
+        ("software_render_tip", "如果你使用英偉達顯卡, 並且遠程窗口在會話建立後會立刻關閉, 那麼安裝nouveau驅動並且選擇使用軟件渲染可能會有幫助。重啟軟件後生效。"),
+        ("Always use software rendering", "使用軟件渲染"),
+        ("config_input", ""),
     ].iter().cloned().collect();
 }
