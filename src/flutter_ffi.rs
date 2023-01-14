@@ -1211,13 +1211,6 @@ pub fn main_is_login_wayland() -> SyncReturn<bool> {
     SyncReturn(is_login_wayland())
 }
 
-pub fn main_init() -> SyncReturn<bool> {
-    //..
-    crate::main::init();
-    
-    SyncReturn(is_login_wayland())
-}
-
 #[cfg(target_os = "android")]
 pub mod server_side {
     use jni::{

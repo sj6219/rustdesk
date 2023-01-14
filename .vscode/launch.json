@@ -12,17 +12,19 @@
             //"args": ["--connect", "192.168.111.8"],
             "cwd": "${workspaceFolder}",
             "sourceLanguages": ["rust"],     
-            "cargo": {
-                "args": [
-                    "build",
-                    "--bin=rustdesk",
-                    "--package=rustdesk"
-                ],
-                "filter": {
-                    "name": "rustdesk",
-                    "kind": "bin"
-                }
-            },        
+            // "cargo": {
+            //     "args": [
+            //         "build",
+            //         "--bin=rustdesk",
+            //         "--package=rustdesk"
+            //     ],
+            //     "filter": {
+            //         "name": "rustdesk",
+            //         "kind": "bin"
+            //     }
+            // },        
+            "program" : "${workspaceFolder}/flutter/build/macos/Build/Products/Debug/rustdesk.app/Contents/MacOS/rustdesk",
+            //"program" : "/Applications/RustDesk.app/Contents/MacOS/rustdesk"
         //    "program" : "${workspaceFolder}/target/debug/rustdesk",
         //    "preLaunchTask": "build",   
         },

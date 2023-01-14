@@ -2,31 +2,43 @@
 	"version": "2.0.0",
 	"tasks": [
 		{
-			"label": "build",
-			"args": [
-				"build"
-			],
-			"command": "cargo",
-			"group": "build",
-			"problemMatcher": [
-				{
-					"owner": "rust",
-					"fileLocation": [
-						"relative",
-						"${workspaceRoot}"
-					],
-					"pattern": {
-						"regexp": "^(.*):(\\d+):(\\d+):\\s+(\\d+):(\\d+)\\s+(warning|error):\\s+(.*)$",
-						"file": 1,
-						"line": 2,
-						"column": 3,
-						"endLine": 4,
-						"endColumn": 5,
-						"severity": 6,
-						"message": 7
-					}
-				}
-			]
+			"label": "build flutter version",
+			"type" : "shell",
+			"command": "cargo build --features flutter --lib &&  cp target/debug/liblibrustdesk.dylib target/release/liblibrustdesk.dylib && pushd flutter && flutter build macos --debug && popd",
+			"options": {
+				"cwd": "${workspaceFolder}",
+				"env": { 
+					"MACOSX_DEPLOYMENT_TARGET" : "10.14",	
+				},
+			  },
 		},
+		// {
+		// 	"label": "build",
+		// 	"args": [
+		// 		"build"
+		// 	],
+		// 	"command": "cargo",
+		// 	"group": "build",
+		// 	"problemMatcher": [
+		// 		{
+		// 			"owner": "rust",
+		// 			"fileLocation": [
+		// 				"relative",
+		// 				"${workspaceRoot}"
+		// 			],
+		// 			"pattern": {
+		// 				"regexp": "^(.*):(\\d+):(\\d+):\\s+(\\d+):(\\d+)\\s+(warning|error):\\s+(.*)$",
+		// 				"file": 1,
+		// 				"line": 2,
+		// 				"column": 3,
+		// 				"endLine": 4,
+		// 				"endColumn": 5,
+		// 				"severity": 6,
+		// 				"message": 7
+		// 			}
+		// 		}
+		// 	]
+		// },
+
 	]
 }
