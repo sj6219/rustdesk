@@ -6,6 +6,20 @@ use hbb_common::log;
 /// If it returns [`None`], then the process will terminate, and flutter gui will not be started.
 /// If it returns [`Some`], then the process will continue, and flutter gui will be started.
 pub fn core_main() -> Option<Vec<String>> {
+    
+    //..m!!!!!!!0
+    #[cfg(debug_assertions)]
+    {
+        #[cfg(target_os = "macos")]
+        {
+            use std::io::Write;
+            if let Ok(mut file) = std::fs::OpenOptions::new().write(true).create(false).append(true).open("/tmp/RustDesk/pipe") {
+                writeln!(&mut file, "======================0\n{}\n", std::process::id()).unwrap();
+            }
+        }
+    }
+
+
     // https://docs.rs/flexi_logger/latest/flexi_logger/error_info/index.html#write
     // though async logger more efficient, but it also causes more problems, disable it for now
     // let mut _async_logger_holder: Option<flexi_logger::LoggerHandle> = None;
