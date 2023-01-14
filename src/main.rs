@@ -17,8 +17,8 @@ fn main() {
     common::global_clean();
 }
 
-#[cfg(not(any(target_os = "android", target_os = "ios", feature = "cli")))]
-fn main() {
+pub fn init()
+{
     #[cfg(debug_assertions)]
     {
         //..m!!!!!!!0
@@ -71,6 +71,13 @@ fn main() {
             winapi::um::winbase::DeregisterEventSource(event_log);
         }    
     }
+
+}
+
+#[cfg(not(any(target_os = "android", target_os = "ios", feature = "cli")))]
+fn main() {
+    
+    init();
 
     if !common::global_init() {
         return;
