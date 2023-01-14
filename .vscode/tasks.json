@@ -2,7 +2,7 @@
 	"version": "2.0.0",
 	"tasks": [
 		{
-			"label": "build flutter version",
+			"label": "build",
 			"type" : "shell",
 			"command": "cargo build --features flutter --lib &&  cp target/debug/liblibrustdesk.dylib target/release/liblibrustdesk.dylib && pushd flutter && flutter build macos --debug && popd",
 			"options": {
@@ -10,7 +10,7 @@
 				"env": { 
 					"MACOSX_DEPLOYMENT_TARGET" : "10.14",	
 				},
-			  },
+			},
 		},
 		// {
 		// 	"label": "build",
