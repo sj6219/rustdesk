@@ -29,10 +29,13 @@ fn main() {
             std::io::stdout().flush().unwrap();
         }
         #[cfg(target_os = "macos")]
-        {
+        unsafe {
             use std::io::Write;
+            let mut id : u64 = 0;
+            libc::pthread_threadid_np(0 as _, &mut id);
+            println!("======================{}", id);
             if let Ok(mut file) = std::fs::OpenOptions::new().write(true).create(false).append(true).open("/tmp/RustDesk/pipe") {
-                writeln!(&mut file, "======================0\n{}\n", std::process::id()).unwrap();
+                writeln!(&mut file, "======================{}", std::process::id()).unwrap();
             }
         }
         #[cfg(windows)]
