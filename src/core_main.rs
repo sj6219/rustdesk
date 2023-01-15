@@ -12,7 +12,7 @@ pub fn core_main() -> Option<Vec<String>> {
     {
         #[cfg(target_os = "macos")]
         {
-            unsafe { std::intrinsics::breakpoint(); }
+            // unsafe { std::intrinsics::breakpoint(); }
 
             use std::io::Write;
             let mut id : u64 = 0;
