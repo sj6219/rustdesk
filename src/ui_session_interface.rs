@@ -4,7 +4,7 @@ use crate::client::{
     input_os_password, load_config, send_mouse, start_video_audio_threads, FileManager, Key,
     LoginConfigHandler, QualityStatus, KEY_MAP,
 };
-use crate::common::GrabState;
+use crate::common::{self, is_keyboard_mode_supported, GrabState};
 use crate::keyboard;
 use crate::{client::Data, client::Interface};
 use async_trait::async_trait;
@@ -72,6 +72,10 @@ impl<T: InvokeUiSession> Session<T> {
 
     pub fn get_custom_image_quality(&self) -> Vec<i32> {
         self.lc.read().unwrap().custom_image_quality.clone()
+    }
+
+    pub fn get_peer_version(&self) -> i64 {
+        self.lc.read().unwrap().version.clone()
     }
 
     pub fn get_keyboard_mode(&self) -> String {
@@ -223,6 +227,11 @@ impl<T: InvokeUiSession> Session<T> {
 
     pub fn is_xfce(&self) -> bool {
         crate::platform::is_xfce()
+    }
+
+    pub fn get_supported_keyboard_modes(&self) -> Vec<KeyboardMode> {
+        let version = self.get_peer_version();
+        common::get_supported_keyboard_modes(version)
     }
 
     pub fn remove_port_forward(&self, port: i32) {
@@ -400,6 +409,7 @@ impl<T: InvokeUiSession> Session<T> {
         name: &str,
         keycode: i32,
         scancode: i32,
+        lock_modes: i32,
         down_or_up: bool,
     ) {
         if scancode < 0 || keycode < 0 {
@@ -426,7 +436,7 @@ impl<T: InvokeUiSession> Session<T> {
             scan_code: scancode as _,
             event_type: event_type,
         };
-        keyboard::client::process_event(&event);
+        keyboard::client::process_event(&event, Some(lock_modes));
     }
 
     // flutter only TODO new input
@@ -604,6 +614,14 @@ impl<T: InvokeUiSession> Session<T> {
             }
         }
         self.update_transfer_list();
+    }
+
+    pub fn elevate_direct(&self) {
+        self.send(Data::ElevateDirect);
+    }
+
+    pub fn elevate_with_logon(&self, username: String, password: String) {
+        self.send(Data::ElevateWithLogon(username, password));
     }
 }
 

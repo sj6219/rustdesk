@@ -8,7 +8,6 @@ import 'package:flutter_hbb/common.dart';
 import 'package:flutter_hbb/consts.dart';
 import 'package:flutter_hbb/desktop/pages/desktop_home_page.dart';
 import 'package:flutter_hbb/desktop/pages/desktop_tab_page.dart';
-import 'package:flutter_hbb/desktop/widgets/login.dart';
 import 'package:flutter_hbb/models/platform_model.dart';
 import 'package:flutter_hbb/models/server_model.dart';
 import 'package:get/get.dart';
@@ -18,6 +17,7 @@ import 'package:url_launcher/url_launcher_string.dart';
 import 'package:flutter_hbb/desktop/widgets/scroll_wrapper.dart';
 
 import '../../common/widgets/dialog.dart';
+import '../../common/widgets/login.dart';
 
 const double _kTabWidth = 235;
 const double _kTabHeight = 42;
@@ -1436,7 +1436,7 @@ Widget _lock(
 
 _LabeledTextField(
     BuildContext context,
-    String lable,
+    String label,
     TextEditingController controller,
     String errorText,
     bool enabled,
@@ -1447,7 +1447,7 @@ _LabeledTextField(
       Expanded(
         flex: 4,
         child: Text(
-          '${translate(lable)}:',
+          '${translate(label)}:',
           textAlign: TextAlign.right,
           style: TextStyle(color: _disabledTextColor(context, enabled)),
         ),
@@ -1460,6 +1460,8 @@ _LabeledTextField(
             enabled: enabled,
             obscureText: secure,
             decoration: InputDecoration(
+                isDense: true,
+                contentPadding: EdgeInsets.symmetric(vertical: 15),
                 errorText: errorText.isNotEmpty ? errorText : null),
             style: TextStyle(
               color: _disabledTextColor(context, enabled),
@@ -1669,8 +1671,8 @@ void changeSocks5Proxy() async {
         ),
       ),
       actions: [
-        TextButton(onPressed: close, child: Text(translate('Cancel'))),
-        TextButton(onPressed: submit, child: Text(translate('OK'))),
+        dialogButton('Cancel', onPressed: close, isOutline: true),
+        dialogButton('OK', onPressed: submit),
       ],
       onSubmit: submit,
       onCancel: close,

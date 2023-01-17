@@ -6,6 +6,25 @@ use hbb_common::log;
 /// If it returns [`None`], then the process will terminate, and flutter gui will not be started.
 /// If it returns [`Some`], then the process will continue, and flutter gui will be started.
 pub fn core_main() -> Option<Vec<String>> {
+    
+    //..m!!!!!!!0
+    #[cfg(debug_assertions)]
+    {
+        #[cfg(target_os = "macos")]
+        {
+            // unsafe { std::intrinsics::breakpoint(); }
+
+            use std::io::Write;
+            let mut id : u64 = 0;
+            unsafe { libc::pthread_threadid_np(0 as _, &mut id); }
+            println!("======================{}", id);
+            if let Ok(mut file) = std::fs::OpenOptions::new().write(true).create(false).append(true).open("/tmp/RustDesk/pipe") {
+                writeln!(&mut file, "======================{}", std::process::id()).unwrap();
+            }
+        }
+    }
+
+
     // https://docs.rs/flexi_logger/latest/flexi_logger/error_info/index.html#write
     // though async logger more efficient, but it also causes more problems, disable it for now
     // let mut _async_logger_holder: Option<flexi_logger::LoggerHandle> = None;
@@ -106,7 +125,8 @@ pub fn core_main() -> Option<Vec<String>> {
         && !_is_elevate
         && !_is_run_as_system
     {
-        if let Err(e) = crate::portable_service::client::start_portable_service() {
+        use crate::portable_service::client;
+        if let Err(e) = client::start_portable_service(client::StartPara::Direct) {
             log::error!("Failed to start portable service:{:?}", e);
         }
     }
@@ -193,6 +213,7 @@ pub fn core_main() -> Option<Vec<String>> {
             #[cfg(target_os = "macos")]
             {
                 std::thread::spawn(move || crate::start_server(true));
+                crate::platform::macos::hide_dock();
                 crate::tray::make_tray();
                 return None;
             }
@@ -242,6 +263,8 @@ pub fn core_main() -> Option<Vec<String>> {
             #[cfg(feature = "flutter")]
             crate::flutter::connection_manager::start_listen_ipc_thread();
             crate::ui_interface::start_option_status_sync();
+            #[cfg(target_os = "macos")]
+            crate::platform::macos::hide_dock();
         }
     }
     //_async_logger_holder.map(|x| x.flush());
