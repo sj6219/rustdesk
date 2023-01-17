@@ -1,5 +1,3 @@
-#![feature(core_intrinsics)]
-
 #[cfg(not(any(target_os = "ios")))]
 /// cbindgen:ignore
 pub mod platform;
