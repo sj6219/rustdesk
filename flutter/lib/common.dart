@@ -549,6 +549,10 @@ class OverlayDialogManager {
       hideMobileActionsOverlay();
     }
   }
+
+  bool existing(String tag) {
+    return _dialogs.keys.contains(tag);
+  }
 }
 
 void showToast(String text, {Duration timeout = const Duration(seconds: 2)}) {
@@ -609,8 +613,9 @@ class CustomAlertDialog extends StatelessWidget {
     Future.delayed(Duration.zero, () {
       if (!focusNode.hasFocus) focusNode.requestFocus();
     });
-    return Focus(
-      focusNode: focusNode,
+    FocusScopeNode scopeNode = FocusScopeNode();
+    return FocusScope(
+      node: scopeNode,
       autofocus: true,
       onKey: (node, key) {
         if (key.logicalKey == LogicalKeyboardKey.escape) {
@@ -622,6 +627,11 @@ class CustomAlertDialog extends StatelessWidget {
             key.logicalKey == LogicalKeyboardKey.enter) {
           if (key is RawKeyDownEvent) onSubmit?.call();
           return KeyEventResult.handled;
+        } else if (key.logicalKey == LogicalKeyboardKey.tab) {
+          if (key is RawKeyDownEvent) {
+            scopeNode.nextFocus();
+          }
+          return KeyEventResult.handled;
         }
         return KeyEventResult.ignored;
       },
@@ -630,8 +640,14 @@ class CustomAlertDialog extends StatelessWidget {
         title: title,
         contentPadding: EdgeInsets.symmetric(
             horizontal: contentPadding ?? 25, vertical: 10),
-        content:
-            ConstrainedBox(constraints: contentBoxConstraints, child: content),
+        content: ConstrainedBox(
+            constraints: contentBoxConstraints,
+            child: Theme(
+                data: ThemeData(
+                  inputDecorationTheme: InputDecorationTheme(
+                      isDense: true, contentPadding: EdgeInsets.all(15)),
+                ),
+                child: content)),
         actions: actions,
       ),
     );
@@ -664,24 +680,25 @@ void msgBox(String id, String type, String title, String text, String link,
 
   if (type != "connecting" && type != "success" && !type.contains("nook")) {
     hasOk = true;
-    buttons.insert(0, msgBoxButton(translate('OK'), submit));
+    buttons.insert(0, dialogButton('OK', onPressed: submit));
   }
   hasCancel ??= !type.contains("error") &&
       !type.contains("nocancel") &&
       type != "restarting";
   if (hasCancel) {
-    buttons.insert(0, msgBoxButton(translate('Cancel'), cancel));
+    buttons.insert(
+        0, dialogButton('Cancel', onPressed: cancel, isOutline: true));
   }
   // TODO: test this button
   if (type.contains("hasclose")) {
     buttons.insert(
         0,
-        msgBoxButton(translate('Close'), () {
+        dialogButton('Close', onPressed: () {
           dialogManager.dismissAll();
         }));
   }
   if (link.isNotEmpty) {
-    buttons.insert(0, msgBoxButton(translate('JumpLink'), jumplink));
+    buttons.insert(0, dialogButton('JumpLink', onPressed: jumplink));
   }
   dialogManager.show(
     (setState, close) => CustomAlertDialog(
@@ -983,7 +1000,7 @@ Widget getPlatformImage(String platform, {double size = 50}) {
       platform != kPeerPlatformAndroid) {
     platform = 'win';
   } else {
-      platform = platform.toLowerCase();
+    platform = platform.toLowerCase();
   }
   return SvgPicture.asset('assets/$platform.svg', height: size, width: size);
 }
@@ -1561,4 +1578,31 @@ class ServerConfig {
         relayServer = options['relay-server'] ?? "",
         apiServer = options['api-server'] ?? "",
         key = options['key'] ?? "";
+}
+
+Widget dialogButton(String text,
+    {required VoidCallback? onPressed,
+    bool isOutline = false,
+    TextStyle? style}) {
+  if (isDesktop) {
+    if (isOutline) {
+      return OutlinedButton(
+        onPressed: onPressed,
+        child: Text(translate(text), style: style),
+      );
+    } else {
+      return ElevatedButton(
+        style: ElevatedButton.styleFrom(elevation: 0),
+        onPressed: onPressed,
+        child: Text(translate(text), style: style),
+      );
+    }
+  } else {
+    return TextButton(
+        onPressed: onPressed,
+        child: Text(
+          translate(text),
+          style: style,
+        ));
+  }
 }
