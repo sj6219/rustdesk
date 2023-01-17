@@ -1908,6 +1908,8 @@ pub enum Data {
     AddJob((i32, String, String, i32, bool, bool)),
     ResumeJob((i32, bool)),
     RecordScreen(bool, i32, i32, String),
+    ElevateDirect,
+    ElevateWithLogon(String, String),
 }
 
 /// Keycode for key events.
