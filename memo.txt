@@ -14,14 +14,9 @@ reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution 
 pushd flutter && flutter pub get && popd
 ~/.cargo/bin/flutter_rust_bridge_codegen --rust-input ./src/flutter_ffi.rs --dart-output ./flutter/lib/generated_bridge.dart
 
-rm rustdesk-1.2.0.dmg 
 mv ./flutter/build/macos/Build/Products/Release/rustdesk.app ./flutter/build/macos/Build/Products/Release/RustDesk.app
 codesign --force --options runtime -s "Developer ID Application" --deep ./flutter/build/macos/Build/Products/Release/RustDesk.app -v
-create-dmg --icon "RustDesk.app" 200 190 --hide-extension "RustDesk.app" --window-size 800 400 --app-drop-link 600 185 rustdesk-1.2.0.dmg ./flutter/build/macos/Build/Products/Release/RustDesk.app
-codesign --force --options runtime -s "Developer ID Application" --deep rustdesk-1.2.0.dmg -v
-
-mv ./flutter/build/macos/Build/Products/Debug/rustdesk.app ./flutter/build/macos/Build/Products/Debug/RustDesk.app
-codesign --force --options runtime -s "Developer ID Application" --deep ./flutter/build/macos/Build/Products/Debug/RustDesk.app -v
+cp -r ./flutter/build/macos/Build/Products/Release/RustDesk.app /Applications/RustDesk.app
 
 cargo bundle --release --features inline
 cp libsciter.dylib target/release/bundle/osx/RustDesk.app/Contents/MacOS
