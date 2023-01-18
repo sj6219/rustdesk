@@ -16,6 +16,7 @@ pushd flutter && flutter pub get && popd
 
 mv ./flutter/build/macos/Build/Products/Release/rustdesk.app ./flutter/build/macos/Build/Products/Release/RustDesk.app
 codesign --force --options runtime -s "Developer ID Application" --deep ./flutter/build/macos/Build/Products/Release/RustDesk.app -v
+rm -r /Applications/RustDesk.app
 cp -r ./flutter/build/macos/Build/Products/Release/RustDesk.app /Applications/RustDesk.app
 
 cargo bundle --release --features inline
