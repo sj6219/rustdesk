@@ -18,9 +18,6 @@ mv ./flutter/build/macos/Build/Products/Release/rustdesk.app ./flutter/build/mac
 codesign --force --options runtime -s "Developer ID Application" --deep ./flutter/build/macos/Build/Products/Release/RustDesk.app -v
 cp -r ./flutter/build/macos/Build/Products/Release/RustDesk.app /Applications/RustDesk.app
 
-mv ./flutter/build/macos/Build/Products/Debug/rustdesk.app ./flutter/build/macos/Build/Products/Debug/RustDesk.app
-codesign --force --options runtime -s "Developer ID Application" --deep ./flutter/build/macos/Build/Products/Debug/RustDesk.app -v
-
 cargo bundle --release --features inline
 cp libsciter.dylib target/release/bundle/osx/RustDesk.app/Contents/MacOS
 mv target/release/bundle/osx/RustDesk.app/Contents/Resources/res/* target/release/bundle/osx/RustDesk.app/Contents/Resources
