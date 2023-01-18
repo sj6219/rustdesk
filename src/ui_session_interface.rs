@@ -491,7 +491,11 @@ impl<T: InvokeUiSession> Session<T> {
         shift: bool,
         command: bool,
     ) {
+
         //..m!!!!!!3.1
+        #[cfg(target_os = "macos")]
+        let (ctrl, command) = (command, ctrl);
+
         #[allow(unused_mut)]
         let mut command = command;
         #[cfg(windows)]
