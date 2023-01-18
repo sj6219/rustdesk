@@ -1671,20 +1671,6 @@ pub fn send_mouse(
     if check_scroll_on_mac(mask, x, y) {
         mouse_event.modifiers.push(ControlKey::Scroll.into());
     }
-    #[cfg(target_os = "macos")]
-    {
-        mouse_event.modifiers = mouse_event.modifiers.iter().map(|ck| {
-            let ck = ck.enum_value_or_default();
-            let ck = match ck {
-                ControlKey::Control => ControlKey::Meta,
-                ControlKey::Meta => ControlKey::Control,
-                ControlKey::RControl => ControlKey::Meta,
-                ControlKey::RWin => ControlKey::Control,
-                _ => ck,
-            };
-            hbb_common::protobuf::EnumOrUnknown::new(ck)
-        }).collect();
-    }
     //..m!!!!!!3.2
     msg_out.set_mouse_event(mouse_event);
     interface.send(Data::Message(msg_out));

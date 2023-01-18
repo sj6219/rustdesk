@@ -4,7 +4,7 @@
 		{
 			"label": "build",
 			"type" : "shell",
-			"command": "cargo build --features flutter --lib &&  cp target/debug/liblibrustdesk.dylib target/release/liblibrustdesk.dylib && pushd flutter && flutter build macos --debug && popd",
+			"command": "cargo build --features flutter --lib &&  cp target/debug/liblibrustdesk.dylib target/release/liblibrustdesk.dylib && pushd flutter && flutter build macos --debug && popd && cp -r ./flutter/build/macos/Build/Products/Debug/rustdesk.app ./flutter/build/macos/Build/Products/Release/RustDesk.app",
 			"command": "cargo build --features flutter --lib &&  cp target/debug/liblibrustdesk.dylib flutter/build/macos/Build/Products/Debug/rustdesk.app/Contents/Frameworks/liblibrustdesk.dylib",
 			//"command": "cargo build",
 			"options": {
