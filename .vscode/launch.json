@@ -45,7 +45,7 @@
             "request": "launch",
             "program" : "${workspaceFolder}/build.py",
             "args": [
-                //"--flutter",
+                "--portable",  "--flutter", // "--hwcodec",
             ],
             "justMyCode": false,
         },   
