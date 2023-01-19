@@ -100,6 +100,11 @@ def make_parser():
         help='Build rustdesk libs with the flatpak feature enabled'
     )
     parser.add_argument(
+        '--appimage',
+        action='store_true',
+        help='Build rustdesk libs with the appimage feature enabled'
+    )
+    parser.add_argument(
         '--skip-cargo',
         action='store_true',
         help='Skip cargo build process, only flutter version + Linux supported currently'
@@ -236,6 +241,8 @@ def get_features(args):
         features.append('flutter')
     if args.flatpak:
         features.append('flatpak')
+    if args.appimage:
+        features.append('appimage')
     print("features:", features)
     return features
 
@@ -305,7 +312,8 @@ def build_flutter_deb(version, features):
 
 def build_flutter_dmg(version, features):
     if not skip_cargo:
-        os.system(f'cargo build --features {features} --lib --release')
+        # set minimum osx build target, now is 10.14, which is the same as the flutter xcode project
+        os.system(f'MACOSX_DEPLOYMENT_TARGET=10.14 cargo build --features {features} --lib --release')
     # copy dylib
     os.system(
         "cp target/release/liblibrustdesk.dylib target/release/librustdesk.dylib")

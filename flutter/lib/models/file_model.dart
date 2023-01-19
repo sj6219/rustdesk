@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_hbb/common.dart';
+import 'package:flutter_hbb/consts.dart';
 import 'package:get/get.dart';
 import 'package:path/path.dart' as path;
 
@@ -347,7 +348,7 @@ class FileModel extends ChangeNotifier {
             id: parent.target?.id ?? "", name: "remote_show_hidden"))
         .isNotEmpty;
     _remoteOption.isWindows =
-        parent.target?.ffiModel.pi.platform.toLowerCase() == "windows";
+        parent.target?.ffiModel.pi.platform == kPeerPlatformWindows;
 
     await Future.delayed(Duration(milliseconds: 100));
 
@@ -664,14 +665,8 @@ class FileModel extends ChangeNotifier {
                   : const SizedBox.shrink()
             ]),
         actions: [
-          TextButton(
-              style: flatButtonStyle,
-              onPressed: cancel,
-              child: Text(translate("Cancel"))),
-          TextButton(
-              style: flatButtonStyle,
-              onPressed: submit,
-              child: Text(translate("OK"))),
+          dialogButton("Cancel", onPressed: cancel, isOutline: true),
+          dialogButton("OK", onPressed: submit),
         ],
         onSubmit: submit,
         onCancel: cancel,
@@ -723,18 +718,9 @@ class FileModel extends ChangeNotifier {
                   : const SizedBox.shrink()
             ]),
         actions: [
-          TextButton(
-              style: flatButtonStyle,
-              onPressed: cancel,
-              child: Text(translate("Cancel"))),
-          TextButton(
-              style: flatButtonStyle,
-              onPressed: () => close(null),
-              child: Text(translate("Skip"))),
-          TextButton(
-              style: flatButtonStyle,
-              onPressed: submit,
-              child: Text(translate("OK"))),
+          dialogButton("Cancel", onPressed: cancel, isOutline: true),
+          dialogButton("Skip", onPressed: () => close(null), isOutline: true),
+          dialogButton("OK", onPressed: submit),
         ],
         onSubmit: submit,
         onCancel: cancel,

@@ -374,7 +374,7 @@ class DesktopTab extends StatelessWidget {
                           width: 78,
                         )),
                     Offstage(
-                      offstage: kUseCompatibleUiMode,
+                      offstage: kUseCompatibleUiMode || Platform.isMacOS,
                       child: Row(children: [
                         Offstage(
                             offstage: !showLogo,
@@ -527,13 +527,19 @@ class WindowActionPanelState extends State<WindowActionPanel>
   void onWindowClose() async {
     // hide window on close
     if (widget.isMainWindow) {
+      await rustDeskWinManager.unregisterActiveWindow(0);
+      // `hide` must be placed after unregisterActiveWindow, because once all windows are hidden,
+      // flutter closes the application on macOS. We should ensure the post-run logic has ran successfully.
+      // e.g.: saving window position.
       await windowManager.hide();
-      rustDeskWinManager.unregisterActiveWindow(0);
     } else {
-      widget.onClose?.call();
+      // it's safe to hide the subwindow
       await WindowController.fromWindowId(windowId!).hide();
-      rustDeskWinManager
-          .call(WindowType.Main, kWindowEventHide, {"id": windowId!});
+      await Future.wait([
+        rustDeskWinManager
+            .call(WindowType.Main, kWindowEventHide, {"id": windowId!}),
+        widget.onClose?.call() ?? Future.microtask(() => null)
+      ]);
     }
     super.onWindowClose();
   }
@@ -549,7 +555,7 @@ class WindowActionPanelState extends State<WindowActionPanel>
           child: Row(
             children: [
               Offstage(
-                  offstage: !widget.showMinimize,
+                  offstage: !widget.showMinimize || Platform.isMacOS,
                   child: ActionIcon(
                     message: 'Minimize',
                     icon: IconFont.min,
@@ -563,7 +569,7 @@ class WindowActionPanelState extends State<WindowActionPanel>
                     isClose: false,
                   )),
               Offstage(
-                  offstage: !widget.showMaximize,
+                  offstage: !widget.showMaximize || Platform.isMacOS,
                   child: Obx(() => ActionIcon(
                         message:
                             widget.isMaximized.value ? "Restore" : "Maximize",
@@ -574,7 +580,7 @@ class WindowActionPanelState extends State<WindowActionPanel>
                         isClose: false,
                       ))),
               Offstage(
-                  offstage: !widget.showClose,
+                  offstage: !widget.showClose || Platform.isMacOS,
                   child: ActionIcon(
                     message: 'Close',
                     icon: IconFont.close,
@@ -681,8 +687,8 @@ Future<bool> closeConfirmDialog() async {
           ]),
       // confirm checkbox
       actions: [
-        TextButton(onPressed: close, child: Text(translate("Cancel"))),
-        ElevatedButton(onPressed: submit, child: Text(translate("OK"))),
+        dialogButton("Cancel", onPressed: close, isOutline: true),
+        dialogButton("OK", onPressed: submit),
       ],
       onSubmit: submit,
       onCancel: close,
@@ -900,7 +906,7 @@ class _TabState extends State<_Tab> with RestorationMixin {
                       children: [
                         _buildTabContent(),
                         Obx((() => _CloseButton(
-                              visiable: hover.value && widget.closable,
+                              visible: hover.value && widget.closable,
                               tabSelected: isSelected,
                               onClose: () => widget.onClose(),
                             )))
@@ -932,13 +938,13 @@ class _TabState extends State<_Tab> with RestorationMixin {
 }
 
 class _CloseButton extends StatelessWidget {
-  final bool visiable;
+  final bool visible;
   final bool tabSelected;
   final Function onClose;
 
   const _CloseButton({
     Key? key,
-    required this.visiable,
+    required this.visible,
     required this.tabSelected,
     required this.onClose,
   }) : super(key: key);
@@ -948,7 +954,7 @@ class _CloseButton extends StatelessWidget {
     return SizedBox(
         width: _kIconSize,
         child: Offstage(
-          offstage: !visiable,
+          offstage: !visible,
           child: InkWell(
             customBorder: const RoundedRectangleBorder(),
             onTap: () => onClose(),

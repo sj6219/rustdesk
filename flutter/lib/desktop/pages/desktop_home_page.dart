@@ -6,6 +6,7 @@ import 'package:auto_size_text/auto_size_text.dart';
 import 'package:flutter/material.dart' hide MenuItem;
 import 'package:flutter/services.dart';
 import 'package:flutter_hbb/common.dart';
+import 'package:flutter_hbb/common/widgets/custom_password.dart';
 import 'package:flutter_hbb/consts.dart';
 import 'package:flutter_hbb/desktop/pages/connection_page.dart';
 import 'package:flutter_hbb/desktop/pages/desktop_setting_page.dart';
@@ -42,6 +43,7 @@ class _DesktopHomePageState extends State<DesktopHomePage>
   var svcStopped = false.obs;
   var watchIsCanScreenRecording = false;
   var watchIsProcessTrust = false;
+  var watchIsInputMonitoring = false;
   Timer? _updateTimer;
 
   @override
@@ -334,6 +336,12 @@ class _DesktopHomePageState extends State<DesktopHomePage>
           bind.mainIsProcessTrusted(prompt: true);
           watchIsProcessTrust = true;
         }, help: 'Help', link: translate("doc_mac_permission"));
+      } else if (!bind.mainIsCanInputMonitoring(prompt: false)) {
+        return buildInstallCard("Permissions", "config_input", "Configure",
+            () async {
+          bind.mainIsCanInputMonitoring(prompt: true);
+          watchIsInputMonitoring = true;
+        }, help: 'Help', link: translate("doc_mac_permission"));
       } else if (!svcStopped.value &&
           bind.mainIsInstalled() &&
           !bind.mainIsInstalledDaemon(prompt: false)) {
@@ -467,6 +475,12 @@ class _DesktopHomePageState extends State<DesktopHomePage>
           setState(() {});
         }
       }
+      if (watchIsInputMonitoring) {
+        if (bind.mainIsCanInputMonitoring(prompt: false)) {
+          watchIsInputMonitoring = false;
+          setState(() {});
+        }
+      }
     });
     Get.put<RxBool>(svcStopped, tag: 'stop-service');
     rustDeskWinManager.registerActiveWindowListener(onActiveWindowChanged);
@@ -500,9 +514,9 @@ class _DesktopHomePageState extends State<DesktopHomePage>
       } else if (call.method == kWindowActionRebuild) {
         reloadCurrentWindow();
       } else if (call.method == kWindowEventShow) {
-        rustDeskWinManager.registerActiveWindow(call.arguments["id"]);
+        await rustDeskWinManager.registerActiveWindow(call.arguments["id"]);
       } else if (call.method == kWindowEventHide) {
-        rustDeskWinManager.unregisterActiveWindow(call.arguments["id"]);
+        await rustDeskWinManager.unregisterActiveWindow(call.arguments["id"]);
       } else if (call.method == kWindowConnect) {
         await connectMainDesktop(
           call.arguments['id'],
@@ -530,6 +544,14 @@ void setPasswordDialog() async {
   final p1 = TextEditingController(text: pw);
   var errMsg0 = "";
   var errMsg1 = "";
+  final RxString rxPass = p0.text.obs;
+  final rules = [
+    DigitValidationRule(),
+    UppercaseValidationRule(),
+    LowercaseValidationRule(),
+    // SpecialCharacterValidationRule(),
+    MinCharactersValidationRule(8),
+  ];
 
   gFFI.dialogManager.show((setState, close) {
     submit() {
@@ -538,15 +560,20 @@ void setPasswordDialog() async {
         errMsg1 = "";
       });
       final pass = p0.text.trim();
-      if (pass.length < 6 && pass.isNotEmpty) {
-        setState(() {
-          errMsg0 = translate("Too short, at least 6 characters.");
-        });
-        return;
+      if (pass.isNotEmpty) {
+        for (var r in rules) {
+          if (!r.validate(pass)) {
+            setState(() {
+              errMsg0 = '${translate('Prompt')}: ${r.name}';
+            });
+            return;
+          }
+        }
       }
       if (p1.text.trim() != pass) {
         setState(() {
-          errMsg1 = translate("The confirmation is not identical.");
+          errMsg1 =
+              '${translate('Prompt')}: ${translate("The confirmation is not identical.")}';
         });
         return;
       }
@@ -566,23 +593,40 @@ void setPasswordDialog() async {
             ),
             Row(
               children: [
-                ConstrainedBox(
-                    constraints: const BoxConstraints(minWidth: 100),
-                    child: Text(
-                      "${translate('Password')}:",
-                      textAlign: TextAlign.start,
-                    ).marginOnly(bottom: 16.0)),
-                const SizedBox(
-                  width: 24.0,
+                Expanded(
+                  child: TextField(
+                    obscureText: true,
+                    decoration: InputDecoration(
+                        labelText: translate('Password'),
+                        border: const OutlineInputBorder(),
+                        errorText: errMsg0.isNotEmpty ? errMsg0 : null),
+                    controller: p0,
+                    focusNode: FocusNode()..requestFocus(),
+                    onChanged: (value) {
+                      rxPass.value = value;
+                    },
+                  ),
                 ),
+              ],
+            ),
+            Row(
+              children: [
+                Expanded(child: PasswordStrengthIndicator(password: rxPass)),
+              ],
+            ).marginSymmetric(vertical: 8),
+            const SizedBox(
+              height: 8.0,
+            ),
+            Row(
+              children: [
                 Expanded(
                   child: TextField(
                     obscureText: true,
                     decoration: InputDecoration(
                         border: const OutlineInputBorder(),
-                        errorText: errMsg0.isNotEmpty ? errMsg0 : null),
-                    controller: p0,
-                    focusNode: FocusNode()..requestFocus(),
+                        labelText: translate('Confirmation'),
+                        errorText: errMsg1.isNotEmpty ? errMsg1 : null),
+                    controller: p1,
                   ),
                 ),
               ],
@@ -590,32 +634,30 @@ void setPasswordDialog() async {
             const SizedBox(
               height: 8.0,
             ),
-            Row(
-              children: [
-                ConstrainedBox(
-                    constraints: const BoxConstraints(minWidth: 100),
-                    child: Text("${translate('Confirmation')}:")
-                        .marginOnly(bottom: 16.0)),
-                const SizedBox(
-                  width: 24.0,
-                ),
-                Expanded(
-                  child: TextField(
-                    obscureText: true,
-                    decoration: InputDecoration(
-                        border: const OutlineInputBorder(),
-                        errorText: errMsg1.isNotEmpty ? errMsg1 : null),
-                    controller: p1,
-                  ),
-                ),
-              ],
-            ),
+            Obx(() => Wrap(
+                  runSpacing: 8,
+                  spacing: 4,
+                  children: rules.map((e) {
+                    var checked = e.validate(rxPass.value.trim());
+                    return Chip(
+                        label: Text(
+                          e.name,
+                          style: TextStyle(
+                              color: checked
+                                  ? const Color(0xFF0A9471)
+                                  : Color.fromARGB(255, 198, 86, 157)),
+                        ),
+                        backgroundColor: checked
+                            ? const Color(0xFFD0F7ED)
+                            : Color.fromARGB(255, 247, 205, 232));
+                  }).toList(),
+                ))
           ],
         ),
       ),
       actions: [
-        TextButton(onPressed: close, child: Text(translate("Cancel"))),
-        TextButton(onPressed: submit, child: Text(translate("OK"))),
+        dialogButton("Cancel", onPressed: close, isOutline: true),
+        dialogButton("OK", onPressed: submit),
       ],
       onSubmit: submit,
       onCancel: close,

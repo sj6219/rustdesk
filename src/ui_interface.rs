@@ -583,6 +583,14 @@ pub fn is_installed_daemon(_prompt: bool) -> bool {
 }
 
 #[inline]
+pub fn is_can_input_monitoring(_prompt: bool) -> bool {
+    #[cfg(target_os = "macos")]
+    return crate::platform::macos::is_can_input_monitoring(_prompt);
+    #[cfg(not(target_os = "macos"))]
+    return true;
+}
+
+#[inline]
 pub fn get_error() -> String {
     #[cfg(not(any(feature = "cli")))]
     #[cfg(target_os = "linux")]
@@ -928,7 +936,7 @@ pub fn account_auth_result() -> String {
     serde_json::to_string(&account::OidcSession::get_result()).unwrap_or_default()
 }
 
-// notice: avoiding create ipc connecton repeatly,
+// notice: avoiding create ipc connection repeatedly,
 // because windows named pipe has serious memory leak issue.
 #[tokio::main(flavor = "current_thread")]
 async fn check_connect_status_(reconnect: bool, rx: mpsc::UnboundedReceiver<ipc::Data>) {
