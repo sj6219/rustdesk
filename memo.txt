@@ -1,9 +1,12 @@
 #windows
-%comspec% /k "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsamd64_arm64.bat" 
 python3 res/inline-sciter.py
 cargo build --release --features inline,with_rc --target=aarch64-pc-windows-msvc -vv 
 
-rustup update
+Push-Location flutter ; flutter pub get ; Pop-Location
+~/.cargo/bin/flutter_rust_bridge_codegen --rust-input ./src/flutter_ffi.rs --dart-output ./flutter/lib/generated_bridge.dart
+
+%comspec% /k "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsamd64_arm64.bat" 
+Srustup update
 rustup target add aarch64-pc-windows-msvc
 rustup target list
 	
