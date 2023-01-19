@@ -23,7 +23,7 @@
             //         "kind": "bin"
             //     }
             // },        
-            "program" : "${workspaceFolder}/flutter/build/macos/Build/Products/Debug/rustdesk.app/Contents/MacOS/rustdesk",
+            "program" : "${workspaceFolder}/flutter/build/macos/Build/Products/Release/RustDesk.app/Contents/MacOS/rustdesk",
             //"program" : "${workspaceFolder}/target/debug/rustdesk",
             //"program" : "/Applications/RustDesk.app/Contents/MacOS/rustdesk"
         //    "preLaunchTask": "build",   
