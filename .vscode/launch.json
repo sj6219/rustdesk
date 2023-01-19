@@ -6,7 +6,7 @@
     "configurations": [
         {
             "name": "Android",
-            "type": "android-debug",
+            "type": "android-debug", // https://github.com/nisargjhaveri/vscode-android-debug
             "request": "attach",
             "target": "select",
             "pid": "${command:pickAndroidProcess}",
