@@ -7,11 +7,14 @@ use std::{
 use flutter_rust_bridge::{StreamSink, SyncReturn, ZeroCopyBuffer};
 use serde_json::json;
 
+use crate::common::is_keyboard_mode_supported;
+use hbb_common::message_proto::KeyboardMode;
 use hbb_common::ResultType;
 use hbb_common::{
     config::{self, LocalConfig, PeerConfig, ONLINE},
     fs, log,
 };
+use std::str::FromStr;
 
 // use crate::hbbs_http::account::AuthResult;
 
@@ -254,6 +257,21 @@ pub fn session_get_custom_image_quality(id: String) -> Option<Vec<i32>> {
     }
 }
 
+pub fn session_is_keyboard_mode_supported(id: String, mode: String) -> SyncReturn<bool> {
+    if let Some(session) = SESSIONS.read().unwrap().get(&id) {
+        if let Ok(mode) = KeyboardMode::from_str(&mode[..]) {
+            SyncReturn(is_keyboard_mode_supported(
+                &mode,
+                session.get_peer_version(),
+            ))
+        } else {
+            SyncReturn(false)
+        }
+    } else {
+        SyncReturn(false)
+    }
+}
+
 pub fn session_set_custom_image_quality(id: String, value: i32) {
     if let Some(session) = SESSIONS.write().unwrap().get_mut(&id) {
         session.save_custom_image_quality(value);
@@ -471,6 +489,18 @@ pub fn session_add_job(
 pub fn session_resume_job(id: String, act_id: i32, is_remote: bool) {
     if let Some(session) = SESSIONS.read().unwrap().get(&id) {
         session.resume_job(act_id, is_remote);
+    }
+}
+
+pub fn session_elevate_direct(id: String) {
+    if let Some(session) = SESSIONS.read().unwrap().get(&id) {
+        session.elevate_direct();
+    }
+}
+
+pub fn session_elevate_with_logon(id: String, username: String, password: String) {
+    if let Some(session) = SESSIONS.read().unwrap().get(&id) {
+        session.elevate_with_logon(username, password);
     }
 }
 
@@ -1190,13 +1220,6 @@ pub fn main_current_is_wayland() -> SyncReturn<bool> {
 }
 
 pub fn main_is_login_wayland() -> SyncReturn<bool> {
-    SyncReturn(is_login_wayland())
-}
-
-pub fn main_init() -> SyncReturn<bool> {
-    //..
-    crate::main::init();
-    
     SyncReturn(is_login_wayland())
 }
 

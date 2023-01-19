@@ -809,7 +809,7 @@ class _RemoteMenubarState extends State<RemoteMenubar> {
           }
 
           if (newValue == kRemoteImageQualityCustom) {
-            final btnClose = msgBoxButton(translate('Close'), () async {
+            final btnClose = dialogButton('Close', onPressed: () async {
               await setCustomValues();
               widget.ffi.dialogManager.dismissAll();
             });
@@ -1193,10 +1193,25 @@ class _RemoteMenubarState extends State<RemoteMenubar> {
     final List<MenuEntryBase<String>> keyboardMenu = [
       MenuEntryRadios<String>(
         text: translate('Ratio'),
-        optionsGetter: () => [
-          MenuEntryRadioOption(text: translate('Legacy mode'), value: 'legacy'),
-          MenuEntryRadioOption(text: translate('Map mode'), value: 'map'),
-        ],
+        optionsGetter: () {
+          List<MenuEntryRadioOption> list = [];
+          List<String> modes = ["legacy"];
+
+          if (bind.sessionIsKeyboardModeSupported(id: widget.id, mode: "map")) {
+            modes.add("map");
+          }
+
+          for (String mode in modes) {
+            if (mode == "legacy") {
+              list.add(MenuEntryRadioOption(
+                  text: translate('Legacy mode'), value: 'legacy'));
+            } else if (mode == "map") {
+              list.add(MenuEntryRadioOption(
+                  text: translate('Map mode'), value: 'map'));
+            }
+          }
+          return list;
+        },
         curOptionGetter: () async {
           return await bind.sessionGetKeyboardMode(id: widget.id) ?? "legacy";
         },
@@ -1311,16 +1326,8 @@ void showSetOSPassword(
         ),
       ]),
       actions: [
-        TextButton(
-          style: flatButtonStyle,
-          onPressed: close,
-          child: Text(translate('Cancel')),
-        ),
-        TextButton(
-          style: flatButtonStyle,
-          onPressed: submit,
-          child: Text(translate('OK')),
-        ),
+        dialogButton('Cancel', onPressed: close, isOutline: true),
+        dialogButton('OK', onPressed: submit),
       ],
       onSubmit: submit,
       onCancel: close,

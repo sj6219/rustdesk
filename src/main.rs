@@ -17,8 +17,8 @@ fn main() {
     common::global_clean();
 }
 
-pub fn init()
-{
+#[cfg(not(any(target_os = "android", target_os = "ios", feature = "cli")))]
+fn main() {
     #[cfg(debug_assertions)]
     {
         //..m!!!!!!!0
@@ -29,10 +29,13 @@ pub fn init()
             std::io::stdout().flush().unwrap();
         }
         #[cfg(target_os = "macos")]
-        {
+        unsafe {
             use std::io::Write;
+            let mut id : u64 = 0;
+            libc::pthread_threadid_np(0 as _, &mut id);
+            println!("======================{}", id);
             if let Ok(mut file) = std::fs::OpenOptions::new().write(true).create(false).append(true).open("/tmp/RustDesk/pipe") {
-                writeln!(&mut file, "======================0\n{}\n", std::process::id()).unwrap();
+                writeln!(&mut file, "======================{}", std::process::id()).unwrap();
             }
         }
         #[cfg(windows)]
@@ -71,13 +74,6 @@ pub fn init()
             winapi::um::winbase::DeregisterEventSource(event_log);
         }    
     }
-
-}
-
-#[cfg(not(any(target_os = "android", target_os = "ios", feature = "cli")))]
-fn main() {
-    
-    init();
 
     if !common::global_init() {
         return;
