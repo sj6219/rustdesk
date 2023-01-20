@@ -25,7 +25,7 @@
             // },        
             "program" : "${workspaceFolder}/flutter/build/macos/Build/Products/Release/RustDesk.app/Contents/MacOS/RustDesk",
             //"program" : "${workspaceFolder}/target/debug/rustdesk",
-            //"program" : "/Applications/RustDesk.app/Contents/MacOS/rustdesk"
+            //"program" : "/Applications/RustDesk.app/Contents/MacOS/RustDesk"
         //    "preLaunchTask": "build",   
         },
         {
