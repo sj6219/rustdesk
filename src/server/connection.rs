@@ -1156,8 +1156,6 @@ impl Connection {
     }
 
     async fn handle_login_request_without_validation(&mut self, lr: &LoginRequest) {
-        //..m::::::4
-        //..a::::::4.1
         self.lr = lr.clone();
         if let Some(o) = lr.option.as_ref() {
             self.update_option(o).await;
@@ -1183,6 +1181,8 @@ impl Connection {
 
     async fn on_message(&mut self, msg: Message) -> bool {
         if let Some(message::Union::LoginRequest(lr)) = msg.union {
+            //..m::::::4
+            //..a::::::4.1
             self.handle_login_request_without_validation(&lr).await;
             if self.authorized {
                 return true;
