@@ -57,7 +57,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Not available", "No disponible"),
         ("Too frequent", "Demasiado frecuente"),
         ("Cancel", "Cancelar"),
-        ("Skip", "Saltar"),
+        ("Skip", "Omitir"),
         ("Close", "Cerrar"),
         ("Retry", "Reintentar"),
         ("OK", ""),
@@ -431,5 +431,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Weak", "Débil"),
         ("Medium", "Media"),
         ("Strong", "Fuerte"),
+        ("Switch Sides", "Intercambiar lados"),
+        ("Please confirm if you want to share your desktop?", "Por favor, confirma si quieres compartir tu escritorio"),
     ].iter().cloned().collect();
 }
