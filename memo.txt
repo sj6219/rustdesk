@@ -34,10 +34,8 @@ cargo build --release --features inline
 cp target/release/rustdesk ../Documents/RustDesk.app/Contents/MacOS/rustdesk 
 codesign -s "Developer ID Application" --force --options runtime  ../Documents/RustDesk.app/Contents/MacOS/*
 codesign -s "Developer ID Application" --force --options runtime  ../Documents/RustDesk.app
-rm ../Documents/RustDesk.dmg
-create-dmg  --window-size 1000 400  --app-drop-link 500 180 ../Documents/RustDesk.dmg ../Documents/RustDesk.app
-codesign -s "Developer ID Application" --force --options runtime ../Documents/RustDesk.dmg
-rcodesign notary-submit --api-key-path ~/.appstoreconnect/key.json --staple ../Documents/rustdesk.dmg
+rm -r /Applications/RustDesk.app
+cp -r ../Documents/RustDesk.app /Applications/RustDesk.app
 
 csrutil disable
 file target\release\rustdesk
