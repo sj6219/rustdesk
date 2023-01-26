@@ -23,7 +23,8 @@
             //         "kind": "bin"
             //     }
             // },        
-            "program": "${workspaceFolder}/target/debug/rustdesk.exe",
+            "program": "${workspaceFolder}/flutter/build/windows/runner/Release/rustdesk.exe",
+            //"program": "${workspaceFolder}/target/debug/rustdesk.exe",
             //"preLaunchTask": "build",   
         },
         {
