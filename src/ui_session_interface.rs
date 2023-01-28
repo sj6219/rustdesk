@@ -4,11 +4,13 @@ use crate::client::{
     input_os_password, load_config, send_mouse, start_video_audio_threads, FileManager, Key,
     LoginConfigHandler, QualityStatus, KEY_MAP,
 };
-use crate::common::{self, is_keyboard_mode_supported, GrabState};
+use crate::common::{self, GrabState};
 use crate::keyboard;
+use crate::ui_interface::using_public_server;
 use crate::{client::Data, client::Interface};
 use async_trait::async_trait;
-use hbb_common::config::{Config, LocalConfig, PeerConfig};
+use bytes::Bytes;
+use hbb_common::config::{Config, LocalConfig, PeerConfig, RS_PUB_KEY};
 use hbb_common::rendezvous_proto::ConnType;
 use hbb_common::tokio::{self, sync::mpsc};
 use hbb_common::{allow_err, message_proto::*};
@@ -16,8 +18,10 @@ use hbb_common::{fs, get_version_number, log, Stream};
 use rdev::{Event, EventType::*};
 use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
+use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
+use uuid::Uuid;
 pub static IS_IN: AtomicBool = AtomicBool::new(false);
 
 #[derive(Clone, Default)]
@@ -491,7 +495,11 @@ impl<T: InvokeUiSession> Session<T> {
         shift: bool,
         command: bool,
     ) {
+
         //..m!!!!!!3.1
+        #[cfg(target_os = "macos")]
+        let (ctrl, command) = (command, ctrl);
+
         #[allow(unused_mut)]
         let mut command = command;
         #[cfg(windows)]
@@ -623,6 +631,40 @@ impl<T: InvokeUiSession> Session<T> {
     pub fn elevate_with_logon(&self, username: String, password: String) {
         self.send(Data::ElevateWithLogon(username, password));
     }
+
+    #[tokio::main(flavor = "current_thread")]
+    pub async fn switch_sides(&self) {
+        match crate::ipc::connect(1000, "").await {
+            Ok(mut conn) => {
+                if conn
+                    .send(&crate::ipc::Data::SwitchSidesRequest(self.id.to_string()))
+                    .await
+                    .is_ok()
+                {
+                    if let Ok(Some(data)) = conn.next_timeout(1000).await {
+                        match data {
+                            crate::ipc::Data::SwitchSidesRequest(str_uuid) => {
+                                if let Ok(uuid) = Uuid::from_str(&str_uuid) {
+                                    let mut misc = Misc::new();
+                                    misc.set_switch_sides_request(SwitchSidesRequest {
+                                        uuid: Bytes::from(uuid.as_bytes().to_vec()),
+                                        ..Default::default()
+                                    });
+                                    let mut msg_out = Message::new();
+                                    msg_out.set_misc(misc);
+                                    self.send(Data::Message(msg_out));
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+            Err(err) => {
+                log::info!("server not started (will try to start): {}", err);
+            }
+        }
+    }
 }
 
 pub trait InvokeUiSession: Send + Sync + Clone + 'static + Sized + Default {
@@ -662,6 +704,7 @@ pub trait InvokeUiSession: Send + Sync + Clone + 'static + Sized + Default {
     #[cfg(any(target_os = "android", target_os = "ios"))]
     fn clipboard(&self, content: String);
     fn cancel_msgbox(&self, tag: &str);
+    fn switch_back(&self, id: &str);
 }
 
 impl<T: InvokeUiSession> Deref for Session<T> {
@@ -787,10 +830,10 @@ impl<T: InvokeUiSession> Interface for Session<T> {
 
 impl<T: InvokeUiSession> Session<T> {
     pub fn lock_screen(&self) {
-        crate::keyboard::client::lock_screen();
+        self.send_key_event(&crate::keyboard::client::event_lock_screen());
     }
     pub fn ctrl_alt_del(&self) {
-        crate::keyboard::client::ctrl_alt_del();
+        self.send_key_event(&crate::keyboard::client::event_ctrl_alt_del());
     }
 }
 
@@ -803,6 +846,9 @@ pub async fn io_loop<T: InvokeUiSession>(handler: Session<T>) {
     let token = LocalConfig::get_option("access_token");
     if key.is_empty() {
         key = crate::platform::get_license_key();
+    }
+    if key.is_empty() && !option_env!("RENDEZVOUS_SERVER").unwrap_or("").is_empty() {
+        key = RS_PUB_KEY.to_owned();
     }
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     if handler.is_port_forward() {

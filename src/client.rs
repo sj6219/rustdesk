@@ -1,4 +1,5 @@
 pub use async_trait::async_trait;
+use bytes::Bytes;
 #[cfg(not(any(target_os = "android", target_os = "linux")))]
 use cpal::{
     traits::{DeviceTrait, HostTrait, StreamTrait},
@@ -7,10 +8,10 @@ use cpal::{
 use magnum_opus::{Channels::*, Decoder as AudioDecoder};
 use sha2::{Digest, Sha256};
 use std::{
-    str::FromStr,
     collections::HashMap,
     net::SocketAddr,
     ops::{Deref, Not},
+    str::FromStr,
     sync::{atomic::AtomicBool, mpsc, Arc, Mutex, RwLock},
 };
 use uuid::Uuid;
@@ -178,6 +179,13 @@ impl Client {
                     RENDEZVOUS_TIMEOUT,
                 )
                 .await?,
+                true,
+            ));
+        }
+        // Allow connect to {domain}:{port}
+        if hbb_common::is_domain_port_str(peer) {
+            return Ok((
+                socket_client::connect_tcp(peer, RENDEZVOUS_TIMEOUT).await?,
                 true,
             ));
         }
@@ -902,6 +910,7 @@ pub struct LoginConfigHandler {
     pub force_relay: bool,
     pub direct: Option<bool>,
     pub received: bool,
+    switch_uuid: Option<String>,
 }
 
 impl Deref for LoginConfigHandler {
@@ -929,7 +938,7 @@ impl LoginConfigHandler {
     ///
     /// * `id` - id of peer
     /// * `conn_type` - Connection type enum.
-    pub fn initialize(&mut self, id: String, conn_type: ConnType) {
+    pub fn initialize(&mut self, id: String, conn_type: ConnType, switch_uuid: Option<String>) {
         self.id = id;
         self.conn_type = conn_type;
         let config = self.load_config();
@@ -941,6 +950,7 @@ impl LoginConfigHandler {
         self.force_relay = !self.get_option("force-always-relay").is_empty();
         self.direct = None;
         self.received = false;
+        self.switch_uuid = switch_uuid;
     }
 
     /// Check if the client should auto login.
@@ -1671,20 +1681,6 @@ pub fn send_mouse(
     if check_scroll_on_mac(mask, x, y) {
         mouse_event.modifiers.push(ControlKey::Scroll.into());
     }
-    #[cfg(target_os = "macos")]
-    {
-        mouse_event.modifiers = mouse_event.modifiers.iter().map(|ck| {
-            let ck = ck.enum_value_or_default();
-            let ck = match ck {
-                ControlKey::Control => ControlKey::Meta,
-                ControlKey::Meta => ControlKey::Control,
-                ControlKey::RControl => ControlKey::Meta,
-                ControlKey::RWin => ControlKey::Control,
-                _ => ck,
-            };
-            hbb_common::protobuf::EnumOrUnknown::new(ck)
-        }).collect();
-    }
     //..m!!!!!!3.2
     msg_out.set_mouse_event(mouse_event);
     interface.send(Data::Message(msg_out));
@@ -1795,6 +1791,14 @@ pub async fn handle_hash(
     interface: &impl Interface,
     peer: &mut Stream,
 ) {
+    lc.write().unwrap().hash = hash.clone();
+    let uuid = lc.read().unwrap().switch_uuid.clone();
+    if let Some(uuid) = uuid {
+        if let Ok(uuid) = uuid::Uuid::from_str(&uuid) {
+            send_switch_login_request(lc.clone(), peer, uuid).await;
+            return;
+        }
+    }
     let mut password = lc.read().unwrap().password.clone();
     if password.is_empty() {
         if !password_preset.is_empty() {
@@ -1857,6 +1861,26 @@ pub async fn handle_login_from_ui(
     hasher2.update(&res[..]);
     hasher2.update(&lc.read().unwrap().hash.challenge);
     send_login(lc.clone(), hasher2.finalize()[..].into(), peer).await;
+}
+
+async fn send_switch_login_request(
+    lc: Arc<RwLock<LoginConfigHandler>>,
+    peer: &mut Stream,
+    uuid: Uuid,
+) {
+    let mut msg_out = Message::new();
+    msg_out.set_switch_sides_response(SwitchSidesResponse {
+        uuid: Bytes::from(uuid.as_bytes().to_vec()),
+        lr: hbb_common::protobuf::MessageField::some(
+            lc.read()
+                .unwrap()
+                .create_login_msg(vec![])
+                .login_request()
+                .to_owned(),
+        ),
+        ..Default::default()
+    });
+    allow_err!(peer.send(&msg_out).await);
 }
 
 /// Interface for client to send data and commands.

@@ -839,6 +839,11 @@ pub fn check_update_broker_process() -> ResultType<()> {
     let cur_dir = exe_file.parent().unwrap();
     let cur_exe = cur_dir.join(process_exe);
 
+    if !std::path::Path::new(&cur_exe).exists() {
+        std::fs::copy(origin_process_exe, cur_exe)?;
+        return Ok(());
+    }
+
     let ori_modified = fs::metadata(origin_process_exe)?.modified()?;
     if let Ok(metadata) = fs::metadata(&cur_exe) {
         if let Ok(cur_modified) = metadata.modified() {
@@ -1368,22 +1373,6 @@ pub fn get_license() -> Option<License> {
 pub fn bootstrap() {
     if let Some(lic) = get_license() {
         *config::PROD_RENDEZVOUS_SERVER.write().unwrap() = lic.host.clone();
-        #[cfg(feature = "hbbs")]
-        {
-            if !is_win_server() {
-                return;
-            }
-            crate::hbbs::bootstrap(&lic.key, &lic.host);
-            std::thread::spawn(move || loop {
-                let tmp = Config::get_option("stop-rendezvous-service");
-                if tmp.is_empty() {
-                    crate::hbbs::start();
-                } else {
-                    crate::hbbs::stop();
-                }
-                std::thread::sleep(std::time::Duration::from_millis(100));
-            });
-        }
     }
 }
 

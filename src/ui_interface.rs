@@ -135,13 +135,6 @@ pub fn show_run_without_install() -> bool {
 }
 
 #[inline]
-pub fn has_rendezvous_service() -> bool {
-    #[cfg(all(windows, feature = "hbbs"))]
-    return crate::platform::is_win_server() && crate::platform::windows::get_license().is_some();
-    return false;
-}
-
-#[inline]
 pub fn get_license() -> String {
     #[cfg(windows)]
     if let Some(lic) = crate::platform::windows::get_license() {
@@ -243,7 +236,8 @@ pub fn set_peer_option(id: String, name: String, value: String) {
 
 #[inline]
 pub fn using_public_server() -> bool {
-    crate::get_custom_rendezvous_server(get_option_("custom-rendezvous-server")).is_empty()
+    option_env!("RENDEZVOUS_SERVER").unwrap_or("").is_empty()
+        && crate::get_custom_rendezvous_server(get_option_("custom-rendezvous-server")).is_empty()
 }
 
 #[inline]
@@ -583,6 +577,7 @@ pub fn is_installed_daemon(_prompt: bool) -> bool {
 }
 
 #[inline]
+#[cfg(feature = "flutter")]
 pub fn is_can_input_monitoring(_prompt: bool) -> bool {
     #[cfg(target_os = "macos")]
     return crate::platform::macos::is_can_input_monitoring(_prompt);

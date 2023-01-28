@@ -1,3 +1,11 @@
+use crate::ui_session_interface::{io_loop, InvokeUiSession, Session};
+use crate::{client::*, flutter_ffi::EventToUI};
+use flutter_rust_bridge::{StreamSink, ZeroCopyBuffer};
+use hbb_common::{
+    bail, config::LocalConfig, get_version_number, message_proto::*, rendezvous_proto::ConnType,
+    ResultType,
+};
+use serde_json::json;
 use std::{
     collections::HashMap,
     ffi::CString,
@@ -5,25 +13,13 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use flutter_rust_bridge::{StreamSink, ZeroCopyBuffer};
-
-use hbb_common::{
-    bail, config::LocalConfig, get_version_number, message_proto::*, rendezvous_proto::ConnType,
-    ResultType,
-};
-use serde_json::json;
-
-use crate::ui_session_interface::{io_loop, InvokeUiSession, Session};
-
-use crate::{client::*, flutter_ffi::EventToUI};
-
 pub(super) const APP_TYPE_MAIN: &str = "main";
 pub(super) const APP_TYPE_DESKTOP_REMOTE: &str = "remote";
 pub(super) const APP_TYPE_DESKTOP_FILE_TRANSFER: &str = "file transfer";
 pub(super) const APP_TYPE_DESKTOP_PORT_FORWARD: &str = "port forward";
 
 lazy_static::lazy_static! {
-    static ref CUR_SESSION_ID: RwLock<String> = Default::default();
+    pub static ref CUR_SESSION_ID: RwLock<String> = Default::default();
     pub static ref SESSIONS: RwLock<HashMap<String, Session<FlutterHandler>>> = Default::default();
     pub static ref GLOBAL_EVENT_STREAM: RwLock<HashMap<String, StreamSink<String>>> = Default::default(); // rust to dart event channel
 }
@@ -37,6 +33,15 @@ pub extern "C" fn rustdesk_core_main() -> bool {
     return crate::core_main::core_main().is_some();
     #[cfg(any(target_os = "android", target_os = "ios"))]
     false
+}
+
+#[cfg(target_os = "macos")]
+#[no_mangle]
+pub extern "C" fn handle_applicationShouldOpenUntitledFile() {
+    hbb_common::log::debug!("icon clicked on finder");
+    if std::env::args().nth(1) == Some("--server".to_owned()) {
+        crate::platform::macos::check_main_window();
+    }
 }
 
 #[cfg(windows)]
@@ -357,7 +362,17 @@ impl InvokeUiSession for FlutterHandler {
                 ("y", &display.y.to_string()),
                 ("width", &display.width.to_string()),
                 ("height", &display.height.to_string()),
-                ("cursor_embedded", &{if display.cursor_embedded {1} else {0}}.to_string()),
+                (
+                    "cursor_embedded",
+                    &{
+                        if display.cursor_embedded {
+                            1
+                        } else {
+                            0
+                        }
+                    }
+                    .to_string(),
+                ),
             ],
         );
     }
@@ -373,6 +388,10 @@ impl InvokeUiSession for FlutterHandler {
     fn clipboard(&self, content: String) {
         self.push_event("clipboard", vec![("content", &content)]);
     }
+
+    fn switch_back(&self, peer_id: &str) {
+        self.push_event("switch_back", [("peer_id", peer_id)].into());
+    }
 }
 
 /// Create a new remote session with the given id.
@@ -382,7 +401,12 @@ impl InvokeUiSession for FlutterHandler {
 /// * `id` - The identifier of the remote session with prefix. Regex: [\w]*[\_]*[\d]+
 /// * `is_file_transfer` - If the session is used for file transfer.
 /// * `is_port_forward` - If the session is used for port forward.
-pub fn session_add(id: &str, is_file_transfer: bool, is_port_forward: bool) -> ResultType<()> {
+pub fn session_add(
+    id: &str,
+    is_file_transfer: bool,
+    is_port_forward: bool,
+    switch_uuid: &str,
+) -> ResultType<()> {
     let session_id = get_session_id(id.to_owned());
     LocalConfig::set_remote_id(&session_id);
 
@@ -400,11 +424,17 @@ pub fn session_add(id: &str, is_file_transfer: bool, is_port_forward: bool) -> R
         ConnType::DEFAULT_CONN
     };
 
+    let switch_uuid = if switch_uuid.is_empty() {
+        None
+    } else {
+        Some(switch_uuid.to_string())
+    };
+
     session
         .lc
         .write()
         .unwrap()
-        .initialize(session_id, conn_type);
+        .initialize(session_id, conn_type, switch_uuid);
 
     if let Some(same_id_session) = SESSIONS.write().unwrap().insert(id.to_owned(), session) {
         same_id_session.close();
