@@ -41,6 +41,9 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("About", "O programu"),
         ("Slogan_tip", ""),
         ("Privacy Statement", ""),
+        ("Build Date", ""),
+        ("Version", ""),
+        ("Home", ""),
         ("Mute", "Utišaj"),
         ("Audio Input", "Audio ulaz"),
         ("Enhancements", "Proširenja"),
@@ -407,7 +410,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Add to Address Book", "Dodaj u adresar"),
         ("Group", "Grupa"),
         ("Search", "Pretraga"),
-        ("Closed manually by the web console", ""),
+        ("Closed manually by web console", ""),
         ("Local keyboard type", ""),
         ("Select local keyboard type", ""),
         ("software_render_tip", ""),
@@ -433,5 +436,6 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Strong", ""),
         ("Switch Sides", ""),
         ("Please confirm if you want to share your desktop?", ""),
+        ("Closed as expected", ""),
     ].iter().cloned().collect();
 }

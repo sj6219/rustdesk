@@ -41,6 +41,9 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("About", "เกี่ยวกับ"),
         ("Slogan_tip", "ทำด้วยใจ ในโลกใบนี้ที่ยุ่งเหยิง!"),
         ("Privacy Statement", "คำแถลงเกี่ยวกับความเป็นส่วนตัว"),
+        ("Build Date", ""),
+        ("Version", ""),
+        ("Home", ""),
         ("Mute", "ปิดเสียง"),
         ("Audio Input", "ออดิโออินพุท"),
         ("Enhancements", "การปรับปรุง"),
@@ -407,7 +410,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Add to Address Book", "เพิ่มไปยังสมุดรายชื่อ"),
         ("Group", "กลุ่ม"),
         ("Search", "ค้นหา"),
-        ("Closed manually by the web console", "ถูกปิดโดยเว็บคอนโซล"),
+        ("Closed manually by web console", "ถูกปิดโดยเว็บคอนโซล"),
         ("Local keyboard type", "ประเภทคีย์บอร์ด"),
         ("Select local keyboard type", "เลือกประเภทคีย์บอร์ด"),
         ("software_render_tip", ""),
@@ -433,5 +436,6 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Strong", ""),
         ("Switch Sides", ""),
         ("Please confirm if you want to share your desktop?", ""),
+        ("Closed as expected", ""),
     ].iter().cloned().collect();
 }

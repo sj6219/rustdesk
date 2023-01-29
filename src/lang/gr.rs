@@ -41,6 +41,9 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("About", "Πληροφορίες"),
         ("Slogan_tip", ""),
         ("Privacy Statement", ""),
+        ("Build Date", ""),
+        ("Version", ""),
+        ("Home", ""),
         ("Mute", "Σίγαση"),
         ("Audio Input", "Είσοδος ήχου"),
         ("Enhancements", "Βελτιώσεις"),
@@ -407,7 +410,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Add to Address Book", "Προσθήκη στο Βιβλίο Διευθύνσεων"),
         ("Group", "Ομάδα"),
         ("Search", "Αναζήτηση"),
-        ("Closed manually by the web console", "Κλειστό χειροκίνητα από την κονσόλα web"),
+        ("Closed manually by web console", "Κλειστό χειροκίνητα από την κονσόλα web"),
         ("Local keyboard type", "Τύπος τοπικού πληκτρολογίου"),
         ("Select local keyboard type", "Επιλογή τύπου τοπικού πληκτρολογίου"),
         ("software_render_tip", "Εάν έχετε κάρτα γραφικών Nvidia και το παράθυρο σύνδεσης κλείνει αμέσως μετά τη σύνδεση, η εγκατάσταση του προγράμματος οδήγησης nouveau και η επιλογή χρήσης της επιτάχυνσης γραφικών μέσω λογισμικού μπορεί να βοηθήσει. Απαιτείται επανεκκίνηση."),
@@ -433,5 +436,6 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Strong", "Δυνατό"),
         ("Switch Sides", ""),
         ("Please confirm if you want to share your desktop?", ""),
+        ("Closed as expected", ""),
     ].iter().cloned().collect();
 }
