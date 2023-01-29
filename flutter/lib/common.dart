@@ -608,12 +608,11 @@ class CustomAlertDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    FocusNode focusNode = FocusNode();
-    // request focus if there is no focused FocusNode in the dialog
-    Future.delayed(Duration.zero, () {
-      if (!focusNode.hasFocus) focusNode.requestFocus();
-    });
+    // request focus
     FocusScopeNode scopeNode = FocusScopeNode();
+    Future.delayed(Duration.zero, () {
+      if (!scopeNode.hasFocus) scopeNode.requestFocus();
+    });
     return FocusScope(
       node: scopeNode,
       autofocus: true,
@@ -1261,23 +1260,28 @@ StreamSubscription? listenUniLinks() {
 
 /// Returns true if we successfully handle the startup arguments.
 bool checkArguments() {
+  // bootArgs:[--connect, 362587269, --switch_uuid, e3d531cc-5dce-41e0-bd06-5d4a2b1eec05]
   // check connect args
-  final connectIndex = bootArgs.indexOf("--connect");
+  final connectIndex = kBootArgs.indexOf("--connect");
   if (connectIndex == -1) {
     return false;
   }
-  String? arg =
-      bootArgs.length < connectIndex + 1 ? null : bootArgs[connectIndex + 1];
-  if (arg != null) {
-    if (arg.startsWith(kUniLinksPrefix)) {
-      return parseRustdeskUri(arg);
+  String? id =
+      kBootArgs.length < connectIndex + 1 ? null : kBootArgs[connectIndex + 1];
+  final switchUuidIndex = kBootArgs.indexOf("--switch_uuid");
+  String? switchUuid = kBootArgs.length < switchUuidIndex + 1
+      ? null
+      : kBootArgs[switchUuidIndex + 1];
+  if (id != null) {
+    if (id.startsWith(kUniLinksPrefix)) {
+      return parseRustdeskUri(id);
     } else {
       // remove "--connect xxx" in the `bootArgs` array
-      bootArgs.removeAt(connectIndex);
-      bootArgs.removeAt(connectIndex);
+      kBootArgs.removeAt(connectIndex);
+      kBootArgs.removeAt(connectIndex);
       // fallback to peer id
       Future.delayed(Duration.zero, () {
-        rustDeskWinManager.newRemoteDesktop(arg);
+        rustDeskWinManager.newRemoteDesktop(id, switch_uuid: switchUuid);
       });
       return true;
     }
@@ -1307,10 +1311,12 @@ bool callUniLinksUriHandler(Uri uri) {
   // new connection
   if (uri.authority == "connection" && uri.path.startsWith("/new/")) {
     final peerId = uri.path.substring("/new/".length);
+    var param = uri.queryParameters;
+    String? switch_uuid = param["switch_uuid"];
     Future.delayed(Duration.zero, () {
-      rustDeskWinManager.newRemoteDesktop(peerId);
+      rustDeskWinManager.newRemoteDesktop(peerId, switch_uuid: switch_uuid);
     });
-    return true;
+    return false;
   }
   return false;
 }
@@ -1605,4 +1611,28 @@ Widget dialogButton(String text,
           style: style,
         ));
   }
+}
+
+int version_cmp(String v1, String v2) {
+  return bind.versionToNumber(v: v1) - bind.versionToNumber(v: v2);
+}
+
+String getWindowName({WindowType? overrideType}) {
+  switch (overrideType ?? kWindowType) {
+    case WindowType.Main:
+      return "RustDesk";
+    case WindowType.FileTransfer:
+      return "File Transfer - RustDesk";
+    case WindowType.PortForward:
+      return "Port Forward - RustDesk";
+    case WindowType.RemoteDesktop:
+      return "Remote Desktop - RustDesk";
+    default:
+      break;
+  }
+  return "RustDesk";
+}
+
+String getWindowNameWithId(String id, {WindowType? overrideType}) {
+  return "${DesktopTab.labelGetterAlias(id).value} - ${getWindowName(overrideType: overrideType)}";
 }

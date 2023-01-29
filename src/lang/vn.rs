@@ -41,6 +41,9 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("About", "About"),
         ("Slogan_tip", ""),
         ("Privacy Statement", ""),
+        ("Build Date", ""),
+        ("Version", ""),
+        ("Home", ""),
         ("Mute", "Tắt tiếng"),
         ("Audio Input", "Đầu vào âm thanh"),
         ("Enhancements", "Các tiện itchs"),
@@ -407,7 +410,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Add to Address Book", ""),
         ("Group", ""),
         ("Search", ""),
-        ("Closed manually by the web console", ""),
+        ("Closed manually by web console", ""),
         ("Local keyboard type", ""),
         ("Select local keyboard type", ""),
         ("software_render_tip", ""),
@@ -431,5 +434,8 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Weak", ""),
         ("Medium", ""),
         ("Strong", ""),
+        ("Switch Sides", ""),
+        ("Please confirm if you want to share your desktop?", ""),
+        ("Closed as expected", ""),
     ].iter().cloned().collect();
 }
