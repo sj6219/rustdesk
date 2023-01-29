@@ -41,6 +41,9 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("About", "À propos de"),
         ("Slogan_tip", "Fait avec cœur dans ce monde chaotique!"),
         ("Privacy Statement", "Déclaration de confidentialité"),
+        ("Build Date", "Date de compilation"),
+        ("Version", "Version"),
+        ("Home", "Accueil"),
         ("Mute", "Muet"),
         ("Audio Input", "Entrée audio"),
         ("Enhancements", "Améliorations"),
@@ -407,7 +410,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Add to Address Book", "Ajouter au carnet d'adresses"),
         ("Group", "Groupe"),
         ("Search", "Rechercher"),
-        ("Closed manually by the web console", "Fermé manuellement par la console Web"),
+        ("Closed manually by web console", "Fermé manuellement par la console Web"),
         ("Local keyboard type", "Disposition du clavier local"),
         ("Select local keyboard type", "Selectionner la disposition du clavier local"),
         ("software_render_tip", "Si vous avez une carte graphique NVIDIA et que la fenêtre distante se ferme immédiatement après la connexion, l'installation du pilote Nouveau et le choix d'utiliser le rendu du logiciel peuvent aider. Un redémarrage du logiciel est requis."),
@@ -433,5 +436,6 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Strong", "Fort"),
         ("Switch Sides", "Inverser la prise de contrôle"),
         ("Please confirm if you want to share your desktop?", "Veuillez confirmer le partager de votre bureau ?"),
+        ("Closed as expected", ""),
     ].iter().cloned().collect();
 }
