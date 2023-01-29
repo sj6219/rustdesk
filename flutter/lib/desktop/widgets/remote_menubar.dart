@@ -362,6 +362,9 @@ class _RemoteMenubarState extends State<RemoteMenubar> {
                         ),
                       )),
                   onPressed: () {
+                    if (Navigator.canPop(context)) {
+                      Navigator.pop(context);
+                    }
                     RxInt display = CurrentDisplayState.find(widget.id);
                     if (display.value != i) {
                       bind.sessionSwitchDisplay(id: widget.id, value: i);
@@ -652,8 +655,8 @@ class _RemoteMenubarState extends State<RemoteMenubar> {
           dismissOnClicked: true,
         ));
       }
-      if (false &&
-          pi.platform != kPeerPlatformAndroid &&
+      if (pi.platform != kPeerPlatformAndroid &&
+          pi.platform != kPeerPlatformMacOS && // unsupport yet
           version_cmp(peer_version, '1.2.0') >= 0) {
         displayMenu.add(MenuEntryButton<String>(
           childBuilder: (TextStyle? style) => Text(
