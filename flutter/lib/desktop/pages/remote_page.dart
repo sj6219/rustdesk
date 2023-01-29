@@ -111,9 +111,12 @@ class _RemotePageState extends State<RemotePage>
       _ffi.dialogManager
           .showLoading(translate('Connecting...'), onCancel: closeConnection);
     });
-    if (!Platform.isLinux) {
-      Wakelock.enable();
-    }
+
+    //..
+    // if (!Platform.isLinux) {
+    //   Wakelock.enable();
+    // }
+
     _ffi.ffiModel.updateEventListener(widget.id);
     _ffi.qualityMonitorModel.checkShowQualityMonitor(widget.id);
     // Session option should be set after models.dart/FFI.start
@@ -182,9 +185,12 @@ class _RemotePageState extends State<RemotePage>
     _ffi.dialogManager.dismissAll();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.manual,
         overlays: SystemUiOverlay.values);
-    if (!Platform.isLinux) {
-      Wakelock.disable();
-    }
+
+    //..
+    // if (!Platform.isLinux) {
+    //   Wakelock.disable();
+    // }
+
     Get.delete<FFI>(tag: widget.id);
     super.dispose();
     _removeStates(widget.id);
