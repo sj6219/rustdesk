@@ -20,8 +20,9 @@ use crate::{common::get_app_name, ipc, ui_interface::*};
 mod cm;
 #[cfg(feature = "inline")]
 pub mod inline;
+//..
 #[cfg(target_os = "macos")]
-mod macos;
+pub mod macos;
 pub mod remote;
 #[cfg(target_os = "windows")]
 pub mod win_privacy;
