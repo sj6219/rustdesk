@@ -239,20 +239,7 @@ pub fn make_tray() {
         ))
         .ok();
 
-        use objc::{
-            class,
-            declare::ClassDecl,
-            msg_send,
-            runtime::{Object, Sel, BOOL},
-            sel, sel_impl,
-        };
         let inner = tray.inner_mut();
-        //..
-        // inner.add_menu_item(&crate::lang::translate("Quit".to_owned()), || {
-        //     unsafe {
-        //         let () = msg_send!(cocoa::appkit::NSApp(), terminate: cocoa::base::nil);
-        //     };
-        // }).unwrap();
         inner.add_quit_item(&crate::lang::translate("Quit".to_owned()));
         inner.display();
     } else {
