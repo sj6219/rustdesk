@@ -24,7 +24,6 @@ pub fn core_main() -> Option<Vec<String>> {
         }
     }
 
-
     // https://docs.rs/flexi_logger/latest/flexi_logger/error_info/index.html#write
     // though async logger more efficient, but it also causes more problems, disable it for now
     // let mut _async_logger_holder: Option<flexi_logger::LoggerHandle> = None;
@@ -217,8 +216,6 @@ pub fn core_main() -> Option<Vec<String>> {
             {
                 std::thread::spawn(move || crate::start_server(true));
                 crate::platform::macos::hide_dock();
-                //..
-                //crate::tray::make_tray();
                 crate::ui::macos::make_tray();
                 return None;
             }
