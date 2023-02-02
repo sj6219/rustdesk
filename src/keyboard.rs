@@ -223,7 +223,7 @@ pub fn start_grab_loop() {
                     }
                     if allow_swap_key {
                         match event.event_type {
-                            EventType::KeyPress( key) => {
+                            EventType::KeyPress(key) | EventType::KeyRelease(key) => {
                                 let key = match key {
                                     rdev::Key::ControlLeft => rdev::Key::MetaLeft,
                                     rdev::Key::MetaLeft => rdev::Key::ControlLeft,
@@ -231,19 +231,6 @@ pub fn start_grab_loop() {
                                     rdev::Key::MetaRight => rdev::Key::ControlLeft,
                                     _ => key,
                                 };
-                                event.event_type = EventType::KeyPress(key);
-                                event.scan_code = rdev::macos_keycode_from_key(key).unwrap_or_default();
-                                event.code = event.scan_code as _;
-                            }
-                            EventType::KeyRelease(key) => {
-                                let key = match key {
-                                    rdev::Key::ControlLeft => rdev::Key::MetaLeft,
-                                    rdev::Key::MetaLeft => rdev::Key::ControlLeft,
-                                    rdev::Key::ControlRight => rdev::Key::MetaLeft,
-                                    rdev::Key::MetaRight => rdev::Key::ControlLeft,
-                                    _ => key,
-                                };
-                                event.event_type = EventType::KeyRelease(key);
                                 event.scan_code = rdev::macos_keycode_from_key(key).unwrap_or_default();
                                 event.code = event.scan_code as _;
                             }
@@ -251,7 +238,7 @@ pub fn start_grab_loop() {
                         };
                     };
                 };
-                
+
                 client::process_event(&event, None);
                 if is_press {
                     return None;
