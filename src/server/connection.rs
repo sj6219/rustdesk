@@ -504,6 +504,9 @@ impl Connection {
 
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     fn handle_input(receiver: std_mpsc::Receiver<MessageInput>, tx: Sender) {
+        #[cfg(target_os = "macos")] 
+        let allow_swap_key = hbb_common::config::Config::get_option("allow-swap-key") == "Y";
+
         let mut block_input_mode = false;
         #[cfg(target_os = "windows")]
         {
@@ -520,26 +523,29 @@ impl Connection {
                         #[cfg(target_os = "macos")]
                         let msg = {
                             let mut msg = msg;
-                            msg.modifiers = msg.modifiers.iter().map(|ck| {
-                                let ck = ck.enum_value_or_default();
-                                let ck = match ck {
-                                    ControlKey::Control => ControlKey::Meta,
-                                    ControlKey::Meta => ControlKey::Control,
-                                    ControlKey::RControl => ControlKey::Meta,
-                                    ControlKey::RWin => ControlKey::Control,
-                                    _ => ck,
-                                };
-                                hbb_common::protobuf::EnumOrUnknown::new(ck)
-                            }).collect();
+                            if allow_swap_key {
+                                msg.modifiers = msg.modifiers.iter().map(|ck| {
+                                    let ck = ck.enum_value_or_default();
+                                    let ck = match ck {
+                                        ControlKey::Control => ControlKey::Meta,
+                                        ControlKey::Meta => ControlKey::Control,
+                                        ControlKey::RControl => ControlKey::Meta,
+                                        ControlKey::RWin => ControlKey::Control,
+                                        _ => ck,
+                                    };
+                                    hbb_common::protobuf::EnumOrUnknown::new(ck)
+                                }).collect();
+                            }
                             msg
                         };
+
                         handle_mouse(&msg, id);
                     }
                     MessageInput::Key((mut msg, press)) => {
                         //..m!!!!!!2.3
                         //..w!!!!!!2.3
                         #[cfg(target_os = "macos")]
-                        {
+                        if allow_swap_key {
                             if let Some(key_event::Union::ControlKey(ck)) = msg.union {
                                 let ck = ck.enum_value_or_default();
                                 let ck = match ck {
