@@ -265,8 +265,6 @@ pub fn core_main() -> Option<Vec<String>> {
             #[cfg(feature = "flutter")]
             crate::flutter::connection_manager::start_listen_ipc_thread();
             crate::ui_interface::start_option_status_sync();
-            #[cfg(target_os = "macos")]
-            crate::platform::macos::hide_dock();
         }
     }
     //_async_logger_holder.map(|x| x.flush());
@@ -312,8 +310,7 @@ fn import_config(path: &str) {
 fn core_main_invoke_new_connection(mut args: std::env::Args) -> Option<Vec<String>> {
     args.position(|element| {
         return element == "--connect";
-    })
-    .unwrap();
+    })?;
     let peer_id = args.next().unwrap_or("".to_string());
     if peer_id.is_empty() {
         eprintln!("please provide a valid peer id");
@@ -325,9 +322,13 @@ fn core_main_invoke_new_connection(mut args: std::env::Args) -> Option<Vec<Strin
             switch_uuid = args.next();
         }
     }
+    let mut param_array = vec![];
+    if switch_uuid.is_some() {
+        let switch_uuid = switch_uuid.map_or("".to_string(), |p| format!("switch_uuid={}", p));
+        param_array.push(switch_uuid);
+    }
 
-    let switch_uuid = switch_uuid.map_or("".to_string(), |p| format!("switch_uuid={}", p));
-    let params = vec![switch_uuid].join("&");
+    let params = param_array.join("&");
     let params_flag = if params.is_empty() { "" } else { "?" };
     #[allow(unused)]
     let uni_links = format!(

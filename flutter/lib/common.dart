@@ -3,13 +3,11 @@ import 'dart:convert';
 import 'dart:ffi' hide Size;
 import 'dart:io';
 import 'dart:math';
-import 'dart:typed_data';
 
 import 'package:back_button_interceptor/back_button_interceptor.dart';
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:ffi/ffi.dart';
 import 'package:flutter/foundation.dart';
-import 'package:win32/win32.dart' as win32;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -18,22 +16,23 @@ import 'package:flutter_hbb/desktop/widgets/tabbar_widget.dart';
 import 'package:flutter_hbb/main.dart';
 import 'package:flutter_hbb/models/peer_model.dart';
 import 'package:flutter_hbb/utils/multi_window_manager.dart';
+import 'package:flutter_hbb/utils/platform_channel.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
 import 'package:uni_links/uni_links.dart';
 import 'package:uni_links_desktop/uni_links_desktop.dart';
-import 'package:window_manager/window_manager.dart';
-import 'package:flutter_svg/flutter_svg.dart';
-import 'package:window_size/window_size.dart' as window_size;
 import 'package:url_launcher/url_launcher.dart';
+import 'package:win32/win32.dart' as win32;
+import 'package:window_manager/window_manager.dart';
+import 'package:window_size/window_size.dart' as window_size;
 
+import '../consts.dart';
 import 'common/widgets/overlay.dart';
 import 'mobile/pages/file_manager_page.dart';
 import 'mobile/pages/remote_page.dart';
 import 'models/input_model.dart';
 import 'models/model.dart';
 import 'models/platform_model.dart';
-
-import '../consts.dart';
 
 final globalKey = GlobalKey<NavigatorState>();
 final navigationBarKey = GlobalKey();
@@ -224,16 +223,18 @@ class MyTheme {
     return themeModeFromString(bind.mainGetLocalOption(key: kCommConfKeyTheme));
   }
 
-  static void changeDarkMode(ThemeMode mode) {
+  static void changeDarkMode(ThemeMode mode) async {
     Get.changeThemeMode(mode);
     if (desktopType == DesktopType.main) {
       if (mode == ThemeMode.system) {
-        bind.mainSetLocalOption(key: kCommConfKeyTheme, value: '');
+        await bind.mainSetLocalOption(key: kCommConfKeyTheme, value: '');
       } else {
-        bind.mainSetLocalOption(
+        await bind.mainSetLocalOption(
             key: kCommConfKeyTheme, value: mode.toShortString());
       }
-      bind.mainChangeTheme(dark: mode.toShortString());
+      await bind.mainChangeTheme(dark: mode.toShortString());
+      // Synchronize the window theme of the system.
+      updateSystemWindowTheme();
     }
   }
 
@@ -707,7 +708,8 @@ void msgBox(String id, String type, String title, String text, String link,
   dialogManager.show(
     (setState, close) => CustomAlertDialog(
       title: null,
-      content: msgboxContent(type, title, text),
+      content: SelectionArea(
+          child: msgboxContent(type, title, text).paddingOnly(bottom: 10)),
       actions: buttons,
       onSubmit: hasOk ? submit : null,
       onCancel: hasCancel == true ? cancel : null,
@@ -1270,10 +1272,12 @@ Future<bool> restoreWindowPosition(WindowType type, {int? windowId}) async {
 /// [Availability]
 /// initUniLinks should only be used on macos/windows.
 /// we use dbus for linux currently.
-Future<void> initUniLinks() async {
-  if (!Platform.isWindows && !Platform.isMacOS) {
-    return;
+Future<bool> initUniLinks() async {
+  if (Platform.isLinux) {
+    return false;
   }
+  // Register uni links for Windows. The required info of url scheme is already
+  // declared in `Info.plist` for macOS.
   if (Platform.isWindows) {
     registerProtocol('rustdesk');
   }
@@ -1281,11 +1285,12 @@ Future<void> initUniLinks() async {
   try {
     final initialLink = await getInitialLink();
     if (initialLink == null) {
-      return;
+      return false;
     }
-    parseRustdeskUri(initialLink);
+    return parseRustdeskUri(initialLink);
   } catch (err) {
     debugPrintStack(label: "$err");
+    return false;
   }
 }
 
@@ -1306,11 +1311,13 @@ StreamSubscription? listenUniLinks() {
   return sub;
 }
 
-/// Returns true if we successfully handle the startup arguments.
+/// Handle command line arguments
+///
+/// * Returns true if we successfully handle the startup arguments.
 bool checkArguments() {
   // bootArgs:[--connect, 362587269, --switch_uuid, e3d531cc-5dce-41e0-bd06-5d4a2b1eec05]
   // check connect args
-  final connectIndex = kBootArgs.indexOf("--connect");
+  var connectIndex = kBootArgs.indexOf("--connect");
   if (connectIndex == -1) {
     return false;
   }
@@ -1364,7 +1371,7 @@ bool callUniLinksUriHandler(Uri uri) {
     Future.delayed(Duration.zero, () {
       rustDeskWinManager.newRemoteDesktop(peerId, switch_uuid: switch_uuid);
     });
-    return false;
+    return true;
   }
   return false;
 }
@@ -1504,8 +1511,12 @@ Future<void> onActiveWindowChanged() async {
     } catch (err) {
       debugPrintStack(label: "$err");
     } finally {
+      debugPrint("Start closing RustDesk...");
       await windowManager.setPreventClose(false);
       await windowManager.close();
+      if (Platform.isMacOS) {
+        RdPlatformChannel.instance.terminate();
+      }
     }
   }
 }
@@ -1684,4 +1695,17 @@ String getWindowName({WindowType? overrideType}) {
 
 String getWindowNameWithId(String id, {WindowType? overrideType}) {
   return "${DesktopTab.labelGetterAlias(id).value} - ${getWindowName(overrideType: overrideType)}";
+}
+
+Future<void> updateSystemWindowTheme() async {
+  // Set system window theme for macOS.
+  final userPreference = MyTheme.getThemeModePreference();
+  if (userPreference != ThemeMode.system) {
+    if (Platform.isMacOS) {
+      await RdPlatformChannel.instance.changeSystemWindowTheme(
+          userPreference == ThemeMode.light
+              ? SystemWindowTheme.light
+              : SystemWindowTheme.dark);
+    }
+  }
 }

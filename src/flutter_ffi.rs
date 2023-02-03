@@ -791,6 +791,14 @@ pub fn main_default_video_save_directory() -> String {
     default_video_save_directory()
 }
 
+pub fn main_set_user_default_option(key: String, value: String) {
+    set_user_default_option(key, value);
+}
+
+pub fn main_get_user_default_option(key: String) -> SyncReturn<String> {
+    SyncReturn(get_user_default_option(key))
+}
+
 pub fn session_add_port_forward(
     id: String,
     local_port: i32,
@@ -1239,6 +1247,12 @@ pub fn main_current_is_wayland() -> SyncReturn<bool> {
 
 pub fn main_is_login_wayland() -> SyncReturn<bool> {
     SyncReturn(is_login_wayland())
+}
+
+pub fn main_hide_docker() -> SyncReturn<bool> {
+    #[cfg(target_os = "macos")]
+    crate::platform::macos::hide_dock();
+    SyncReturn(true)
 }
 
 #[cfg(target_os = "android")]
