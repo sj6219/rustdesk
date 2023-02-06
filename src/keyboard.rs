@@ -198,7 +198,7 @@ pub fn update_grab_get_key_name() {
 pub fn start_grab_loop() {
     #[cfg(any(target_os = "windows", target_os = "macos"))]
     std::thread::spawn(move || {
-        let try_handle_keyboard = move |event: Event, key: Key, is_press: bool| -> Option<Event> {
+            let try_handle_keyboard = move |event: Event, key: Key, is_press: bool| -> Option<Event> {
             // fix #2211：CAPS LOCK don't work
             if key == Key::CapsLock || key == Key::NumLock {
                 return Some(event);
@@ -207,33 +207,49 @@ pub fn start_grab_loop() {
                 //..m!!!!!!1.1
                 #[cfg(target_os = "macos")] 
                 let mut event = event;
-                #[cfg(target_os = "macos")] 
-                match event.event_type {
-                    EventType::KeyPress( key) => {
-                        let key = match key {
-                            rdev::Key::ControlLeft => rdev::Key::MetaLeft,
-                            rdev::Key::MetaLeft => rdev::Key::ControlLeft,
-                            rdev::Key::ControlRight => rdev::Key::MetaLeft,
-                            rdev::Key::MetaRight => rdev::Key::ControlLeft,
-                            _ => key,
-                        };
-                        event.event_type = EventType::KeyPress(key);
-                        event.scan_code = rdev::macos_keycode_from_key(key).unwrap_or_default();
-                        event.code = event.scan_code as _;
+                #[cfg(target_os = "macos")] {
+                    let mut allow_swap_key = false;
+                    #[cfg(not(any(feature = "flutter", feature = "cli")))]
+                    if let Some(session) = CUR_SESSION.lock().unwrap().as_ref() {
+                        allow_swap_key = session.allow_swap_key;
                     }
-                    EventType::KeyRelease(key) => {
-                        let key = match key {
-                            rdev::Key::ControlLeft => rdev::Key::MetaLeft,
-                            rdev::Key::MetaLeft => rdev::Key::ControlLeft,
-                            rdev::Key::ControlRight => rdev::Key::MetaLeft,
-                            rdev::Key::MetaRight => rdev::Key::ControlLeft,
-                            _ => key,
-                        };
-                        event.event_type = EventType::KeyRelease(key);
-                        event.scan_code = rdev::macos_keycode_from_key(key).unwrap_or_default();
-                        event.code = event.scan_code as _;
+                    #[cfg(feature = "flutter")]
+                    if let Some(session) = SESSIONS
+                        .read()
+                        .unwrap()
+                        .get(&*CUR_SESSION_ID.read().unwrap())
+                    {
+                        allow_swap_key = session.allow_swap_key;
                     }
-                    _ => {}
+                    if allow_swap_key {
+                        match event.event_type {
+                            EventType::KeyPress( key) => {
+                                let key = match key {
+                                    rdev::Key::ControlLeft => rdev::Key::MetaLeft,
+                                    rdev::Key::MetaLeft => rdev::Key::ControlLeft,
+                                    rdev::Key::ControlRight => rdev::Key::MetaLeft,
+                                    rdev::Key::MetaRight => rdev::Key::ControlLeft,
+                                    _ => key,
+                                };
+                                event.event_type = EventType::KeyPress(key);
+                                event.scan_code = rdev::macos_keycode_from_key(key).unwrap_or_default();
+                                event.code = event.scan_code as _;
+                            }
+                            EventType::KeyRelease(key) => {
+                                let key = match key {
+                                    rdev::Key::ControlLeft => rdev::Key::MetaLeft,
+                                    rdev::Key::MetaLeft => rdev::Key::ControlLeft,
+                                    rdev::Key::ControlRight => rdev::Key::MetaLeft,
+                                    rdev::Key::MetaRight => rdev::Key::ControlLeft,
+                                    _ => key,
+                                };
+                                event.event_type = EventType::KeyRelease(key);
+                                event.scan_code = rdev::macos_keycode_from_key(key).unwrap_or_default();
+                                event.code = event.scan_code as _;
+                            }
+                            _ => {}
+                        };
+                    };
                 };
                 
                 client::process_event(&event, None);

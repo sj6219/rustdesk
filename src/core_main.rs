@@ -1,4 +1,6 @@
-use hbb_common::log;
+use std::future::Future;
+
+use hbb_common::{log, ResultType};
 
 /// shared by flutter and sciter main function
 ///
@@ -23,7 +25,6 @@ pub fn core_main() -> Option<Vec<String>> {
             }
         }
     }
-
 
     // https://docs.rs/flexi_logger/latest/flexi_logger/error_info/index.html#write
     // though async logger more efficient, but it also causes more problems, disable it for now
@@ -73,11 +74,6 @@ pub fn core_main() -> Option<Vec<String>> {
         return core_main_invoke_new_connection(std::env::args());
     }
     let click_setup = cfg!(windows) && args.is_empty() && crate::common::is_setup(&arg_exe);
-    #[cfg(not(feature = "flutter"))]
-    {
-        _is_quick_support =
-            cfg!(windows) && args.is_empty() && arg_exe.to_lowercase().ends_with("qs.exe");
-    }
     if click_setup {
         args.push("--install".to_owned());
         flutter_args.push("--install".to_string());
@@ -88,6 +84,14 @@ pub fn core_main() -> Option<Vec<String>> {
     if args.len() > 0 && args[0] == "--version" {
         println!("{}", crate::VERSION);
         return None;
+    }
+    #[cfg(windows)]
+    {
+        _is_quick_support |= !crate::platform::is_installed()
+            && args.is_empty()
+            && (arg_exe.to_lowercase().ends_with("qs.exe")
+                || (!click_setup && crate::platform::is_elevated(None).unwrap_or(false)));
+        crate::portable_service::client::set_quick_support(_is_quick_support);
     }
     #[cfg(debug_assertions)]
     {
@@ -214,7 +218,7 @@ pub fn core_main() -> Option<Vec<String>> {
             {
                 std::thread::spawn(move || crate::start_server(true));
                 crate::platform::macos::hide_dock();
-                crate::tray::make_tray();
+                crate::ui::macos::make_tray();
                 return None;
             }
             #[cfg(target_os = "linux")]
@@ -263,8 +267,6 @@ pub fn core_main() -> Option<Vec<String>> {
             #[cfg(feature = "flutter")]
             crate::flutter::connection_manager::start_listen_ipc_thread();
             crate::ui_interface::start_option_status_sync();
-            #[cfg(target_os = "macos")]
-            crate::platform::macos::hide_dock();
         }
     }
     //_async_logger_holder.map(|x| x.flush());
@@ -310,8 +312,7 @@ fn import_config(path: &str) {
 fn core_main_invoke_new_connection(mut args: std::env::Args) -> Option<Vec<String>> {
     args.position(|element| {
         return element == "--connect";
-    })
-    .unwrap();
+    })?;
     let peer_id = args.next().unwrap_or("".to_string());
     if peer_id.is_empty() {
         eprintln!("please provide a valid peer id");
@@ -323,9 +324,13 @@ fn core_main_invoke_new_connection(mut args: std::env::Args) -> Option<Vec<Strin
             switch_uuid = args.next();
         }
     }
+    let mut param_array = vec![];
+    if switch_uuid.is_some() {
+        let switch_uuid = switch_uuid.map_or("".to_string(), |p| format!("switch_uuid={}", p));
+        param_array.push(switch_uuid);
+    }
 
-    let switch_uuid = switch_uuid.map_or("".to_string(), |p| format!("switch_uuid={}", p));
-    let params = vec![switch_uuid].join("&");
+    let params = param_array.join("&");
     let params_flag = if params.is_empty() { "" } else { "?" };
     #[allow(unused)]
     let uni_links = format!(
@@ -361,5 +366,11 @@ fn core_main_invoke_new_connection(mut args: std::env::Args) -> Option<Vec<Strin
         return if res { None } else { Some(Vec::new()) };
     }
     #[cfg(target_os = "macos")]
-    return Some(Vec::new());
+    {
+        return if let Err(_) = crate::ipc::send_url_scheme(uni_links) {
+            Some(Vec::new())
+        } else {
+            None
+        }
+    }
 }

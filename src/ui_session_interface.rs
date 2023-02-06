@@ -6,7 +6,6 @@ use crate::client::{
 };
 use crate::common::{self, GrabState};
 use crate::keyboard;
-use crate::ui_interface::using_public_server;
 use crate::{client::Data, client::Interface};
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -33,6 +32,7 @@ pub struct Session<T: InvokeUiSession> {
     pub sender: Arc<RwLock<Option<mpsc::UnboundedSender<Data>>>>,
     pub thread: Arc<Mutex<Option<std::thread::JoinHandle<()>>>>,
     pub ui_handler: T,
+    pub allow_swap_key: bool,
 }
 
 impl<T: InvokeUiSession> Session<T> {
@@ -495,11 +495,16 @@ impl<T: InvokeUiSession> Session<T> {
         shift: bool,
         command: bool,
     ) {
-
         //..m!!!!!!3.1
         #[cfg(target_os = "macos")]
-        let (ctrl, command) = (command, ctrl);
-
+        let (ctrl, command) = 
+        if self.allow_swap_key {
+            (command, ctrl)
+        }
+        else {
+            (ctrl, command)
+        };
+    
         #[allow(unused_mut)]
         let mut command = command;
         #[cfg(windows)]

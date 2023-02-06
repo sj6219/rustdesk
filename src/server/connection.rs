@@ -3,6 +3,8 @@ use super::{input_service::*, *};
 use crate::clipboard_file::*;
 #[cfg(not(target_os = "ios"))]
 use crate::common::update_clipboard;
+#[cfg(windows)]
+use crate::portable_service::client as portable_client;
 use crate::video_service;
 #[cfg(any(target_os = "android", target_os = "ios"))]
 use crate::{common::DEVICE_NAME, flutter::connection_manager::start_channel};
@@ -101,9 +103,8 @@ pub struct Connection {
     lr: LoginRequest,
     last_recv_time: Arc<Mutex<Instant>>,
     chat_unanswered: bool,
-    close_manually: bool,
-    #[allow(unused)]
-    elevation_requested: bool,
+    #[cfg(windows)]
+    portable: PortableState,
     from_switch: bool,
 }
 
@@ -137,7 +138,6 @@ const MILLI1: Duration = Duration::from_millis(1);
 const SEND_TIMEOUT_VIDEO: u64 = 12_000;
 const SEND_TIMEOUT_OTHER: u64 = SEND_TIMEOUT_VIDEO * 10;
 const SESSION_TIMEOUT: Duration = Duration::from_secs(30);
-const SWITCH_SIDES_TIMEOUT: Duration = Duration::from_secs(10);
 
 impl Connection {
     pub async fn start(
@@ -200,8 +200,8 @@ impl Connection {
             lr: Default::default(),
             last_recv_time: Arc::new(Mutex::new(Instant::now())),
             chat_unanswered: false,
-            close_manually: false,
-            elevation_requested: false,
+            #[cfg(windows)]
+            portable: Default::default(),
             from_switch: false,
         };
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -249,14 +249,6 @@ impl Connection {
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         std::thread::spawn(move || Self::handle_input(rx_input, tx_cloned));
         let mut second_timer = time::interval(Duration::from_secs(1));
-        #[cfg(windows)]
-        let mut last_uac = false;
-        #[cfg(windows)]
-        let mut last_foreground_window_elevated = false;
-        #[cfg(windows)]
-        let mut last_portable_service_running = false;
-        #[cfg(windows)]
-        let is_installed = crate::platform::is_installed();
 
         loop {
             tokio::select! {
@@ -271,7 +263,9 @@ impl Connection {
                             }
                         }
                         ipc::Data::Close => {
-                            conn.on_close_manually("connection manager", "peer").await;
+                            conn.chat_unanswered = false; // seen
+                            conn.send_close_reason_no_retry("").await;
+                            conn.on_close("connection manager", true).await;
                             break;
                         }
                         ipc::Data::ChatMessage{text} => {
@@ -362,8 +356,7 @@ impl Connection {
                         }
                         #[cfg(windows)]
                         ipc::Data::DataPortableService(ipc::DataPortableService::RequestStart) => {
-                            use crate::portable_service::client;
-                            if let Err(e) = client::start_portable_service(client::StartPara::Direct) {
+                            if let Err(e) = portable_client::start_portable_service(portable_client::StartPara::Direct) {
                                 log::error!("Failed to start portable service from cm:{:?}", e);
                             }
                         }
@@ -411,7 +404,8 @@ impl Connection {
                 }
                 Ok(conns) = hbbs_rx.recv() => {
                     if conns.contains(&id) {
-                        conn.on_close_manually("web console", "web console").await;
+                        conn.send_close_reason_no_retry("Closed manually by web console").await;
+                        conn.on_close("web console", true).await;
                         break;
                     }
                 }
@@ -441,7 +435,8 @@ impl Connection {
                         Some(message::Union::Misc(m)) => {
                             match &m.union {
                                 Some(misc::Union::StopService(_)) => {
-                                    conn.on_close_manually("stop service", "peer").await;
+                                    conn.send_close_reason_no_retry("").await;
+                                    conn.on_close("stop service", true).await;
                                     break;
                                 }
                                 _ => {},
@@ -456,46 +451,7 @@ impl Connection {
                 },
                 _ = second_timer.tick() => {
                     #[cfg(windows)]
-                    {
-                        if !is_installed  && conn.file_transfer.is_none() && conn.port_forward_socket.is_none(){
-                            let portable_service_running = crate::portable_service::client::running();
-                            if portable_service_running != last_portable_service_running {
-                                last_portable_service_running = portable_service_running;
-                                if portable_service_running && conn.elevation_requested {
-                                    let mut misc = Misc::new();
-                                    misc.set_portable_service_running(portable_service_running);
-                                    let mut msg = Message::new();
-                                    msg.set_misc(misc);
-                                    conn.inner.send(msg.into());
-                                }
-                            }
-                            let uac = crate::video_service::IS_UAC_RUNNING.lock().unwrap().clone();
-                            if last_uac != uac {
-                                last_uac = uac;
-                                if !uac || !portable_service_running{
-                                    let mut misc = Misc::new();
-                                    misc.set_uac(uac);
-                                    let mut msg = Message::new();
-                                    msg.set_misc(misc);
-                                    conn.inner.send(msg.into());
-                                }
-                            }
-                            let foreground_window_elevated = crate::video_service::IS_FOREGROUND_WINDOW_ELEVATED.lock().unwrap().clone();
-                            if last_foreground_window_elevated != foreground_window_elevated {
-                                last_foreground_window_elevated = foreground_window_elevated;
-                                if !foreground_window_elevated || !portable_service_running {
-                                    let mut misc = Misc::new();
-                                    misc.set_foreground_window_elevated(foreground_window_elevated);
-                                    let mut msg = Message::new();
-                                    msg.set_misc(misc);
-                                    conn.inner.send(msg.into());
-                                }
-                            }
-                            let show_elevation = !portable_service_running;
-                            conn.send_to_cm(ipc::Data::DataPortableService(ipc::DataPortableService::CmShowElevation(show_elevation)));
-
-                        }
-                    }
+                    conn.portable_check();
                 }
                 _ = test_delay_timer.tick() => {
                     if last_recv_time.elapsed() >= SEC30 {
@@ -540,11 +496,17 @@ impl Connection {
             "action": "close",
         }));
         ALIVE_CONNS.lock().unwrap().retain(|&c| c != id);
+        if let Some(s) = conn.server.upgrade() {
+            s.write().unwrap().remove_connection(&conn.inner);
+        }
         log::info!("#{} connection loop exited", id);
     }
 
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     fn handle_input(receiver: std_mpsc::Receiver<MessageInput>, tx: Sender) {
+        #[cfg(target_os = "macos")] 
+        let allow_swap_key = hbb_common::config::Config::get_option("allow-swap-key") == "Y";
+
         let mut block_input_mode = false;
         #[cfg(target_os = "windows")]
         {
@@ -561,26 +523,29 @@ impl Connection {
                         #[cfg(target_os = "macos")]
                         let msg = {
                             let mut msg = msg;
-                            msg.modifiers = msg.modifiers.iter().map(|ck| {
-                                let ck = ck.enum_value_or_default();
-                                let ck = match ck {
-                                    ControlKey::Control => ControlKey::Meta,
-                                    ControlKey::Meta => ControlKey::Control,
-                                    ControlKey::RControl => ControlKey::Meta,
-                                    ControlKey::RWin => ControlKey::Control,
-                                    _ => ck,
-                                };
-                                hbb_common::protobuf::EnumOrUnknown::new(ck)
-                            }).collect();
+                            if allow_swap_key {
+                                msg.modifiers = msg.modifiers.iter().map(|ck| {
+                                    let ck = ck.enum_value_or_default();
+                                    let ck = match ck {
+                                        ControlKey::Control => ControlKey::Meta,
+                                        ControlKey::Meta => ControlKey::Control,
+                                        ControlKey::RControl => ControlKey::Meta,
+                                        ControlKey::RWin => ControlKey::Control,
+                                        _ => ck,
+                                    };
+                                    hbb_common::protobuf::EnumOrUnknown::new(ck)
+                                }).collect();
+                            }
                             msg
                         };
+
                         handle_mouse(&msg, id);
                     }
                     MessageInput::Key((mut msg, press)) => {
                         //..m!!!!!!2.3
                         //..w!!!!!!2.3
                         #[cfg(target_os = "macos")]
-                        {
+                        if allow_swap_key {
                             if let Some(key_event::Union::ControlKey(ck)) = msg.union {
                                 let ck = ck.enum_value_or_default();
                                 let ck = match ck {
@@ -1337,7 +1302,7 @@ impl Connection {
                 SWITCH_SIDES_UUID
                     .lock()
                     .unwrap()
-                    .retain(|_, v| v.0.elapsed() < SWITCH_SIDES_TIMEOUT);
+                    .retain(|_, v| v.0.elapsed() < Duration::from_secs(10));
                 let uuid_old = SWITCH_SIDES_UUID.lock().unwrap().remove(&lr.my_id);
                 if let Ok(uuid) = uuid::Uuid::from_slice(_s.uuid.to_vec().as_ref()) {
                     if let Some((_instant, uuid_old)) = uuid_old {
@@ -1605,15 +1570,14 @@ impl Connection {
                             #[cfg(windows)]
                             {
                                 let mut err = "No need to elevate".to_string();
-                                if !crate::platform::is_installed()
-                                    && !crate::portable_service::client::running()
-                                {
-                                    use crate::portable_service::client;
-                                    err = client::start_portable_service(client::StartPara::Direct)
-                                        .err()
-                                        .map_or("".to_string(), |e| e.to_string());
+                                if !crate::platform::is_installed() && !portable_client::running() {
+                                    err = portable_client::start_portable_service(
+                                        portable_client::StartPara::Direct,
+                                    )
+                                    .err()
+                                    .map_or("".to_string(), |e| e.to_string());
                                 }
-                                self.elevation_requested = err.is_empty();
+                                self.portable.elevation_requested = err.is_empty();
                                 let mut misc = Misc::new();
                                 misc.set_elevation_response(err);
                                 let mut msg = Message::new();
@@ -1625,18 +1589,14 @@ impl Connection {
                             #[cfg(windows)]
                             {
                                 let mut err = "No need to elevate".to_string();
-                                if !crate::platform::is_installed()
-                                    && !crate::portable_service::client::running()
-                                {
-                                    use crate::portable_service::client;
-                                    err = client::start_portable_service(client::StartPara::Logon(
-                                        _r.username,
-                                        _r.password,
-                                    ))
+                                if !crate::platform::is_installed() && !portable_client::running() {
+                                    err = portable_client::start_portable_service(
+                                        portable_client::StartPara::Logon(_r.username, _r.password),
+                                    )
                                     .err()
                                     .map_or("".to_string(), |e| e.to_string());
                                 }
-                                self.elevation_requested = err.is_empty();
+                                self.portable.elevation_requested = err.is_empty();
                                 let mut misc = Misc::new();
                                 misc.set_elevation_response(err);
                                 let mut msg = Message::new();
@@ -1656,6 +1616,8 @@ impl Connection {
                                 uuid.to_string().as_ref(),
                             ])
                             .ok();
+                            self.send_close_reason_no_retry("Closed as expected").await;
+                            self.on_close("switch sides", false).await;
                             return false;
                         }
                     }
@@ -1829,16 +1791,13 @@ impl Connection {
     }
 
     async fn on_close(&mut self, reason: &str, lock: bool) {
-        if let Some(s) = self.server.upgrade() {
-            s.write().unwrap().remove_connection(&self.inner);
-        }
         log::info!("#{} Connection closed: {}", self.inner.id(), reason);
         if lock && self.lock_after_session_end && self.keyboard {
             #[cfg(not(any(target_os = "android", target_os = "ios")))]
             lock_screen().await;
         }
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
-        let data = if self.chat_unanswered && !self.close_manually {
+        let data = if self.chat_unanswered {
             ipc::Data::Disconnected
         } else {
             ipc::Data::Close
@@ -1849,15 +1808,17 @@ impl Connection {
         self.port_forward_socket.take();
     }
 
-    async fn on_close_manually(&mut self, close_from: &str, close_by: &str) {
-        self.close_manually = true;
+    // The `reason` should be consistent with `check_if_retry` if not empty
+    async fn send_close_reason_no_retry(&mut self, reason: &str) {
         let mut misc = Misc::new();
-        misc.set_close_reason(format!("Closed manually by the {}", close_by));
+        if reason.is_empty() {
+            misc.set_close_reason("Closed manually by the peer".to_string());
+        } else {
+            misc.set_close_reason(reason.to_string());
+        }
         let mut msg_out = Message::new();
         msg_out.set_misc(misc);
         self.send(msg_out).await;
-        self.on_close(&format!("Close requested from {}", close_from), false)
-            .await;
         SESSIONS.lock().unwrap().remove(&self.lr.my_id);
     }
 
@@ -1876,6 +1837,59 @@ impl Connection {
 
     pub fn alive_conns() -> Vec<i32> {
         ALIVE_CONNS.lock().unwrap().clone()
+    }
+
+    #[cfg(windows)]
+    fn portable_check(&mut self) {
+        if self.portable.is_installed
+            || self.file_transfer.is_some()
+            || self.port_forward_socket.is_some()
+        {
+            return;
+        }
+        let running = portable_client::running();
+        let show_elevation = !running;
+        self.send_to_cm(ipc::Data::DataPortableService(
+            ipc::DataPortableService::CmShowElevation(show_elevation),
+        ));
+        if self.authorized {
+            let p = &mut self.portable;
+            if running != p.last_running {
+                p.last_running = running;
+                if running && p.elevation_requested {
+                    let mut misc = Misc::new();
+                    misc.set_portable_service_running(running);
+                    let mut msg = Message::new();
+                    msg.set_misc(misc);
+                    self.inner.send(msg.into());
+                }
+            }
+            let uac = crate::video_service::IS_UAC_RUNNING.lock().unwrap().clone();
+            if p.last_uac != uac {
+                p.last_uac = uac;
+                if !uac || !running {
+                    let mut misc = Misc::new();
+                    misc.set_uac(uac);
+                    let mut msg = Message::new();
+                    msg.set_misc(misc);
+                    self.inner.send(msg.into());
+                }
+            }
+            let foreground_window_elevated = crate::video_service::IS_FOREGROUND_WINDOW_ELEVATED
+                .lock()
+                .unwrap()
+                .clone();
+            if p.last_foreground_window_elevated != foreground_window_elevated {
+                p.last_foreground_window_elevated = foreground_window_elevated;
+                if !foreground_window_elevated || !running {
+                    let mut misc = Misc::new();
+                    misc.set_foreground_window_elevated(foreground_window_elevated);
+                    let mut msg = Message::new();
+                    msg.set_misc(misc);
+                    self.inner.send(msg.into());
+                }
+            }
+        }
     }
 }
 
@@ -2050,4 +2064,26 @@ pub enum AlarmAuditType {
 pub enum FileAuditType {
     RemoteSend = 0,
     RemoteReceive = 1,
+}
+
+#[cfg(windows)]
+pub struct PortableState {
+    pub last_uac: bool,
+    pub last_foreground_window_elevated: bool,
+    pub last_running: bool,
+    pub is_installed: bool,
+    pub elevation_requested: bool,
+}
+
+#[cfg(windows)]
+impl Default for PortableState {
+    fn default() -> Self {
+        Self {
+            is_installed: crate::platform::is_installed(),
+            last_uac: Default::default(),
+            last_foreground_window_elevated: Default::default(),
+            last_running: Default::default(),
+            elevation_requested: Default::default(),
+        }
+    }
 }
