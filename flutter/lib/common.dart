@@ -1292,14 +1292,24 @@ Future<bool> initUniLinks() async {
   }
 }
 
-StreamSubscription? listenUniLinks() {
-  if (!(Platform.isWindows || Platform.isMacOS)) {
+/// Listen for uni links.
+///
+/// * handleByFlutter: Should uni links be handled by Flutter.
+///
+/// Returns a [StreamSubscription] which can listen the uni links.
+StreamSubscription? listenUniLinks({handleByFlutter = true}) {
+  if (Platform.isLinux) {
     return null;
   }
 
   final sub = uriLinkStream.listen((Uri? uri) {
+    debugPrint("A uri was received: $uri.");
     if (uri != null) {
-      callUniLinksUriHandler(uri);
+      if (handleByFlutter) {
+        callUniLinksUriHandler(uri);
+      } else {
+        bind.sendUrlScheme(url: uri.toString());
+      }
     } else {
       print("uni listen error: uri is empty.");
     }
@@ -1712,4 +1722,31 @@ Future<void> updateSystemWindowTheme() async {
               : SystemWindowTheme.dark);
     }
   }
+}
+/// macOS only
+///
+/// Note: not found a general solution for rust based AVFoundation bingding.
+/// [AVFoundation] crate has compile error.
+const kMacOSPermChannel = MethodChannel("org.rustdesk.rustdesk/macos");
+
+enum PermissionAuthorizeType {
+  undetermined,
+  authorized,
+  denied, // and restricted
+}
+
+Future<PermissionAuthorizeType> osxCanRecordAudio() async {
+  int res = await kMacOSPermChannel.invokeMethod("canRecordAudio");
+  print(res);
+  if (res > 0) {
+    return PermissionAuthorizeType.authorized;
+  } else if (res == 0) {
+    return PermissionAuthorizeType.undetermined;
+  } else {
+    return PermissionAuthorizeType.denied;
+  }
+}
+
+Future<bool> osxRequestAudio() async {
+  return await kMacOSPermChannel.invokeMethod("requestRecordAudio");
 }
