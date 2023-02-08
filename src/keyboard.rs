@@ -205,19 +205,19 @@ static mut IS_0X021D_DOWN: bool = false;
 pub fn start_grab_loop() {
     #[cfg(any(target_os = "windows", target_os = "macos"))]
     std::thread::spawn(move || {
-            let try_handle_keyboard = move |event: Event, key: Key, is_press: bool| -> Option<Event> {
+            let try_handle_keyboard = move |mut event: Event, key: Key, is_press: bool| -> Option<Event> {
             // fix #2211：CAPS LOCK don't work
             if key == Key::CapsLock || key == Key::NumLock {
                 return Some(event);
             }
             //..m!!!!!!1.1
-            #[cfg(target_os = "macos")] 
-            let mut event = event;
-            #[cfg(target_os = "macos")] {
+
+            //..
+            {
                 let mut allow_swap_key = false;
                 #[cfg(not(any(feature = "flutter", feature = "cli")))]
                 if let Some(session) = CUR_SESSION.lock().unwrap().as_ref() {
-                    allow_swap_key = session.allow_swap_key;
+                    allow_swap_key = session.get_toggle_option("allow_swap_key".to_string());
                 }
                 #[cfg(feature = "flutter")]
                 if let Some(session) = SESSIONS
@@ -225,7 +225,7 @@ pub fn start_grab_loop() {
                     .unwrap()
                     .get(&*CUR_SESSION_ID.read().unwrap())
                 {
-                    allow_swap_key = session.allow_swap_key;
+                    allow_swap_key = session.get_toggle_option("allow_swap_key".to_string());
                 }
                 if allow_swap_key {
                     match event.event_type {
@@ -257,7 +257,6 @@ pub fn start_grab_loop() {
                     };
                 };
             };
-
 
             let mut _keyboard_mode = KeyboardMode::Map;
             let scan_code = event.scan_code;
