@@ -694,7 +694,6 @@ void msgBox(String id, String type, String title, String text, String link,
     buttons.insert(
         0, dialogButton('Cancel', onPressed: cancel, isOutline: true));
   }
-  // TODO: test this button
   if (type.contains("hasclose")) {
     buttons.insert(
         0,
@@ -708,8 +707,7 @@ void msgBox(String id, String type, String title, String text, String link,
   dialogManager.show(
     (setState, close) => CustomAlertDialog(
       title: null,
-      content: SelectionArea(
-          child: msgboxContent(type, title, text).paddingOnly(bottom: 10)),
+      content: SelectionArea(child: msgboxContent(type, title, text)),
       actions: buttons,
       onSubmit: hasOk ? submit : null,
       onCancel: hasCancel == true ? cancel : null,
@@ -774,7 +772,7 @@ Widget msgboxContent(String type, String title, String text) {
         ),
       ),
     ],
-  );
+  ).marginOnly(bottom: 12);
 }
 
 void msgBoxCommon(OverlayDialogManager dialogManager, String title,
@@ -1294,14 +1292,24 @@ Future<bool> initUniLinks() async {
   }
 }
 
-StreamSubscription? listenUniLinks() {
-  if (!(Platform.isWindows || Platform.isMacOS)) {
+/// Listen for uni links.
+///
+/// * handleByFlutter: Should uni links be handled by Flutter.
+///
+/// Returns a [StreamSubscription] which can listen the uni links.
+StreamSubscription? listenUniLinks({handleByFlutter = true}) {
+  if (Platform.isLinux) {
     return null;
   }
 
   final sub = uriLinkStream.listen((Uri? uri) {
+    debugPrint("A uri was received: $uri.");
     if (uri != null) {
-      callUniLinksUriHandler(uri);
+      if (handleByFlutter) {
+        callUniLinksUriHandler(uri);
+      } else {
+        bind.sendUrlScheme(url: uri.toString());
+      }
     } else {
       print("uni listen error: uri is empty.");
     }
@@ -1315,6 +1323,12 @@ StreamSubscription? listenUniLinks() {
 ///
 /// * Returns true if we successfully handle the startup arguments.
 bool checkArguments() {
+  if (kBootArgs.isNotEmpty) {
+    final ret = parseRustdeskUri(kBootArgs.first);
+    if (ret) {
+      return true;
+    }
+  }
   // bootArgs:[--connect, 362587269, --switch_uuid, e3d531cc-5dce-41e0-bd06-5d4a2b1eec05]
   // check connect args
   var connectIndex = kBootArgs.indexOf("--connect");
@@ -1352,7 +1366,7 @@ bool checkArguments() {
 bool parseRustdeskUri(String uriPath) {
   final uri = Uri.tryParse(uriPath);
   if (uri == null) {
-    print("uri is not valid: $uriPath");
+    debugPrint("uri is not valid: $uriPath");
     return false;
   }
   return callUniLinksUriHandler(uri);
@@ -1708,4 +1722,31 @@ Future<void> updateSystemWindowTheme() async {
               : SystemWindowTheme.dark);
     }
   }
+}
+/// macOS only
+///
+/// Note: not found a general solution for rust based AVFoundation bingding.
+/// [AVFoundation] crate has compile error.
+const kMacOSPermChannel = MethodChannel("org.rustdesk.rustdesk/macos");
+
+enum PermissionAuthorizeType {
+  undetermined,
+  authorized,
+  denied, // and restricted
+}
+
+Future<PermissionAuthorizeType> osxCanRecordAudio() async {
+  int res = await kMacOSPermChannel.invokeMethod("canRecordAudio");
+  print(res);
+  if (res > 0) {
+    return PermissionAuthorizeType.authorized;
+  } else if (res == 0) {
+    return PermissionAuthorizeType.undetermined;
+  } else {
+    return PermissionAuthorizeType.denied;
+  }
+}
+
+Future<bool> osxRequestAudio() async {
+  return await kMacOSPermChannel.invokeMethod("requestRecordAudio");
 }

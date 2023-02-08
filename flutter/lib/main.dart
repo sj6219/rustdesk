@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -30,6 +31,9 @@ import 'models/platform_model.dart';
 int? kWindowId;
 WindowType? kWindowType;
 late List<String> kBootArgs;
+
+/// Uni links.
+StreamSubscription? _uniLinkSubscription;
 
 Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -211,7 +215,8 @@ void runMultiWindow(
 }
 
 void runConnectionManagerScreen(bool hide) async {
-  await initEnv(kAppTypeMain);
+  await initEnv(kAppTypeConnectionManager);
+  await bind.cmStartListenIpcThread();
   _runApp(
     '',
     const DesktopServerPage(),
@@ -222,6 +227,8 @@ void runConnectionManagerScreen(bool hide) async {
   } else {
     showCmWindow();
   }
+  // Start the uni links handler and redirect links to Native, not for Flutter.
+  _uniLinkSubscription = listenUniLinks(handleByFlutter: false);
 }
 
 void showCmWindow() {
@@ -353,6 +360,7 @@ class _AppState extends State<App> {
           ChangeNotifierProvider.value(value: gFFI.imageModel),
           ChangeNotifierProvider.value(value: gFFI.cursorModel),
           ChangeNotifierProvider.value(value: gFFI.canvasModel),
+          ChangeNotifierProvider.value(value: gFFI.peerTabModel),
         ],
         child: GetMaterialApp(
           navigatorKey: globalKey,
