@@ -1406,7 +1406,7 @@ impl Connection {
                     {
                 		//..w%%%%%%%2.1
                 		//..a%%%%%%%2.1
-                    	#[cfg(not(target_os = "ios"))]                        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+                    	#[cfg(not(target_os = "ios"))]                        
                         if self.clipboard {
                             update_clipboard(cb, None);
                         }
