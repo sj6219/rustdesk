@@ -1569,6 +1569,9 @@ class _RemoteMenubarState extends State<RemoteMenubar> {
         ),
       );
     }
+    keyboardMenu.add(_createSwitchMenuEntry(
+        'Allow Swap Key', 'allow_swap_key', EdgeInsets.zero, true));
+
     return keyboardMenu;
   }
 
