@@ -239,9 +239,10 @@ pub fn start_grab_loop() {
                             };
                             event.event_type = EventType::KeyPress(key);
                             #[cfg(target_os = "windows")]
-                            event.scan_code = rdev::win_scancode_from_key(key).unwrap_or_default();
+                            let scan_code = rdev::win_scancode_from_key(key).unwrap_or_default();
                             #[cfg(target_os = "macos")]
-                            event.scan_code = rdev::macos_keycode_from_key(key).unwrap_or_default();
+                            let scan_code = rdev::macos_keycode_from_key(key).unwrap_or_default();
+                            event.scan_code = scan_code;
                             event.code = event.scan_code as _;
                         }
                         EventType::KeyRelease(key) => {
@@ -254,9 +255,10 @@ pub fn start_grab_loop() {
                             };
                             event.event_type = EventType::KeyRelease(key);
                             #[cfg(target_os = "windows")]
-                            event.scan_code = rdev::win_scancode_from_key(key).unwrap_or_default();
+                            let scan_code = rdev::win_scancode_from_key(key).unwrap_or_default();
                             #[cfg(target_os = "macos")]
-                            event.scan_code = rdev::macos_keycode_from_key(key).unwrap_or_default();
+                            let scan_code = rdev::macos_keycode_from_key(key).unwrap_or_default();
+                            event.scan_code = scan_code;
                             event.code = event.scan_code as _;
                         }
                         _ => {}
