@@ -3,13 +3,11 @@ import 'dart:convert';
 import 'dart:ffi' hide Size;
 import 'dart:io';
 import 'dart:math';
-import 'dart:typed_data';
 
 import 'package:back_button_interceptor/back_button_interceptor.dart';
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:ffi/ffi.dart';
 import 'package:flutter/foundation.dart';
-import 'package:win32/win32.dart' as win32;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -18,22 +16,23 @@ import 'package:flutter_hbb/desktop/widgets/tabbar_widget.dart';
 import 'package:flutter_hbb/main.dart';
 import 'package:flutter_hbb/models/peer_model.dart';
 import 'package:flutter_hbb/utils/multi_window_manager.dart';
+import 'package:flutter_hbb/utils/platform_channel.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
 import 'package:uni_links/uni_links.dart';
 import 'package:uni_links_desktop/uni_links_desktop.dart';
-import 'package:window_manager/window_manager.dart';
-import 'package:flutter_svg/flutter_svg.dart';
-import 'package:window_size/window_size.dart' as window_size;
 import 'package:url_launcher/url_launcher.dart';
+import 'package:win32/win32.dart' as win32;
+import 'package:window_manager/window_manager.dart';
+import 'package:window_size/window_size.dart' as window_size;
 
+import '../consts.dart';
 import 'common/widgets/overlay.dart';
 import 'mobile/pages/file_manager_page.dart';
 import 'mobile/pages/remote_page.dart';
 import 'models/input_model.dart';
 import 'models/model.dart';
 import 'models/platform_model.dart';
-
-import '../consts.dart';
 
 final globalKey = GlobalKey<NavigatorState>();
 final navigationBarKey = GlobalKey();
@@ -205,6 +204,9 @@ class MyTheme {
     splashColor: Colors.transparent,
     highlightColor: Colors.transparent,
     splashFactory: isDesktop ? NoSplash.splashFactory : null,
+    outlinedButtonTheme: OutlinedButtonThemeData(
+        style:
+            OutlinedButton.styleFrom(side: BorderSide(color: Colors.white38))),
     textButtonTheme: isDesktop
         ? TextButtonThemeData(
             style: ButtonStyle(splashFactory: NoSplash.splashFactory),
@@ -221,16 +223,18 @@ class MyTheme {
     return themeModeFromString(bind.mainGetLocalOption(key: kCommConfKeyTheme));
   }
 
-  static void changeDarkMode(ThemeMode mode) {
+  static void changeDarkMode(ThemeMode mode) async {
     Get.changeThemeMode(mode);
     if (desktopType == DesktopType.main) {
       if (mode == ThemeMode.system) {
-        bind.mainSetLocalOption(key: kCommConfKeyTheme, value: '');
+        await bind.mainSetLocalOption(key: kCommConfKeyTheme, value: '');
       } else {
-        bind.mainSetLocalOption(
+        await bind.mainSetLocalOption(
             key: kCommConfKeyTheme, value: mode.toShortString());
       }
-      bind.mainChangeTheme(dark: mode.toShortString());
+      await bind.mainChangeTheme(dark: mode.toShortString());
+      // Synchronize the window theme of the system.
+      updateSystemWindowTheme();
     }
   }
 
@@ -363,20 +367,25 @@ class Dialog<T> {
   }
 }
 
+class OverlayKeyState {
+  final _overlayKey = GlobalKey<OverlayState>();
+
+  /// use global overlay by default
+  OverlayState? get state =>
+      _overlayKey.currentState ?? globalKey.currentState?.overlay;
+
+  GlobalKey<OverlayState>? get key => _overlayKey;
+}
+
 class OverlayDialogManager {
-  OverlayState? _overlayState;
   final Map<String, Dialog> _dialogs = {};
+  var _overlayKeyState = OverlayKeyState();
   int _tagCount = 0;
 
   OverlayEntry? _mobileActionsOverlayEntry;
 
-  /// By default OverlayDialogManager use global overlay
-  OverlayDialogManager() {
-    _overlayState = globalKey.currentState?.overlay;
-  }
-
-  void setOverlayState(OverlayState? overlayState) {
-    _overlayState = overlayState;
+  void setOverlayState(OverlayKeyState overlayKeyState) {
+    _overlayKeyState = overlayKeyState;
   }
 
   void dismissAll() {
@@ -400,7 +409,7 @@ class OverlayDialogManager {
       bool useAnimation = true,
       bool forceGlobal = false}) {
     final overlayState =
-        forceGlobal ? globalKey.currentState?.overlay : _overlayState;
+        forceGlobal ? globalKey.currentState?.overlay : _overlayKeyState.state;
 
     if (overlayState == null) {
       return Future.error(
@@ -504,7 +513,8 @@ class OverlayDialogManager {
 
   void showMobileActionsOverlay({FFI? ffi}) {
     if (_mobileActionsOverlayEntry != null) return;
-    if (_overlayState == null) return;
+    final overlayState = _overlayKeyState.state;
+    if (overlayState == null) return;
 
     // compute overlay position
     final screenW = MediaQuery.of(globalKey.currentContext!).size.width;
@@ -530,7 +540,7 @@ class OverlayDialogManager {
         onHidePressed: () => hideMobileActionsOverlay(),
       );
     });
-    _overlayState!.insert(overlay);
+    overlayState.insert(overlay);
     _mobileActionsOverlayEntry = overlay;
   }
 
@@ -613,6 +623,7 @@ class CustomAlertDialog extends StatelessWidget {
     Future.delayed(Duration.zero, () {
       if (!scopeNode.hasFocus) scopeNode.requestFocus();
     });
+    const double padding = 16;
     return FocusScope(
       node: scopeNode,
       autofocus: true,
@@ -637,17 +648,18 @@ class CustomAlertDialog extends StatelessWidget {
       child: AlertDialog(
         scrollable: true,
         title: title,
-        contentPadding: EdgeInsets.symmetric(
-            horizontal: contentPadding ?? 25, vertical: 10),
+        contentPadding: EdgeInsets.fromLTRB(
+            contentPadding ?? padding, 25, contentPadding ?? padding, 10),
         content: ConstrainedBox(
-            constraints: contentBoxConstraints,
-            child: Theme(
-                data: ThemeData(
+          constraints: contentBoxConstraints,
+          child: Theme(
+              data: Theme.of(context).copyWith(
                   inputDecorationTheme: InputDecorationTheme(
-                      isDense: true, contentPadding: EdgeInsets.all(15)),
-                ),
-                child: content)),
+                      isDense: true, contentPadding: EdgeInsets.all(15))),
+              child: content),
+        ),
         actions: actions,
+        actionsPadding: EdgeInsets.fromLTRB(0, 0, padding, padding),
       ),
     );
   }
@@ -688,7 +700,6 @@ void msgBox(String id, String type, String title, String text, String link,
     buttons.insert(
         0, dialogButton('Cancel', onPressed: cancel, isOutline: true));
   }
-  // TODO: test this button
   if (type.contains("hasclose")) {
     buttons.insert(
         0,
@@ -701,9 +712,8 @@ void msgBox(String id, String type, String title, String text, String link,
   }
   dialogManager.show(
     (setState, close) => CustomAlertDialog(
-      title: _msgBoxTitle(title),
-      content:
-          SelectableText(translate(text), style: const TextStyle(fontSize: 15)),
+      title: null,
+      content: SelectionArea(child: msgboxContent(type, title, text)),
       actions: buttons,
       onSubmit: hasOk ? submit : null,
       onCancel: hasCancel == true ? cancel : null,
@@ -712,30 +722,74 @@ void msgBox(String id, String type, String title, String text, String link,
   );
 }
 
-Widget msgBoxButton(String text, void Function() onPressed) {
-  return ButtonTheme(
-      padding: EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-      //limits the touch area to the button area
-      minWidth: 0,
-      //wraps child's width
-      height: 0,
-      child: TextButton(
-          style: flatButtonStyle,
-          onPressed: onPressed,
-          child:
-              Text(translate(text), style: TextStyle(color: MyTheme.accent))));
+Color? _msgboxColor(String type) {
+  if (type == "input-password" || type == "custom-os-password") {
+    return Color(0xFFAD448E);
+  }
+  if (type.contains("success")) {
+    return Color(0xFF32bea6);
+  }
+  if (type.contains("error") || type == "re-input-password") {
+    return Color(0xFFE04F5F);
+  }
+  return Color(0xFF2C8CFF);
 }
 
-Widget _msgBoxTitle(String title) =>
-    Text(translate(title), style: TextStyle(fontSize: 21));
+Widget msgboxIcon(String type) {
+  IconData? iconData;
+  if (type.contains("error") || type == "re-input-password") {
+    iconData = Icons.cancel;
+  }
+  if (type.contains("success")) {
+    iconData = Icons.check_circle;
+  }
+  if (type == "wait-uac" || type == "wait-remote-accept-nook") {
+    iconData = Icons.hourglass_top;
+  }
+  if (type == 'on-uac' || type == 'on-foreground-elevated') {
+    iconData = Icons.admin_panel_settings;
+  }
+  if (type == "info") {
+    iconData = Icons.info;
+  }
+  if (iconData != null) {
+    return Icon(iconData, size: 50, color: _msgboxColor(type))
+        .marginOnly(right: 16);
+  }
+
+  return Offstage();
+}
+
+// title should be null
+Widget msgboxContent(String type, String title, String text) {
+  return Row(
+    children: [
+      msgboxIcon(type),
+      Expanded(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              translate(title),
+              style: TextStyle(fontSize: 21),
+            ).marginOnly(bottom: 10),
+            Text(translate(text), style: const TextStyle(fontSize: 15)),
+          ],
+        ),
+      ),
+    ],
+  ).marginOnly(bottom: 12);
+}
 
 void msgBoxCommon(OverlayDialogManager dialogManager, String title,
     Widget content, List<Widget> buttons,
     {bool hasCancel = true}) {
   dialogManager.dismissAll();
   dialogManager.show((setState, close) => CustomAlertDialog(
-        title: _msgBoxTitle(title),
+        title: Text(
+          translate(title),
+          style: TextStyle(fontSize: 21),
+        ),
         content: content,
         actions: buttons,
         onCancel: hasCancel ? close : null,
@@ -1222,10 +1276,12 @@ Future<bool> restoreWindowPosition(WindowType type, {int? windowId}) async {
 /// [Availability]
 /// initUniLinks should only be used on macos/windows.
 /// we use dbus for linux currently.
-Future<void> initUniLinks() async {
-  if (!Platform.isWindows && !Platform.isMacOS) {
-    return;
+Future<bool> initUniLinks() async {
+  if (Platform.isLinux) {
+    return false;
   }
+  // Register uni links for Windows. The required info of url scheme is already
+  // declared in `Info.plist` for macOS.
   if (Platform.isWindows) {
     registerProtocol('rustdesk');
   }
@@ -1233,22 +1289,33 @@ Future<void> initUniLinks() async {
   try {
     final initialLink = await getInitialLink();
     if (initialLink == null) {
-      return;
+      return false;
     }
-    parseRustdeskUri(initialLink);
+    return parseRustdeskUri(initialLink);
   } catch (err) {
     debugPrintStack(label: "$err");
+    return false;
   }
 }
 
-StreamSubscription? listenUniLinks() {
-  if (!(Platform.isWindows || Platform.isMacOS)) {
+/// Listen for uni links.
+///
+/// * handleByFlutter: Should uni links be handled by Flutter.
+///
+/// Returns a [StreamSubscription] which can listen the uni links.
+StreamSubscription? listenUniLinks({handleByFlutter = true}) {
+  if (Platform.isLinux) {
     return null;
   }
 
   final sub = uriLinkStream.listen((Uri? uri) {
+    debugPrint("A uri was received: $uri.");
     if (uri != null) {
-      callUniLinksUriHandler(uri);
+      if (handleByFlutter) {
+        callUniLinksUriHandler(uri);
+      } else {
+        bind.sendUrlScheme(url: uri.toString());
+      }
     } else {
       print("uni listen error: uri is empty.");
     }
@@ -1258,11 +1325,19 @@ StreamSubscription? listenUniLinks() {
   return sub;
 }
 
-/// Returns true if we successfully handle the startup arguments.
+/// Handle command line arguments
+///
+/// * Returns true if we successfully handle the startup arguments.
 bool checkArguments() {
+  if (kBootArgs.isNotEmpty) {
+    final ret = parseRustdeskUri(kBootArgs.first);
+    if (ret) {
+      return true;
+    }
+  }
   // bootArgs:[--connect, 362587269, --switch_uuid, e3d531cc-5dce-41e0-bd06-5d4a2b1eec05]
   // check connect args
-  final connectIndex = kBootArgs.indexOf("--connect");
+  var connectIndex = kBootArgs.indexOf("--connect");
   if (connectIndex == -1) {
     return false;
   }
@@ -1297,7 +1372,7 @@ bool checkArguments() {
 bool parseRustdeskUri(String uriPath) {
   final uri = Uri.tryParse(uriPath);
   if (uri == null) {
-    print("uri is not valid: $uriPath");
+    debugPrint("uri is not valid: $uriPath");
     return false;
   }
   return callUniLinksUriHandler(uri);
@@ -1316,7 +1391,7 @@ bool callUniLinksUriHandler(Uri uri) {
     Future.delayed(Duration.zero, () {
       rustDeskWinManager.newRemoteDesktop(peerId, switch_uuid: switch_uuid);
     });
-    return false;
+    return true;
   }
   return false;
 }
@@ -1456,8 +1531,12 @@ Future<void> onActiveWindowChanged() async {
     } catch (err) {
       debugPrintStack(label: "$err");
     } finally {
+      debugPrint("Start closing RustDesk...");
       await windowManager.setPreventClose(false);
       await windowManager.close();
+      if (Platform.isMacOS) {
+        RdPlatformChannel.instance.terminate();
+      }
     }
   }
 }
@@ -1589,7 +1668,8 @@ class ServerConfig {
 Widget dialogButton(String text,
     {required VoidCallback? onPressed,
     bool isOutline = false,
-    TextStyle? style}) {
+    TextStyle? style,
+    ButtonStyle? buttonStyle}) {
   if (isDesktop) {
     if (isOutline) {
       return OutlinedButton(
@@ -1598,7 +1678,7 @@ Widget dialogButton(String text,
       );
     } else {
       return ElevatedButton(
-        style: ElevatedButton.styleFrom(elevation: 0),
+        style: ElevatedButton.styleFrom(elevation: 0).merge(buttonStyle),
         onPressed: onPressed,
         child: Text(translate(text), style: style),
       );
@@ -1635,4 +1715,44 @@ String getWindowName({WindowType? overrideType}) {
 
 String getWindowNameWithId(String id, {WindowType? overrideType}) {
   return "${DesktopTab.labelGetterAlias(id).value} - ${getWindowName(overrideType: overrideType)}";
+}
+
+Future<void> updateSystemWindowTheme() async {
+  // Set system window theme for macOS.
+  final userPreference = MyTheme.getThemeModePreference();
+  if (userPreference != ThemeMode.system) {
+    if (Platform.isMacOS) {
+      await RdPlatformChannel.instance.changeSystemWindowTheme(
+          userPreference == ThemeMode.light
+              ? SystemWindowTheme.light
+              : SystemWindowTheme.dark);
+    }
+  }
+}
+/// macOS only
+///
+/// Note: not found a general solution for rust based AVFoundation bingding.
+/// [AVFoundation] crate has compile error.
+const kMacOSPermChannel = MethodChannel("org.rustdesk.rustdesk/macos");
+
+enum PermissionAuthorizeType {
+  undetermined,
+  authorized,
+  denied, // and restricted
+}
+
+Future<PermissionAuthorizeType> osxCanRecordAudio() async {
+  int res = await kMacOSPermChannel.invokeMethod("canRecordAudio");
+  print(res);
+  if (res > 0) {
+    return PermissionAuthorizeType.authorized;
+  } else if (res == 0) {
+    return PermissionAuthorizeType.undetermined;
+  } else {
+    return PermissionAuthorizeType.denied;
+  }
+}
+
+Future<bool> osxRequestAudio() async {
+  return await kMacOSPermChannel.invokeMethod("requestRecordAudio");
 }

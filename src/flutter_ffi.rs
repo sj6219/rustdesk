@@ -1,30 +1,30 @@
-use std::{
-    collections::HashMap,
-    ffi::{CStr, CString},
-    os::raw::c_char,
-};
+use std::{collections::HashMap, ffi::{CStr, CString}, os::raw::c_char};
+use std::str::FromStr;
+
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "android"))]
+use std::thread;
 
 use flutter_rust_bridge::{StreamSink, SyncReturn, ZeroCopyBuffer};
 use serde_json::json;
 
-use crate::common::is_keyboard_mode_supported;
-use hbb_common::message_proto::KeyboardMode;
-use hbb_common::ResultType;
 use hbb_common::{
-    config::{self, LocalConfig, PeerConfig, ONLINE},
+    config::{self, LocalConfig, ONLINE, PeerConfig},
     fs, log,
 };
-use std::str::FromStr;
+use hbb_common::message_proto::KeyboardMode;
+use hbb_common::ResultType;
 
-// use crate::hbbs_http::account::AuthResult;
-
-use crate::flutter::{self, SESSIONS};
-use crate::ui_interface::{self, *};
 use crate::{
     client::file_trait::FileManager,
     common::make_fd_to_json,
     flutter::{session_add, session_start_},
 };
+use crate::common::{get_default_sound_input, is_keyboard_mode_supported};
+use crate::flutter::{self, SESSIONS};
+use crate::ui_interface::{self, *};
+
+// use crate::hbbs_http::account::AuthResult;
+
 fn initialize(app_dir: &str) {
     *config::APP_DIR.write().unwrap() = app_dir.to_owned();
     #[cfg(target_os = "android")]
@@ -523,6 +523,13 @@ pub fn main_get_sound_inputs() -> Vec<String> {
     vec![String::from("")]
 }
 
+pub fn main_get_default_sound_input() -> Option<String> {
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    return get_default_sound_input();
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    None
+}
+
 pub fn main_get_hostname() -> SyncReturn<String> {
     SyncReturn(crate::common::hostname())
 }
@@ -791,6 +798,14 @@ pub fn main_default_video_save_directory() -> String {
     default_video_save_directory()
 }
 
+pub fn main_set_user_default_option(key: String, value: String) {
+    set_user_default_option(key, value);
+}
+
+pub fn main_get_user_default_option(key: String) -> SyncReturn<String> {
+    SyncReturn(get_user_default_option(key))
+}
+
 pub fn session_add_port_forward(
     id: String,
     local_port: i32,
@@ -812,6 +827,26 @@ pub fn session_new_rdp(id: String) {
     if let Some(session) = SESSIONS.write().unwrap().get_mut(&id) {
         session.new_rdp();
     }
+}
+
+pub fn session_request_voice_call(id: String) {
+    if let Some(session) = SESSIONS.write().unwrap().get_mut(&id) {
+        session.request_voice_call();
+    }
+}
+
+pub fn session_close_voice_call(id: String) {
+    if let Some(session) = SESSIONS.write().unwrap().get_mut(&id) {
+        session.close_voice_call();
+    }
+}
+
+pub fn cm_handle_incoming_voice_call(id: i32, accept: bool) {
+    crate::ui_cm_interface::handle_incoming_voice_call(id, accept);
+}
+
+pub fn cm_close_voice_call(id: i32) {
+    crate::ui_cm_interface::close_voice_call(id);
 }
 
 pub fn main_get_last_remote_id() -> String {
@@ -896,7 +931,7 @@ pub fn main_start_dbus_server() {
     {
         use crate::dbus::start_dbus_server;
         // spawn new thread to start dbus server
-        std::thread::spawn(|| {
+        thread::spawn(|| {
             let _ = start_dbus_server();
         });
     }
@@ -1241,15 +1276,48 @@ pub fn main_is_login_wayland() -> SyncReturn<bool> {
     SyncReturn(is_login_wayland())
 }
 
+pub fn main_start_pa() {
+    #[cfg(target_os = "linux")]
+    thread::spawn(crate::ipc::start_pa);
+}
+
+pub fn main_hide_docker() -> SyncReturn<bool> {
+    #[cfg(target_os = "macos")]
+    crate::platform::macos::hide_dock();
+    SyncReturn(true)
+}
+
+pub fn cm_start_listen_ipc_thread() {
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    crate::flutter::connection_manager::start_listen_ipc_thread();
+}
+
+/// Start an ipc server for receiving the url scheme.
+///
+/// * Should only be called in the main flutter window.
+/// * macOS only
+pub fn main_start_ipc_url_server() {
+    #[cfg(target_os = "macos")]
+    thread::spawn(move || crate::server::start_ipc_url_server());
+}
+
+/// Send a url scheme throught the ipc.
+///
+/// * macOS only
+#[allow(unused_variables)]
+pub fn send_url_scheme(_url: String) {
+    #[cfg(target_os = "macos")]
+    thread::spawn(move || crate::ui::macos::handle_url_scheme(_url));
+}
+
 #[cfg(target_os = "android")]
 pub mod server_side {
+    use hbb_common::log;
     use jni::{
+        JNIEnv,
         objects::{JClass, JString},
         sys::jstring,
-        JNIEnv,
     };
-
-    use hbb_common::log;
 
     use crate::start_server;
 
@@ -1259,7 +1327,7 @@ pub mod server_side {
         _class: JClass,
     ) {
         log::debug!("startServer from java");
-        std::thread::spawn(move || start_server(true));
+        thread::spawn(move || start_server(true));
     }
 
     #[no_mangle]

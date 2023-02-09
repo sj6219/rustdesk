@@ -1,47 +1,53 @@
-pub use async_trait::async_trait;
-use bytes::Bytes;
-#[cfg(not(any(target_os = "android", target_os = "linux")))]
-use cpal::{
-    traits::{DeviceTrait, HostTrait, StreamTrait},
-    Device, Host, StreamConfig,
-};
-use magnum_opus::{Channels::*, Decoder as AudioDecoder};
-use sha2::{Digest, Sha256};
 use std::{
     collections::HashMap,
     net::SocketAddr,
     ops::{Deref, Not},
     str::FromStr,
-    sync::{atomic::AtomicBool, mpsc, Arc, Mutex, RwLock},
+    sync::{Arc, atomic::AtomicBool, mpsc, Mutex, RwLock},
 };
+
+pub use async_trait::async_trait;
+use bytes::Bytes;
+#[cfg(not(any(target_os = "android", target_os = "linux")))]
+use cpal::{
+    Device,
+    Host, StreamConfig, traits::{DeviceTrait, HostTrait, StreamTrait},
+};
+use magnum_opus::{Channels::*, Decoder as AudioDecoder};
+use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 pub use file_trait::FileManager;
 use hbb_common::{
+    AddrMangle,
     allow_err,
     anyhow::{anyhow, Context},
     bail,
     config::{
-        Config, PeerConfig, PeerInfoSerde, CONNECT_TIMEOUT, READ_TIMEOUT, RELAY_PORT,
+        Config, CONNECT_TIMEOUT, PeerConfig, PeerInfoSerde, READ_TIMEOUT, RELAY_PORT,
         RENDEZVOUS_TIMEOUT,
-    },
-    get_version_number, log,
-    message_proto::{option_message::BoolOption, *},
+    }, get_version_number,
+    log,
+    message_proto::{*, option_message::BoolOption},
     protobuf::Message as _,
     rand,
     rendezvous_proto::*,
+    ResultType,
     socket_client,
     sodiumoxide::crypto::{box_, secretbox, sign},
-    timeout,
-    tokio::time::Duration,
-    AddrMangle, ResultType, Stream,
+    Stream, timeout, tokio::time::Duration,
 };
-pub use helper::LatencyController;
 pub use helper::*;
+pub use helper::LatencyController;
 use scrap::{
     codec::{Decoder, DecoderCfg},
     record::{Recorder, RecorderContext},
     VpxDecoderConfig, VpxVideoCodecId,
+};
+
+use crate::{
+    common::{self, is_keyboard_mode_supported},
+    server::video_service::{SCRAP_X11_REF_URL, SCRAP_X11_REQUIRED},
 };
 
 pub use super::lang::*;
@@ -49,10 +55,7 @@ pub use super::lang::*;
 pub mod file_trait;
 pub mod helper;
 pub mod io_loop;
-use crate::{
-    common::{self, is_keyboard_mode_supported},
-    server::video_service::{SCRAP_X11_REF_URL, SCRAP_X11_REQUIRED},
-};
+
 pub static SERVER_KEYBOARD_ENABLED: AtomicBool = AtomicBool::new(true);
 pub static SERVER_FILE_TRANSFER_ENABLED: AtomicBool = AtomicBool::new(true);
 pub static SERVER_CLIPBOARD_ENABLED: AtomicBool = AtomicBool::new(true);
@@ -714,6 +717,7 @@ impl AudioHandler {
                 .check_audio(frame.timestamp)
                 .not()
             {
+                log::debug!("audio frame {} is ignored", frame.timestamp);
                 return;
             }
         }
@@ -724,6 +728,7 @@ impl AudioHandler {
         }
         #[cfg(target_os = "linux")]
         if self.simple.is_none() {
+            log::debug!("PulseAudio simple binding does not exists");
             return;
         }
         #[cfg(target_os = "android")]
@@ -956,7 +961,7 @@ impl LoginConfigHandler {
     /// Check if the client should auto login.
     /// Return password if the client should auto login, otherwise return empty string.
     pub fn should_auto_login(&self) -> String {
-        let l = self.lock_after_session_end;
+        let l = self.lock_after_session_end.v;
         let a = !self.get_option("auto-login").is_empty();
         let p = self.get_option("os-password");
         if !p.is_empty() && l && a {
@@ -1063,32 +1068,32 @@ impl LoginConfigHandler {
         let mut option = OptionMessage::default();
         let mut config = self.load_config();
         if name == "show-remote-cursor" {
-            config.show_remote_cursor = !config.show_remote_cursor;
-            option.show_remote_cursor = (if config.show_remote_cursor {
+            config.show_remote_cursor.v = !config.show_remote_cursor.v;
+            option.show_remote_cursor = (if config.show_remote_cursor.v {
                 BoolOption::Yes
             } else {
                 BoolOption::No
             })
             .into();
         } else if name == "disable-audio" {
-            config.disable_audio = !config.disable_audio;
-            option.disable_audio = (if config.disable_audio {
+            config.disable_audio.v = !config.disable_audio.v;
+            option.disable_audio = (if config.disable_audio.v {
                 BoolOption::Yes
             } else {
                 BoolOption::No
             })
             .into();
         } else if name == "disable-clipboard" {
-            config.disable_clipboard = !config.disable_clipboard;
-            option.disable_clipboard = (if config.disable_clipboard {
+            config.disable_clipboard.v = !config.disable_clipboard.v;
+            option.disable_clipboard = (if config.disable_clipboard.v {
                 BoolOption::Yes
             } else {
                 BoolOption::No
             })
             .into();
         } else if name == "lock-after-session-end" {
-            config.lock_after_session_end = !config.lock_after_session_end;
-            option.lock_after_session_end = (if config.lock_after_session_end {
+            config.lock_after_session_end.v = !config.lock_after_session_end.v;
+            option.lock_after_session_end = (if config.lock_after_session_end.v {
                 BoolOption::Yes
             } else {
                 BoolOption::No
@@ -1096,15 +1101,15 @@ impl LoginConfigHandler {
             .into();
         } else if name == "privacy-mode" {
             // try toggle privacy mode
-            option.privacy_mode = (if config.privacy_mode {
+            option.privacy_mode = (if config.privacy_mode.v {
                 BoolOption::No
             } else {
                 BoolOption::Yes
             })
             .into();
         } else if name == "enable-file-transfer" {
-            config.enable_file_transfer = !config.enable_file_transfer;
-            option.enable_file_transfer = (if config.enable_file_transfer {
+            config.enable_file_transfer.v = !config.enable_file_transfer.v;
+            option.enable_file_transfer = (if config.enable_file_transfer.v {
                 BoolOption::Yes
             } else {
                 BoolOption::No
@@ -1115,10 +1120,16 @@ impl LoginConfigHandler {
         } else if name == "unblock-input" {
             option.block_input = BoolOption::No.into();
         } else if name == "show-quality-monitor" {
-            config.show_quality_monitor = !config.show_quality_monitor;
+            config.show_quality_monitor.v = !config.show_quality_monitor.v;
+        } else if name == "allow_swap_key" {
+            config.allow_swap_key.v = !config.allow_swap_key.v;
         } else {
-            let v = self.options.get(&name).is_some();
-            if v {
+            let is_set = self
+                .options
+                .get(&name)
+                .map(|o| !o.is_empty())
+                .unwrap_or(false);
+            if is_set {
                 self.config.options.remove(&name);
             } else {
                 self.config.options.insert(name, "Y".to_owned());
@@ -1252,19 +1263,21 @@ impl LoginConfigHandler {
     /// * `name` - The name of the toggle option.
     pub fn get_toggle_option(&self, name: &str) -> bool {
         if name == "show-remote-cursor" {
-            self.config.show_remote_cursor
+            self.config.show_remote_cursor.v
         } else if name == "lock-after-session-end" {
-            self.config.lock_after_session_end
+            self.config.lock_after_session_end.v
         } else if name == "privacy-mode" {
-            self.config.privacy_mode
+            self.config.privacy_mode.v
         } else if name == "enable-file-transfer" {
-            self.config.enable_file_transfer
+            self.config.enable_file_transfer.v
         } else if name == "disable-audio" {
-            self.config.disable_audio
+            self.config.disable_audio.v
         } else if name == "disable-clipboard" {
-            self.config.disable_clipboard
+            self.config.disable_clipboard.v
         } else if name == "show-quality-monitor" {
-            self.config.show_quality_monitor
+            self.config.show_quality_monitor.v
+        } else if name == "allow_swap_key" {
+            self.config.allow_swap_key.v
         } else {
             !self.get_option(name).is_empty()
         }
@@ -1542,7 +1555,6 @@ where
     F: 'static + FnMut(&[u8]) + Send,
 {
     let (video_sender, video_receiver) = mpsc::channel::<MediaData>();
-    let (audio_sender, audio_receiver) = mpsc::channel::<MediaData>();
     let mut video_callback = video_callback;
 
     let latency_controller = LatencyController::new();
@@ -1572,8 +1584,19 @@ where
         }
         log::info!("Video decoder loop exits");
     });
+    let audio_sender = start_audio_thread(Some(latency_controller_cl));
+    return (video_sender, audio_sender);
+}
+
+/// Start an audio thread
+/// Return a audio [`MediaSender`]
+pub fn start_audio_thread(
+    latency_controller: Option<Arc<Mutex<LatencyController>>>,
+) -> MediaSender {
+    let latency_controller = latency_controller.unwrap_or(LatencyController::new());
+    let (audio_sender, audio_receiver) = mpsc::channel::<MediaData>();
     std::thread::spawn(move || {
-        let mut audio_handler = AudioHandler::new(latency_controller_cl);
+        let mut audio_handler = AudioHandler::new(latency_controller);
         loop {
             if let Ok(data) = audio_receiver.recv() {
                 match data {
@@ -1581,6 +1604,7 @@ where
                         audio_handler.handle_frame(af);
                     }
                     MediaData::AudioFormat(f) => {
+                        log::debug!("recved audio format, sample rate={}", f.sample_rate);
                         audio_handler.handle_format(f);
                     }
                     _ => {}
@@ -1591,7 +1615,7 @@ where
         }
         log::info!("Audio decoder loop exits");
     });
-    return (video_sender, audio_sender);
+    audio_sender
 }
 
 /// Handle latency test.
@@ -1934,6 +1958,8 @@ pub enum Data {
     RecordScreen(bool, i32, i32, String),
     ElevateDirect,
     ElevateWithLogon(String, String),
+    NewVoiceCall,
+    CloseVoiceCall,
 }
 
 /// Keycode for key events.
