@@ -16,10 +16,11 @@ reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution 
 #macos
 pushd flutter && flutter pub get && popd
 ~/.cargo/bin/flutter_rust_bridge_codegen --rust-input ./src/flutter_ffi.rs --dart-output ./flutter/lib/generated_bridge.dart
-
+./build.py --flutter
 codesign --force --options runtime -s "Developer ID Application" --deep ./flutter/build/macos/Build/Products/Release/RustDesk.app -v
 rm -r /Applications/RustDesk.app
 cp -r ./flutter/build/macos/Build/Products/Release/RustDesk.app /Applications/RustDesk.app
+open -n /Applications/RustDesk.app --args --server
 
 cargo bundle --release --features inline
 cp libsciter.dylib target/release/bundle/osx/RustDesk.app/Contents/MacOS

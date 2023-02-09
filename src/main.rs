@@ -28,16 +28,6 @@ fn main() {
             println!("======================0 {}", std::process::id());
             std::io::stdout().flush().unwrap();
         }
-        #[cfg(target_os = "macos")]
-        unsafe {
-            use std::io::Write;
-            let mut id : u64 = 0;
-            libc::pthread_threadid_np(0 as _, &mut id);
-            println!("======================{}", id);
-            if let Ok(mut file) = std::fs::OpenOptions::new().write(true).create(false).append(true).open("/tmp/RustDesk/pipe") {
-                writeln!(&mut file, "======================{}", std::process::id()).unwrap();
-            }
-        }
         #[cfg(windows)]
         {
             // $npipeServer = new-object System.IO.Pipes.NamedPipeServerStream('RustDesk', [System.IO.Pipes.PipeDirection]::InOut)

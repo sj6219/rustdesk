@@ -13,6 +13,7 @@ import 'package:flutter_hbb/models/ab_model.dart';
 import 'package:flutter_hbb/models/chat_model.dart';
 import 'package:flutter_hbb/models/file_model.dart';
 import 'package:flutter_hbb/models/group_model.dart';
+import 'package:flutter_hbb/models/peer_tab_model.dart';
 import 'package:flutter_hbb/models/server_model.dart';
 import 'package:flutter_hbb/models/user_model.dart';
 import 'package:flutter_hbb/models/state_model.dart';
@@ -199,6 +200,26 @@ class FfiModel with ChangeNotifier {
         final peer_id = evt['peer_id'].toString();
         await bind.sessionSwitchSides(id: peer_id);
         closeConnection(id: peer_id);
+      } else if (name == "on_url_scheme_received") {
+        final url = evt['url'].toString();
+        parseRustdeskUri(url);
+      } else if (name == "on_voice_call_waiting") {
+        // Waiting for the response from the peer.
+        parent.target?.chatModel.onVoiceCallWaiting();
+      } else if (name == "on_voice_call_started") {
+        // Voice call is connected.
+        parent.target?.chatModel.onVoiceCallStarted();
+      } else if (name == "on_voice_call_closed") {
+        // Voice call is closed with reason.
+        final reason = evt['reason'].toString();
+        parent.target?.chatModel.onVoiceCallClosed(reason);
+      } else if (name == "on_voice_call_incoming") {
+        // Voice call is requested by the peer.
+        parent.target?.chatModel.onVoiceCallIncoming();
+      } else if (name == "update_voice_call_state") {
+        parent.target?.serverModel.updateVoiceCallState(evt);
+      } else {
+        debugPrint("Unknown event name: $name");
       }
     };
   }
@@ -263,19 +284,18 @@ class FfiModel with ChangeNotifier {
     final text = evt['text'];
     final link = evt['link'];
     if (type == 're-input-password') {
-      wrongPasswordDialog(id, dialogManager);
+      wrongPasswordDialog(id, dialogManager, type, title, text);
     } else if (type == 'input-password') {
       enterPasswordDialog(id, dialogManager);
     } else if (type == 'restarting') {
       showMsgBox(id, type, title, text, link, false, dialogManager,
           hasCancel: false);
     } else if (type == 'wait-remote-accept-nook') {
-      msgBoxCommon(dialogManager, title, Text(translate(text)),
-          [dialogButton("Cancel", onPressed: closeConnection)]);
+      showWaitAcceptDialog(id, type, title, text, dialogManager);
     } else if (type == 'on-uac' || type == 'on-foreground-elevated') {
       showOnBlockDialog(id, type, title, text, dialogManager);
     } else if (type == 'wait-uac') {
-      showWaitUacDialog(id, dialogManager);
+      showWaitUacDialog(id, dialogManager, type);
     } else if (type == 'elevation-error') {
       showElevationError(id, type, title, text, dialogManager);
     } else {
@@ -540,6 +560,7 @@ class CanvasModel with ChangeNotifier {
   double _y = 0;
   // image scale
   double _scale = 1.0;
+  double _devicePixelRatio = 1.0;
   Size _size = Size.zero;
   // the tabbar over the image
   // double tabBarHeight = 0.0;
@@ -563,6 +584,7 @@ class CanvasModel with ChangeNotifier {
   double get x => _x;
   double get y => _y;
   double get scale => _scale;
+  double get devicePixelRatio => _devicePixelRatio;
   Size get size => _size;
   ScrollStyle get scrollStyle => _scrollStyle;
   ViewStyle get viewStyle => _lastViewStyle;
@@ -611,13 +633,15 @@ class CanvasModel with ChangeNotifier {
     _lastViewStyle = viewStyle;
     _scale = viewStyle.scale;
 
+    _devicePixelRatio = ui.window.devicePixelRatio;
     if (kIgnoreDpi && style == kRemoteViewStyleOriginal) {
-      _scale = 1.0 / ui.window.devicePixelRatio;
+      _scale = 1.0 / _devicePixelRatio;
     }
     _x = (size.width - displayWidth * _scale) / 2;
     _y = (size.height - displayHeight * _scale) / 2;
     _imageOverflow.value = _x < 0 || y < 0;
     notifyListeners();
+    parent.target?.inputModel.refreshMousePos();
   }
 
   updateScrollStyle() async {
@@ -747,7 +771,7 @@ class CanvasModel with ChangeNotifier {
 class CursorData {
   final String peerId;
   final int id;
-  final img2.Image? image;
+  final img2.Image image;
   double scale;
   Uint8List? data;
   final double hotxOrigin;
@@ -772,33 +796,40 @@ class CursorData {
 
   int _doubleToInt(double v) => (v * 10e6).round().toInt();
 
-  double _checkUpdateScale(double scale, bool shouldScale) {
+  double _checkUpdateScale(double scale) {
     double oldScale = this.scale;
-    if (!shouldScale) {
-      scale = 1.0;
-    } else {
+    if (scale != 1.0) {
       // Update data if scale changed.
-      if (Platform.isWindows) {
-        final tgtWidth = (width * scale).toInt();
-        final tgtHeight = (width * scale).toInt();
-        if (tgtWidth < kMinCursorSize || tgtHeight < kMinCursorSize) {
-          double sw = kMinCursorSize.toDouble() / width;
-          double sh = kMinCursorSize.toDouble() / height;
-          scale = sw < sh ? sh : sw;
-        }
+      final tgtWidth = (width * scale).toInt();
+      final tgtHeight = (width * scale).toInt();
+      if (tgtWidth < kMinCursorSize || tgtHeight < kMinCursorSize) {
+        double sw = kMinCursorSize.toDouble() / width;
+        double sh = kMinCursorSize.toDouble() / height;
+        scale = sw < sh ? sh : sw;
       }
     }
 
-    if (Platform.isWindows) {
-      if (_doubleToInt(oldScale) != _doubleToInt(scale)) {
+    if (_doubleToInt(oldScale) != _doubleToInt(scale)) {
+      if (Platform.isWindows) {
         data = img2
             .copyResize(
-              image!,
+              image,
               width: (width * scale).toInt(),
               height: (height * scale).toInt(),
               interpolation: img2.Interpolation.average,
             )
             .getBytes(format: img2.Format.bgra);
+      } else {
+        data = Uint8List.fromList(
+          img2.encodePng(
+            img2.copyResize(
+              image,
+              width: (width * scale).toInt(),
+              height: (height * scale).toInt(),
+              interpolation: img2.Interpolation.average,
+            ),
+          ),
+        );
       }
     }
 
@@ -808,8 +839,8 @@ class CursorData {
     return scale;
   }
 
-  String updateGetKey(double scale, bool shouldScale) {
-    scale = _checkUpdateScale(scale, shouldScale);
+  String updateGetKey(double scale) {
+    scale = _checkUpdateScale(scale);
     return '${peerId}_${id}_${_doubleToInt(width * scale)}_${_doubleToInt(height * scale)}';
   }
 }
@@ -867,7 +898,7 @@ class PredefinedCursor {
         _cache = CursorData(
           peerId: '',
           id: id,
-          image: _image2?.clone(),
+          image: _image2!.clone(),
           scale: scale,
           data: data,
           hotxOrigin:
@@ -894,9 +925,10 @@ class CursorModel with ChangeNotifier {
   double _hoty = 0;
   double _displayOriginX = 0;
   double _displayOriginY = 0;
+  DateTime? _firstUpdateMouseTime;
   bool gotMouseControl = true;
   DateTime _lastPeerMouse = DateTime.now()
-      .subtract(Duration(milliseconds: 2 * kMouseControlTimeoutMSec));
+      .subtract(Duration(milliseconds: 3000 * kMouseControlTimeoutMSec));
   String id = '';
   WeakReference<FFI> parent;
 
@@ -914,6 +946,15 @@ class CursorModel with ChangeNotifier {
   bool get isPeerControlProtected =>
       DateTime.now().difference(_lastPeerMouse).inMilliseconds <
       kMouseControlTimeoutMSec;
+
+  bool isConnIn2Secs() {
+    if (_firstUpdateMouseTime == null) {
+      _firstUpdateMouseTime = DateTime.now();
+      return true;
+    } else {
+      return DateTime.now().difference(_firstUpdateMouseTime!).inSeconds < 2;
+    }
+  }
 
   CursorModel(this.parent);
 
@@ -1067,9 +1108,9 @@ class CursorModel with ChangeNotifier {
   Future<bool> _updateCache(
       Uint8List rgba, ui.Image image, int id, int w, int h) async {
     Uint8List? data;
-    img2.Image? imgOrigin;
+    img2.Image imgOrigin =
+        img2.Image.fromBytes(w, h, rgba, format: img2.Format.rgba);
     if (Platform.isWindows) {
-      imgOrigin = img2.Image.fromBytes(w, h, rgba, format: img2.Format.rgba);
       data = imgOrigin.getBytes(format: img2.Format.bgra);
     } else {
       ByteData? imgBytes =
@@ -1111,8 +1152,10 @@ class CursorModel with ChangeNotifier {
 
   /// Update the cursor position.
   updateCursorPosition(Map<String, dynamic> evt, String id) async {
-    gotMouseControl = false;
-    _lastPeerMouse = DateTime.now();
+    if (!isConnIn2Secs()) {
+      gotMouseControl = false;
+      _lastPeerMouse = DateTime.now();
+    }
     _x = double.parse(evt['x']);
     _y = double.parse(evt['y']);
     try {
@@ -1267,8 +1310,9 @@ class FFI {
   late final AbModel abModel; // global
   late final GroupModel groupModel; // global
   late final UserModel userModel; // global
+  late final PeerTabModel peerTabModel; // global
   late final QualityMonitorModel qualityMonitorModel; // session
-  late final RecordingModel recordingModel; // recording
+  late final RecordingModel recordingModel; // session
   late final InputModel inputModel; // session
 
   FFI() {
@@ -1280,6 +1324,7 @@ class FFI {
     chatModel = ChatModel(WeakReference(this));
     fileModel = FileModel(WeakReference(this));
     userModel = UserModel(WeakReference(this));
+    peerTabModel = PeerTabModel(WeakReference(this));
     abModel = AbModel(WeakReference(this));
     groupModel = GroupModel(WeakReference(this));
     qualityMonitorModel = QualityMonitorModel(WeakReference(this));

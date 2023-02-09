@@ -3,7 +3,6 @@ import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:desktop_multi_window/desktop_multi_window.dart';
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_custom_cursor/cursor_manager.dart'
@@ -111,9 +110,12 @@ class _RemotePageState extends State<RemotePage>
       _ffi.dialogManager
           .showLoading(translate('Connecting...'), onCancel: closeConnection);
     });
-    if (!Platform.isLinux) {
-      Wakelock.enable();
-    }
+
+    //..
+    // if (!Platform.isLinux) {
+    //   Wakelock.enable();
+    // }
+
     _ffi.ffiModel.updateEventListener(widget.id);
     _ffi.qualityMonitorModel.checkShowQualityMonitor(widget.id);
     // Session option should be set after models.dart/FFI.start
@@ -182,9 +184,12 @@ class _RemotePageState extends State<RemotePage>
     _ffi.dialogManager.dismissAll();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.manual,
         overlays: SystemUiOverlay.values);
-    if (!Platform.isLinux) {
-      Wakelock.disable();
-    }
+
+    //..
+    // if (!Platform.isLinux) {
+    //   Wakelock.disable();
+    // }
+
     Get.delete<FFI>(tag: widget.id);
     super.dispose();
     _removeStates(widget.id);
@@ -363,10 +368,10 @@ class _RemotePageState extends State<RemotePage>
 
 class ImagePaint extends StatefulWidget {
   final String id;
-  final Rx<bool> zoomCursor;
-  final Rx<bool> cursorOverImage;
-  final Rx<bool> keyboardEnabled;
-  final Rx<bool> remoteCursorMoved;
+  final RxBool zoomCursor;
+  final RxBool cursorOverImage;
+  final RxBool keyboardEnabled;
+  final RxBool remoteCursorMoved;
   final Widget Function(Widget)? listenerBuilder;
 
   ImagePaint(
@@ -389,10 +394,10 @@ class _ImagePaintState extends State<ImagePaint> {
   final ScrollController _vertical = ScrollController();
 
   String get id => widget.id;
-  Rx<bool> get zoomCursor => widget.zoomCursor;
-  Rx<bool> get cursorOverImage => widget.cursorOverImage;
-  Rx<bool> get keyboardEnabled => widget.keyboardEnabled;
-  Rx<bool> get remoteCursorMoved => widget.remoteCursorMoved;
+  RxBool get zoomCursor => widget.zoomCursor;
+  RxBool get cursorOverImage => widget.cursorOverImage;
+  RxBool get keyboardEnabled => widget.keyboardEnabled;
+  RxBool get remoteCursorMoved => widget.remoteCursorMoved;
   Widget Function(Widget)? get listenerBuilder => widget.listenerBuilder;
 
   @override
@@ -401,27 +406,50 @@ class _ImagePaintState extends State<ImagePaint> {
     var c = Provider.of<CanvasModel>(context);
     final s = c.scale;
 
-    mouseRegion({child}) => Obx(() => MouseRegion(
-        cursor: cursorOverImage.isTrue
-            ? c.cursorEmbedded
-                ? SystemMouseCursors.none
-                : keyboardEnabled.isTrue
-                    ? (() {
-                        if (remoteCursorMoved.isTrue) {
-                          _lastRemoteCursorMoved = true;
-                          return SystemMouseCursors.none;
-                        } else {
-                          if (_lastRemoteCursorMoved) {
-                            _lastRemoteCursorMoved = false;
-                            _firstEnterImage.value = true;
-                          }
-                          return _buildCustomCursor(context, s);
-                        }
-                      }())
-                    : _buildDisabledCursor(context, s)
-            : MouseCursor.defer,
-        onHover: (evt) {},
-        child: child));
+    mouseRegion({child}) => Obx(() {
+          double getCursorScale() {
+            var c = Provider.of<CanvasModel>(context);
+            var cursorScale = 1.0;
+            if (Platform.isWindows) {
+              // debug win10
+              final isViewAdaptive =
+                  c.viewStyle.style == kRemoteViewStyleAdaptive;
+              if (zoomCursor.value && isViewAdaptive) {
+                cursorScale = s * c.devicePixelRatio;
+              }
+            } else {
+              final isViewOriginal =
+                  c.viewStyle.style == kRemoteViewStyleOriginal;
+              if (zoomCursor.value || isViewOriginal) {
+                cursorScale = s;
+              }
+            }
+            return cursorScale;
+          }
+
+          return MouseRegion(
+              cursor: cursorOverImage.isTrue
+                  ? c.cursorEmbedded
+                      ? SystemMouseCursors.none
+                      : keyboardEnabled.isTrue
+                          ? (() {
+                              if (remoteCursorMoved.isTrue) {
+                                _lastRemoteCursorMoved = true;
+                                return SystemMouseCursors.none;
+                              } else {
+                                if (_lastRemoteCursorMoved) {
+                                  _lastRemoteCursorMoved = false;
+                                  _firstEnterImage.value = true;
+                                }
+                                return _buildCustomCursor(
+                                    context, getCursorScale());
+                              }
+                            }())
+                          : _buildDisabledCursor(context, getCursorScale())
+                  : MouseCursor.defer,
+              onHover: (evt) {},
+              child: child);
+        });
 
     if (c.imageOverflow.isTrue && c.scrollStyle == ScrollStyle.scrollbar) {
       final imageWidth = c.getDisplayWidth() * s;
@@ -467,7 +495,7 @@ class _ImagePaintState extends State<ImagePaint> {
     if (cache == null) {
       return MouseCursor.defer;
     } else {
-      final key = cache.updateGetKey(scale, zoomCursor.value);
+      final key = cache.updateGetKey(scale);
       if (!cursor.cachedKeys.contains(key)) {
         debugPrint("Register custom cursor with key $key");
         // [Safety]
@@ -633,7 +661,8 @@ class CursorPaint extends StatelessWidget {
     double x = (m.x - hotx) * c.scale + cx;
     double y = (m.y - hoty) * c.scale + cy;
     double scale = 1.0;
-    if (zoomCursor.isTrue) {
+    final isViewOriginal = c.viewStyle.style == kRemoteViewStyleOriginal;
+    if (zoomCursor.value || isViewOriginal) {
       x = m.x - hotx + cx / c.scale;
       y = m.y - hoty + cy / c.scale;
       scale = c.scale;
