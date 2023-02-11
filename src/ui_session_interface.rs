@@ -365,8 +365,7 @@ impl<T: InvokeUiSession> Session<T> {
         
             let code = msg.chr();
             if code != 0 {
-                let mut peer = self.peer_platform();
-                peer.to_lowercase();
+                let mut peer = self.peer_platform().to_lowercase();
                 peer.retain(|c| !c.is_whitespace());
 
                 let key = match peer.as_str() {
