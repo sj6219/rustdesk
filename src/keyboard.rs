@@ -710,8 +710,7 @@ pub fn map_keyboard_mode(event: &Event, mut key_event: KeyEvent) -> Option<KeyEv
         _ => return None,
     };
 
-    let mut peer = get_peer_platform();
-    peer.to_lowercase();
+    let mut peer = get_peer_platform().to_lowercase();
     peer.retain(|c| !c.is_whitespace());
 
     #[cfg(target_os = "windows")]
