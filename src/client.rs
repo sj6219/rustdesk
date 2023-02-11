@@ -1706,6 +1706,7 @@ pub fn send_mouse(
         mouse_event.modifiers.push(ControlKey::Scroll.into());
     }
     //..m!!!!!!3.2
+    interface.swap_modifier_mouse(&mut mouse_event);
     msg_out.set_mouse_event(mouse_event);
     interface.send(Data::Message(msg_out));
 }
@@ -1932,6 +1933,7 @@ pub trait Interface: Send + Clone + 'static + Sized {
     fn is_force_relay(&self) -> bool {
         self.get_login_config_handler().read().unwrap().force_relay
     }
+    fn swap_modifier_mouse(&self, msg : &mut hbb_common::protos::message::MouseEvent) {}
 }
 
 /// Data used by the client interface.
