@@ -205,7 +205,7 @@ static mut IS_0X021D_DOWN: bool = false;
 pub fn start_grab_loop() {
     #[cfg(any(target_os = "windows", target_os = "macos"))]
     std::thread::spawn(move || {
-            let try_handle_keyboard = move |mut event: Event, key: Key, is_press: bool| -> Option<Event> {
+            let try_handle_keyboard = move | event: Event, key: Key, is_press: bool| -> Option<Event> {
             // fix #2211：CAPS LOCK don't work
             if key == Key::CapsLock || key == Key::NumLock {
                 return Some(event);
