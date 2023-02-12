@@ -415,6 +415,8 @@ class ImageModel with ChangeNotifier {
 
   String id = '';
 
+  int decodeCount = 0;
+
   WeakReference<FFI> parent;
 
   final List<Function(String)> _callbacksOnFirstImage = [];
@@ -434,12 +436,19 @@ class ImageModel with ChangeNotifier {
         }
       }
     }
+
+    if (decodeCount >= 1) {
+      return;
+    }
+
     final pid = parent.target?.id;
+    decodeCount += 1;
     ui.decodeImageFromPixels(
         rgba,
         parent.target?.ffiModel.display.width ?? 0,
         parent.target?.ffiModel.display.height ?? 0,
         isWeb ? ui.PixelFormat.rgba8888 : ui.PixelFormat.bgra8888, (image) {
+      decodeCount -= 1;
       if (parent.target?.id != pid) return;
       try {
         // my throw exception, because the listener maybe already dispose
@@ -1390,12 +1399,12 @@ class FFI {
       await setCanvasConfig(id, cursorModel.x, cursorModel.y, canvasModel.x,
           canvasModel.y, canvasModel.scale, ffiModel.pi.currentDisplay);
     }
-    bind.sessionClose(id: id);
     imageModel.update(null);
     cursorModel.clear();
     ffiModel.clear();
     canvasModel.clear();
     inputModel.resetModifiers();
+    await bind.sessionClose(id: id);
     debugPrint('model $id closed');
     id = '';
   }

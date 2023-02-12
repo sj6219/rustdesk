@@ -205,7 +205,7 @@ static mut IS_0X021D_DOWN: bool = false;
 pub fn start_grab_loop() {
     #[cfg(any(target_os = "windows", target_os = "macos"))]
     std::thread::spawn(move || {
-            let try_handle_keyboard = move |mut event: Event, key: Key, is_press: bool| -> Option<Event> {
+            let try_handle_keyboard = move | event: Event, key: Key, is_press: bool| -> Option<Event> {
             // fix #2211：CAPS LOCK don't work
             if key == Key::CapsLock || key == Key::NumLock {
                 return Some(event);
@@ -710,8 +710,7 @@ pub fn map_keyboard_mode(event: &Event, mut key_event: KeyEvent) -> Option<KeyEv
         _ => return None,
     };
 
-    let mut peer = get_peer_platform();
-    peer.to_lowercase();
+    let mut peer = get_peer_platform().to_lowercase();
     peer.retain(|c| !c.is_whitespace());
 
     #[cfg(target_os = "windows")]

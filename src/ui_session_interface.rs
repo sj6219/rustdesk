@@ -365,21 +365,20 @@ impl<T: InvokeUiSession> Session<T> {
         
             let code = msg.chr();
             if code != 0 {
-                let mut peer = self.peer_platform();
-                peer.to_lowercase();
+                let mut peer = self.peer_platform().to_lowercase();
                 peer.retain(|c| !c.is_whitespace());
 
                 let key = match peer.as_str() {
                     "windows" => {
-                        let key = rdev::win_key_from_code(code);
+                        let key = rdev::win_key_from_scancode(code);
                         let key = match key {
-                            rdev::Key::ControlLeft => rdev::Key::MetaLeft,
+                            rdev::Key::ControlLeft => rdev::Key::MetaLeft, 
                             rdev::Key::MetaLeft => rdev::Key::ControlLeft,
                             rdev::Key::ControlRight => rdev::Key::MetaLeft,
                             rdev::Key::MetaRight => rdev::Key::ControlLeft,
                             _ => key,
                         };
-                        rdev::win_keycode_from_key(key).unwrap_or_default()
+                        rdev::win_scancode_from_key(key).unwrap_or_default()
                     }
                     "macos" => {
                         let key = rdev::macos_key_from_code(code);
