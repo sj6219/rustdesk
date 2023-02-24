@@ -234,7 +234,7 @@ class DesktopTab extends StatelessWidget {
     Key? key,
     required this.controller,
     this.showLogo = true,
-    this.showTitle = true,
+    this.showTitle = false,
     this.showMinimize = true,
     this.showMaximize = true,
     this.showClose = true,
@@ -327,14 +327,32 @@ class DesktopTab extends StatelessWidget {
         ));
   }
 
+  List<Widget> _tabWidgets = [];
   Widget _buildPageView() {
     return _buildBlock(
         child: Obx(() => PageView(
             controller: state.value.pageController,
             physics: NeverScrollableScrollPhysics(),
-            children: state.value.tabs
-                .map((tab) => tab.page)
-                .toList(growable: false))));
+            children: () {
+              /// to-do refactor, separate connection state and UI state for remote session.
+              /// [workaround] PageView children need an immutable list, after it has been passed into PageView
+              final tabLen = state.value.tabs.length;
+              if (tabLen == _tabWidgets.length) {
+                return _tabWidgets;
+              } else if (_tabWidgets.isNotEmpty &&
+                  tabLen == _tabWidgets.length + 1) {
+                /// On add. Use the previous list(pointer) to prevent item's state init twice.
+                /// *[_tabWidgets.isNotEmpty] means TabsWindow(remote_tab_page or file_manager_tab_page) opened before, but was hidden. In this case, we have to reload, otherwise the child can't be built.
+                _tabWidgets.add(state.value.tabs.last.page);
+                return _tabWidgets;
+              } else {
+                /// On remove or change. Use new list(pointer) to reload list children so that items loading order is normal.
+                /// the Widgets in list must enable [AutomaticKeepAliveClientMixin]
+                final newList = state.value.tabs.map((v) => v.page).toList();
+                _tabWidgets = newList;
+                return newList;
+              }
+            }())));
   }
 
   /// Check whether to show ListView
@@ -530,13 +548,20 @@ class WindowActionPanelState extends State<WindowActionPanel>
       if (rustDeskWinManager.getActiveWindows().contains(kMainWindowId)) {
         await rustDeskWinManager.unregisterActiveWindow(kMainWindowId);
       }
-      // `hide` must be placed after unregisterActiveWindow, because once all windows are hidden,
-      // flutter closes the application on macOS. We should ensure the post-run logic has ran successfully.
-      // e.g.: saving window position.
+      // macOS specific workaround, the window is not hiding when in fullscreen.
+      if (Platform.isMacOS && await windowManager.isFullScreen()) {
+        await windowManager.setFullScreen(false);
+        await Future.delayed(Duration(seconds: 1));
+      }
       await windowManager.hide();
     } else {
       // it's safe to hide the subwindow
-      await WindowController.fromWindowId(kWindowId!).hide();
+      final controller = WindowController.fromWindowId(kWindowId!);
+      if (Platform.isMacOS && await controller.isFullScreen()) {
+        await controller.setFullscreen(false);
+        await Future.delayed(Duration(seconds: 1));
+      }
+      await controller.hide();
       await Future.wait([
         rustDeskWinManager
             .call(WindowType.Main, kWindowEventHide, {"id": kWindowId!}),
@@ -767,7 +792,8 @@ class _ListView extends StatelessWidget {
                   tabBuilder: tabBuilder,
                   tabMenuBuilder: tabMenuBuilder,
                   maxLabelWidth: maxLabelWidth,
-                  selectedTabBackgroundColor: selectedTabBackgroundColor ?? MyTheme.tabbar(context).selectedTabBackgroundColor,
+                  selectedTabBackgroundColor: selectedTabBackgroundColor ??
+                      MyTheme.tabbar(context).selectedTabBackgroundColor,
                   unSelectedTabBackgroundColor: unSelectedTabBackgroundColor,
                 );
               }).toList()));
@@ -1121,7 +1147,8 @@ class TabbarTheme extends ThemeExtension<TabbarTheme> {
       dividerColor: dividerColor ?? this.dividerColor,
       hoverColor: hoverColor ?? this.hoverColor,
       closeHoverColor: closeHoverColor ?? this.closeHoverColor,
-      selectedTabBackgroundColor: selectedTabBackgroundColor ?? this.selectedTabBackgroundColor,
+      selectedTabBackgroundColor:
+          selectedTabBackgroundColor ?? this.selectedTabBackgroundColor,
     );
   }
 
@@ -1147,7 +1174,8 @@ class TabbarTheme extends ThemeExtension<TabbarTheme> {
       dividerColor: Color.lerp(dividerColor, other.dividerColor, t),
       hoverColor: Color.lerp(hoverColor, other.hoverColor, t),
       closeHoverColor: Color.lerp(closeHoverColor, other.closeHoverColor, t),
-      selectedTabBackgroundColor: Color.lerp(selectedTabBackgroundColor, other.selectedTabBackgroundColor, t),
+      selectedTabBackgroundColor: Color.lerp(
+          selectedTabBackgroundColor, other.selectedTabBackgroundColor, t),
     );
   }
 

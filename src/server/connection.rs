@@ -6,7 +6,10 @@ use crate::common::update_clipboard;
 #[cfg(windows)]
 use crate::portable_service::client as portable_client;
 use crate::{
-    client::{start_audio_thread, LatencyController, MediaData, MediaSender, new_voice_call_request, new_voice_call_response},
+    client::{
+        new_voice_call_request, new_voice_call_response, start_audio_thread, LatencyController,
+        MediaData, MediaSender,
+    },
     common::{get_default_sound_input, set_sound_input},
     video_service,
 };
@@ -120,6 +123,7 @@ pub struct Connection {
     #[cfg(windows)]
     portable: PortableState,
     from_switch: bool,
+    origin_resolution: HashMap<String, Resolution>,
     voice_call_request_timestamp: Option<NonZeroI64>,
     audio_input_device_before_voice_call: Option<String>,
 }
@@ -225,6 +229,7 @@ impl Connection {
             #[cfg(windows)]
             portable: Default::default(),
             from_switch: false,
+            origin_resolution: Default::default(),
             audio_sender: None,
             voice_call_request_timestamp: None,
             audio_input_device_before_voice_call: None,
@@ -530,6 +535,8 @@ impl Connection {
         conn.post_conn_audit(json!({
             "action": "close",
         }));
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        conn.reset_resolution();
         ALIVE_CONNS.lock().unwrap().retain(|&c| c != id);
         if let Some(s) = conn.server.upgrade() {
             s.write().unwrap().remove_connection(&conn.inner);
@@ -539,10 +546,6 @@ impl Connection {
 
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     fn handle_input(receiver: std_mpsc::Receiver<MessageInput>, tx: Sender) {
-		//..
-        #[cfg(target_os = "macos")] 
-        let allow_swap_key = hbb_common::config::Config::get_option("allow-swap-key") == "Y";
-
         let mut block_input_mode = false;
         #[cfg(target_os = "windows")]
         {
@@ -556,68 +559,11 @@ impl Connection {
                 Ok(v) => match v {
                     MessageInput::Mouse((msg, id)) => {
                         //..w!!!!!!4.3
-                        #[cfg(target_os = "macos")]
-                        let msg = {
-                            let mut msg = msg;
-                            if allow_swap_key {
-                                msg.modifiers = msg.modifiers.iter().map(|ck| {
-                                    let ck = ck.enum_value_or_default();
-                                    let ck = match ck {
-                                        ControlKey::Control => ControlKey::Meta,
-                                        ControlKey::Meta => ControlKey::Control,
-                                        ControlKey::RControl => ControlKey::Meta,
-                                        ControlKey::RWin => ControlKey::Control,
-                                        _ => ck,
-                                    };
-                                    hbb_common::protobuf::EnumOrUnknown::new(ck)
-                                }).collect();
-                            }
-                            msg
-                        };
-
                         handle_mouse(&msg, id);
                     }
                     MessageInput::Key((mut msg, press)) => {
                         //..m!!!!!!2.3
                         //..w!!!!!!2.3
-                        #[cfg(target_os = "macos")]
-                        if allow_swap_key {
-                            if let Some(key_event::Union::ControlKey(ck)) = msg.union {
-                                let ck = ck.enum_value_or_default();
-                                let ck = match ck {
-                                    ControlKey::Control => ControlKey::Meta,
-                                    ControlKey::Meta => ControlKey::Control,
-                                    ControlKey::RControl => ControlKey::Meta,
-                                    ControlKey::RWin => ControlKey::Control,
-                                    _ => ck,
-                                };
-                                msg.set_control_key(ck);
-                            }
-                            msg.modifiers = msg.modifiers.iter().map(|ck| {
-                                let ck = ck.enum_value_or_default();
-                                let ck = match ck {
-                                    ControlKey::Control => ControlKey::Meta,
-                                    ControlKey::Meta => ControlKey::Control,
-                                    ControlKey::RControl => ControlKey::Meta,
-                                    ControlKey::RWin => ControlKey::Control,
-                                    _ => ck,
-                                };
-                                hbb_common::protobuf::EnumOrUnknown::new(ck)
-                            }).collect();
-                            
-                            let code = msg.chr();
-                            if code != 0 {
-                                let key = rdev::key_from_code(code);
-                                let key = match key {
-                                    rdev::Key::ControlLeft => rdev::Key::MetaLeft,
-                                    rdev::Key::MetaLeft => rdev::Key::ControlLeft,
-                                    rdev::Key::ControlRight => rdev::Key::MetaLeft,
-                                    rdev::Key::MetaRight => rdev::Key::ControlLeft,
-                                    _ => key,
-                                };
-                                msg.set_chr(rdev::macos_keycode_from_key(key).unwrap_or_default());
-                            }
-                        }
                         // todo: press and down have similar meanings.
                         if press && msg.mode.unwrap() == KeyboardMode::Legacy {
                             msg.down = true;
@@ -736,15 +682,15 @@ impl Connection {
             .collect();
         if !whitelist.is_empty()
             && whitelist
-            .iter()
-            .filter(|x| x == &"0.0.0.0")
-            .next()
-            .is_none()
+                .iter()
+                .filter(|x| x == &"0.0.0.0")
+                .next()
+                .is_none()
             && whitelist
-            .iter()
-            .filter(|x| IpCidr::from_str(x).map_or(false, |y| y.contains(addr.ip())))
-            .next()
-            .is_none()
+                .iter()
+                .filter(|x| IpCidr::from_str(x).map_or(false, |y| y.contains(addr.ip())))
+                .next()
+                .is_none()
         {
             self.send_login_error("Your ip is blocked by the peer")
                 .await;
@@ -872,7 +818,7 @@ impl Connection {
         };
         self.post_conn_audit(json!({"peer": self.peer_info, "type": conn_type}));
         #[allow(unused_mut)]
-            let mut username = crate::platform::get_active_username();
+        let mut username = crate::platform::get_active_username();
         let mut res = LoginResponse::new();
         let mut pi = PeerInfo {
             username: username.clone(),
@@ -899,7 +845,7 @@ impl Connection {
                 h265,
                 ..Default::default()
             })
-                .into();
+            .into();
         }
 
         if self.port_forward_socket.is_some() {
@@ -943,7 +889,17 @@ impl Connection {
             privacy_mode: video_service::is_privacy_mode_supported(),
             ..Default::default()
         })
+        .into();
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        {
+            pi.resolutions = Some(SupportedResolutions {
+                resolutions: video_service::get_current_display_name()
+                    .map(|name| crate::platform::resolutions(&name))
+                    .unwrap_or(vec![]),
+                ..Default::default()
+            })
             .into();
+        }
 
         let mut sub_service = false;
         if self.file_transfer.is_some() {
@@ -959,10 +915,11 @@ impl Connection {
                     res.set_error(format!("{}", err));
                 }
                 Ok((current, displays)) => {
-                    pi.displays = displays.into();
+                    pi.displays = displays.clone();
                     pi.current_display = current as _;
                     res.set_peer_info(pi);
                     sub_service = true;
+                    *super::video_service::LAST_SYNC_DISPLAYS.write().unwrap() = displays;
                 }
             }
         }
@@ -1159,7 +1116,8 @@ impl Connection {
     async fn handle_login_request_without_validation(&mut self, lr: &LoginRequest) {
         self.lr = lr.clone();
         if let Some(o) = lr.option.as_ref() {
-            self.update_option(o).await;
+            // It may not be a good practice to update all options here.
+            self.update_options(o).await;
             if let Some(q) = o.video_codec_state.clone().take() {
                 scrap::codec::Encoder::update_video_encoder(
                     self.inner.id(),
@@ -1233,7 +1191,7 @@ impl Connection {
                                 "Failed to access remote {}, please make sure if it is open",
                                 addr
                             ))
-                                .await;
+                            .await;
                             return false;
                         }
                     }
@@ -1403,14 +1361,14 @@ impl Connection {
                     }
                 }
                 Some(message::Union::Clipboard(cb)) =>
-                    {
+                {
                 		//..w%%%%%%%2.1
                 		//..a%%%%%%%2.1
                     	#[cfg(not(target_os = "ios"))]                        
-                        if self.clipboard {
-                            update_clipboard(cb, None);
-                        }
+                    if self.clipboard {
+                        update_clipboard(cb, None);
                     }
+                }
                 Some(message::Union::Cliprdr(_clip)) => {
                     if self.file_transfer_enabled() {
                         #[cfg(windows)]
@@ -1573,7 +1531,7 @@ impl Connection {
                         self.chat_unanswered = true;
                     }
                     Some(misc::Union::Option(o)) => {
-                        self.update_option(&o).await;
+                        self.update_options(&o).await;
                     }
                     Some(misc::Union::RefreshVideo(r)) => {
                         if r {
@@ -1593,15 +1551,15 @@ impl Connection {
                     }
 
                     Some(misc::Union::RestartRemoteDevice(_)) =>
-                        {
-                            #[cfg(not(any(target_os = "android", target_os = "ios")))]
-                            if self.restart {
-                                match system_shutdown::reboot() {
-                                    Ok(_) => log::info!("Restart by the peer"),
-                                    Err(e) => log::error!("Failed to restart:{}", e),
-                                }
+                    {
+                        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+                        if self.restart {
+                            match system_shutdown::reboot() {
+                                Ok(_) => log::info!("Restart by the peer"),
+                                Err(e) => log::error!("Failed to restart:{}", e),
                             }
                         }
+                    }
                     Some(misc::Union::ElevationRequest(r)) => match r.union {
                         Some(elevation_request::Union::Direct(_)) => {
                             #[cfg(windows)]
@@ -1611,8 +1569,8 @@ impl Connection {
                                     err = portable_client::start_portable_service(
                                         portable_client::StartPara::Direct,
                                     )
-                                        .err()
-                                        .map_or("".to_string(), |e| e.to_string());
+                                    .err()
+                                    .map_or("".to_string(), |e| e.to_string());
                                 }
                                 self.portable.elevation_requested = err.is_empty();
                                 let mut misc = Misc::new();
@@ -1630,8 +1588,8 @@ impl Connection {
                                     err = portable_client::start_portable_service(
                                         portable_client::StartPara::Logon(_r.username, _r.password),
                                     )
-                                        .err()
-                                        .map_or("".to_string(), |e| e.to_string());
+                                    .err()
+                                    .map_or("".to_string(), |e| e.to_string());
                                 }
                                 self.portable.elevation_requested = err.is_empty();
                                 let mut misc = Misc::new();
@@ -1652,7 +1610,11 @@ impl Connection {
                             // No video frame will be sent here, so we need to disable latency controller, or audio check may fail.
                             latency_controller.lock().unwrap().set_audio_only(true);
                             self.audio_sender = Some(start_audio_thread(Some(latency_controller)));
-                            allow_err!(self.audio_sender.as_ref().unwrap().send(MediaData::AudioFormat(format)));
+                            allow_err!(self
+                                .audio_sender
+                                .as_ref()
+                                .unwrap()
+                                .send(MediaData::AudioFormat(format)));
                         }
                     }
                     #[cfg(feature = "flutter")]
@@ -1664,10 +1626,29 @@ impl Connection {
                                 "--switch_uuid",
                                 uuid.to_string().as_ref(),
                             ])
-                                .ok();
-                            self.send_close_reason_no_retry("Closed as expected").await;
+                            .ok();
                             self.on_close("switch sides", false).await;
                             return false;
+                        }
+                    }
+                    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+                    Some(misc::Union::ChangeResolution(r)) => {
+                        if self.keyboard {
+                            if let Ok(name) = video_service::get_current_display_name() {
+                                if let Ok(current) = crate::platform::current_resolution(&name) {
+                                    if let Err(e) = crate::platform::change_resolution(
+                                        &name,
+                                        r.width as _,
+                                        r.height as _,
+                                    ) {
+                                        log::error!("change resolution failed:{:?}", e);
+                                    } else {
+                                        if !self.origin_resolution.contains_key(&name) {
+                                            self.origin_resolution.insert(name, current);
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                     _ => {}
@@ -1677,7 +1658,9 @@ impl Connection {
                         if let Some(sender) = &self.audio_sender {
                             allow_err!(sender.send(MediaData::AudioFrame(frame)));
                         } else {
-                            log::warn!("Processing audio frame without the voice call audio sender.");
+                            log::warn!(
+                                "Processing audio frame without the voice call audio sender."
+                            );
                         }
                     }
                 }
@@ -1727,15 +1710,16 @@ impl Connection {
 
     pub async fn close_voice_call(&mut self) {
         // Restore to the prior audio device.
-        if let Some(sound_input) = std::mem::replace(&mut self.audio_input_device_before_voice_call, None) {
+        if let Some(sound_input) =
+            std::mem::replace(&mut self.audio_input_device_before_voice_call, None)
+        {
             set_sound_input(sound_input);
         }
         // Notify the connection manager that the voice call has been closed.
         self.send_to_cm(Data::CloseVoiceCall("".to_owned()));
     }
 
-    async fn update_option(&mut self, o: &OptionMessage) {
-        log::info!("Option update: {:?}", o);
+    async fn update_options_without_auth(&mut self, o: &OptionMessage) {
         if let Ok(q) = o.image_quality.enum_value() {
             let image_quality;
             if let ImageQuality::NotSet = q {
@@ -1760,7 +1744,18 @@ impl Connection {
                 .unwrap()
                 .update_user_fps(o.custom_fps as _);
         }
+        if let Some(q) = o.video_codec_state.clone().take() {
+            scrap::codec::Encoder::update_video_encoder(
+                self.inner.id(),
+                scrap::codec::EncoderUpdate::State(q),
+            );
+        }
+    }
 
+    async fn update_options_with_auth(&mut self, o: &OptionMessage) {
+        if !self.authorized {
+            return;
+        }
         if let Ok(q) = o.lock_after_session_end.enum_value() {
             if q != BoolOption::NotSet {
                 self.lock_after_session_end = q == BoolOption::Yes;
@@ -1887,12 +1882,12 @@ impl Connection {
                 }
             }
         }
-        if let Some(q) = o.video_codec_state.clone().take() {
-            scrap::codec::Encoder::update_video_encoder(
-                self.inner.id(),
-                scrap::codec::EncoderUpdate::State(q),
-            );
-        }
+    }
+
+    async fn update_options(&mut self, o: &OptionMessage) {
+        log::info!("Option update: {:?}", o);
+        self.update_options_without_auth(o).await;
+        self.update_options_with_auth(o).await;
     }
 
     async fn on_close(&mut self, reason: &str, lock: bool) {
@@ -1902,13 +1897,13 @@ impl Connection {
             lock_screen().await;
         }
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
-            let data = if self.chat_unanswered {
+        let data = if self.chat_unanswered {
             ipc::Data::Disconnected
         } else {
             ipc::Data::Close
         };
         #[cfg(any(target_os = "android", target_os = "ios"))]
-            let data = ipc::Data::Close;
+        let data = ipc::Data::Close;
         self.tx_to_cm.send(data).ok();
         self.port_forward_socket.take();
     }
@@ -1995,6 +1990,20 @@ impl Connection {
                 }
             }
         }
+    }
+
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    fn reset_resolution(&self) {
+        self.origin_resolution
+            .iter()
+            .map(|(name, r)| {
+                if let Err(e) =
+                    crate::platform::change_resolution(&name, r.width as _, r.height as _)
+                {
+                    log::error!("change resolution failed:{:?}", e);
+                }
+            })
+            .count();
     }
 }
 
@@ -2126,7 +2135,7 @@ mod privacy_mode {
     pub(super) fn turn_off_privacy(_conn_id: i32) -> Message {
         #[cfg(windows)]
         {
-            use crate::ui::win_privacy::*;
+            use crate::win_privacy::*;
 
             let res = turn_off_privacy(_conn_id, None);
             match res {
@@ -2150,7 +2159,7 @@ mod privacy_mode {
     pub(super) fn turn_on_privacy(_conn_id: i32) -> ResultType<bool> {
         #[cfg(windows)]
         {
-            let plugin_exist = crate::ui::win_privacy::turn_on_privacy(_conn_id)?;
+            let plugin_exist = crate::win_privacy::turn_on_privacy(_conn_id)?;
             Ok(plugin_exist)
         }
         #[cfg(not(windows))]

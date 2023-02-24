@@ -21,6 +21,7 @@ import '../../mobile/widgets/dialog.dart';
 import '../../models/model.dart';
 import '../../models/platform_model.dart';
 import '../../common/shared_state.dart';
+import '../../utils/image.dart';
 import '../widgets/remote_menubar.dart';
 import '../widgets/kb_layout_type_chooser.dart';
 
@@ -33,11 +34,13 @@ class RemotePage extends StatefulWidget {
     required this.id,
     required this.menubarState,
     this.switchUuid,
+    this.forceRelay,
   }) : super(key: key);
 
   final String id;
   final MenubarState menubarState;
   final String? switchUuid;
+  final bool? forceRelay;
   final SimpleWrapper<State<RemotePage>?> _lastState = SimpleWrapper(null);
 
   FFI get ffi => (_lastState.value! as _RemotePageState)._ffi;
@@ -60,6 +63,11 @@ class _RemotePageState extends State<RemotePage>
   late RxBool _zoomCursor;
   late RxBool _remoteCursorMoved;
   late RxBool _keyboardEnabled;
+  late RxInt _textureId;
+  late int _textureKey;
+  final useTextureRender = bind.mainUseTextureRender();
+
+  final _blockableOverlayState = BlockableOverlayState();
 
   final FocusNode _rawKeyFocusNode = FocusNode(debugLabel: "rawkeyFocusNode");
 
@@ -80,6 +88,8 @@ class _RemotePageState extends State<RemotePage>
     _showRemoteCursor = ShowRemoteCursorState.find(id);
     _keyboardEnabled = KeyboardEnabledState.find(id);
     _remoteCursorMoved = RemoteCursorMovedState.find(id);
+    _textureKey = newTextureId;
+    _textureId = RxInt(-1);
   }
 
   void _removeStates(String id) {
@@ -104,18 +114,28 @@ class _RemotePageState extends State<RemotePage>
     _ffi.start(
       widget.id,
       switchUuid: widget.switchUuid,
+      forceRelay: widget.forceRelay,
     );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.manual, overlays: []);
       _ffi.dialogManager
           .showLoading(translate('Connecting...'), onCancel: closeConnection);
     });
-
-    //..
-    // if (!Platform.isLinux) {
-    //   Wakelock.enable();
-    // }
-
+    if (!Platform.isLinux) {
+      //.. Wakelock.enable(); 
+    }
+    // Register texture.
+    _textureId.value = -1;
+    if (useTextureRender) {
+      textureRenderer.createTexture(_textureKey).then((id) async {
+        debugPrint("id: $id, texture_key: $_textureKey");
+        if (id != -1) {
+          final ptr = await textureRenderer.getTexturePtr(_textureKey);
+          platformFFI.registerTexture(widget.id, ptr);
+          _textureId.value = id;
+        }
+      });
+    }
     _ffi.ffiModel.updateEventListener(widget.id);
     _ffi.qualityMonitorModel.checkShowQualityMonitor(widget.id);
     // Session option should be set after models.dart/FFI.start
@@ -135,6 +155,13 @@ class _RemotePageState extends State<RemotePage>
     //   });
     //   _isCustomCursorInited = true;
     // }
+
+    _ffi.dialogManager.setOverlayState(_blockableOverlayState);
+    _ffi.chatModel.setOverlayState(_blockableOverlayState);
+    // make remote page penetrable automatically, effective for chat over remote
+    _blockableOverlayState.onMiddleBlockedClick = () {
+      _blockableOverlayState.setMiddleBlocked(false);
+    };
   }
 
   @override
@@ -173,6 +200,10 @@ class _RemotePageState extends State<RemotePage>
   @override
   void dispose() {
     debugPrint("REMOTE PAGE dispose ${widget.id}");
+    if (useTextureRender) {
+      platformFFI.registerTexture(widget.id, 0);
+      textureRenderer.closeTexture(_textureKey);
+    }
     // ensure we leave this session, this is a double check
     bind.sessionEnterOrLeave(id: widget.id, enter: false);
     DesktopMultiWindow.removeListener(this);
@@ -184,12 +215,9 @@ class _RemotePageState extends State<RemotePage>
     _ffi.dialogManager.dismissAll();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.manual,
         overlays: SystemUiOverlay.values);
-
-    //..
-    // if (!Platform.isLinux) {
-    //   Wakelock.disable();
-    // }
-
+    if (!Platform.isLinux) {
+      //.. Wakelock.disable();
+    }
     Get.delete<FFI>(tag: widget.id);
     super.dispose();
     _removeStates(widget.id);
@@ -197,39 +225,50 @@ class _RemotePageState extends State<RemotePage>
 
   Widget buildBody(BuildContext context) {
     return Scaffold(
-        backgroundColor: Theme.of(context).backgroundColor,
-        body: Overlay(
-          initialEntries: [
-            OverlayEntry(builder: (context) {
-              _ffi.chatModel.setOverlayState(Overlay.of(context));
-              _ffi.dialogManager.setOverlayState(Overlay.of(context));
-              return Container(
-                  color: Colors.black,
-                  child: RawKeyFocusScope(
-                      focusNode: _rawKeyFocusNode,
-                      onFocusChange: (bool imageFocused) {
-                        debugPrint(
-                            "onFocusChange(window active:${!_isWindowBlur}) $imageFocused");
-                        // See [onWindowBlur].
-                        if (Platform.isWindows) {
-                          if (_isWindowBlur) {
-                            imageFocused = false;
-                            Future.delayed(Duration.zero, () {
-                              _rawKeyFocusNode.unfocus();
-                            });
-                          }
-                          if (imageFocused) {
-                            _ffi.inputModel.enterOrLeave(true);
-                          } else {
-                            _ffi.inputModel.enterOrLeave(false);
-                          }
-                        }
-                      },
-                      inputModel: _ffi.inputModel,
-                      child: getBodyForDesktop(context)));
-            })
-          ],
-        ));
+      backgroundColor: Theme.of(context).colorScheme.background,
+
+      /// the Overlay key will be set with _blockableOverlayState in BlockableOverlay
+      /// see override build() in [BlockableOverlay]
+      body: BlockableOverlay(
+        state: _blockableOverlayState,
+        underlying: Container(
+            color: Colors.black,
+            child: RawKeyFocusScope(
+                focusNode: _rawKeyFocusNode,
+                onFocusChange: (bool imageFocused) {
+                  debugPrint(
+                      "onFocusChange(window active:${!_isWindowBlur}) $imageFocused");
+                  // See [onWindowBlur].
+                  if (Platform.isWindows) {
+                    if (_isWindowBlur) {
+                      imageFocused = false;
+                      Future.delayed(Duration.zero, () {
+                        _rawKeyFocusNode.unfocus();
+                      });
+                    }
+                    if (imageFocused) {
+                      _ffi.inputModel.enterOrLeave(true);
+                    } else {
+                      _ffi.inputModel.enterOrLeave(false);
+                    }
+                  }
+                },
+                inputModel: _ffi.inputModel,
+                child: getBodyForDesktop(context))),
+        upperLayer: [
+          OverlayEntry(
+              builder: (context) => RemoteMenubar(
+                    id: widget.id,
+                    ffi: _ffi,
+                    state: widget.menubarState,
+                    onEnterOrLeaveImageSetter: (func) =>
+                        _onEnterOrLeaveImage4Menubar = func,
+                    onEnterOrLeaveImageCleaner: () =>
+                        _onEnterOrLeaveImage4Menubar = null,
+                  ))
+        ],
+      ),
+    );
   }
 
   @override
@@ -328,6 +367,8 @@ class _RemotePageState extends State<RemotePage>
           cursorOverImage: _cursorOverImage,
           keyboardEnabled: _keyboardEnabled,
           remoteCursorMoved: _remoteCursorMoved,
+          textureId: _textureId,
+          useTextureRender: useTextureRender,
           listenerBuilder: (child) =>
               _buildRawPointerMouseRegion(child, enterView, leaveView),
         );
@@ -350,13 +391,6 @@ class _RemotePageState extends State<RemotePage>
             QualityMonitor(_ffi.qualityMonitorModel), null, null),
       ),
     );
-    paints.add(RemoteMenubar(
-      id: widget.id,
-      ffi: _ffi,
-      state: widget.menubarState,
-      onEnterOrLeaveImageSetter: (func) => _onEnterOrLeaveImage4Menubar = func,
-      onEnterOrLeaveImageCleaner: () => _onEnterOrLeaveImage4Menubar = null,
-    ));
     return Stack(
       children: paints,
     );
@@ -372,6 +406,8 @@ class ImagePaint extends StatefulWidget {
   final RxBool cursorOverImage;
   final RxBool keyboardEnabled;
   final RxBool remoteCursorMoved;
+  final RxInt textureId;
+  final bool useTextureRender;
   final Widget Function(Widget)? listenerBuilder;
 
   ImagePaint(
@@ -381,6 +417,8 @@ class ImagePaint extends StatefulWidget {
       required this.cursorOverImage,
       required this.keyboardEnabled,
       required this.remoteCursorMoved,
+      required this.textureId,
+      required this.useTextureRender,
       this.listenerBuilder})
       : super(key: key);
 
@@ -455,10 +493,19 @@ class _ImagePaintState extends State<ImagePaint> {
       final imageWidth = c.getDisplayWidth() * s;
       final imageHeight = c.getDisplayHeight() * s;
       final imageSize = Size(imageWidth, imageHeight);
-      final imageWidget = CustomPaint(
-        size: imageSize,
-        painter: ImagePainter(image: m.image, x: 0, y: 0, scale: s),
-      );
+      late final Widget imageWidget;
+      if (widget.useTextureRender) {
+        imageWidget = SizedBox(
+          width: imageWidth,
+          height: imageHeight,
+          child: Obx(() => Texture(textureId: widget.textureId.value)),
+        );
+      } else {
+        imageWidget = CustomPaint(
+          size: imageSize,
+          painter: ImagePainter(image: m.image, x: 0, y: 0, scale: s),
+        );
+      }
 
       return NotificationListener<ScrollNotification>(
           onNotification: (notification) {
@@ -482,11 +529,31 @@ class _ImagePaintState extends State<ImagePaint> {
                 context, _buildListener(imageWidget), c.size, imageSize)),
           ));
     } else {
-      final imageWidget = CustomPaint(
-        size: Size(c.size.width, c.size.height),
-        painter: ImagePainter(image: m.image, x: c.x / s, y: c.y / s, scale: s),
-      );
-      return mouseRegion(child: _buildListener(imageWidget));
+      late final Widget imageWidget;
+      if (c.size.width > 0 && c.size.height > 0) {
+        if (widget.useTextureRender) {
+          imageWidget = Stack(
+            children: [
+              Positioned(
+                left: c.x,
+                top: c.y,
+                width: c.getDisplayWidth() * s,
+                height: c.getDisplayHeight() * s,
+                child: Texture(textureId: widget.textureId.value),
+              )
+            ],
+          );
+        } else {
+          imageWidget = CustomPaint(
+            size: Size(c.size.width, c.size.height),
+            painter:
+                ImagePainter(image: m.image, x: c.x / s, y: c.y / s, scale: s),
+          );
+        }
+        return mouseRegion(child: _buildListener(imageWidget));
+      } else {
+        return Container();
+      }
     }
   }
 
@@ -676,42 +743,5 @@ class CursorPaint extends StatelessWidget {
         scale: scale,
       ),
     );
-  }
-}
-
-class ImagePainter extends CustomPainter {
-  ImagePainter({
-    required this.image,
-    required this.x,
-    required this.y,
-    required this.scale,
-  });
-
-  ui.Image? image;
-  double x;
-  double y;
-  double scale;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (image == null) return;
-    if (x.isNaN || y.isNaN) return;
-    canvas.scale(scale, scale);
-    // https://github.com/flutter/flutter/issues/76187#issuecomment-784628161
-    // https://api.flutter-io.cn/flutter/dart-ui/FilterQuality.html
-    var paint = Paint();
-    if ((scale - 1.0).abs() > 0.001) {
-      paint.filterQuality = FilterQuality.medium;
-      if (scale > 10.00000) {
-        paint.filterQuality = FilterQuality.high;
-      }
-    }
-    canvas.drawImage(
-        image!, Offset(x.toInt().toDouble(), y.toInt().toDouble()), paint);
-  }
-
-  @override
-  bool shouldRepaint(CustomPainter oldDelegate) {
-    return oldDelegate != this;
   }
 }

@@ -17,7 +17,7 @@ reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution 
 pushd flutter && flutter pub get && popd
 ~/.cargo/bin/flutter_rust_bridge_codegen --rust-input ./src/flutter_ffi.rs --dart-output ./flutter/lib/generated_bridge.dart
 ./build.py --flutter
-codesign --force --options runtime -s "Developer ID Application" --deep ./flutter/build/macos/Build/Products/Release/RustDesk.app -v
+codesign --force --options runtime -s "Developer ID Application" --deep --strict ./flutter/build/macos/Build/Products/Release/RustDesk.app -vvv
 rm -r /Applications/RustDesk.app
 cp -r ./flutter/build/macos/Build/Products/Release/RustDesk.app /Applications/RustDesk.app
 open -n /Applications/RustDesk.app --args --server

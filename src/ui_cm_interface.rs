@@ -494,7 +494,7 @@ pub async fn start_ipc<T: InvokeUiCM>(cm: ConnectionManager<T>) {
                 e
             );
         }
-        allow_err!(crate::ui::win_privacy::start());
+        allow_err!(crate::win_privacy::start());
     });
 
     match ipc::new_listener("_cm").await {
@@ -845,6 +845,7 @@ pub fn elevate_portable(_id: i32) {
     }
 }
 
+#[cfg(any(target_os = "android", target_os = "ios", feature = "flutter"))]
 #[inline]
 pub fn handle_incoming_voice_call(id: i32, accept: bool) {
     if let Some(client) = CLIENTS.write().unwrap().get_mut(&id) {
@@ -852,6 +853,7 @@ pub fn handle_incoming_voice_call(id: i32, accept: bool) {
     };
 }
 
+#[cfg(any(target_os = "android", target_os = "ios", feature = "flutter"))]
 #[inline]
 pub fn close_voice_call(id: i32) {
     if let Some(client) = CLIENTS.write().unwrap().get_mut(&id) {

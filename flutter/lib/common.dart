@@ -19,6 +19,7 @@ import 'package:flutter_hbb/utils/multi_window_manager.dart';
 import 'package:flutter_hbb/utils/platform_channel.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
+import 'package:texture_rgba_renderer/texture_rgba_renderer.dart';
 import 'package:uni_links/uni_links.dart';
 import 'package:uni_links_desktop/uni_links_desktop.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -45,9 +46,19 @@ var isWebDesktop = false;
 var version = "";
 int androidVersion = 0;
 
+/// Incriment count for textureId.
+int _textureId = 0;
+int get newTextureId => _textureId++;
+final textureRenderer = TextureRgbaRenderer();
+
 /// only available for Windows target
 int windowsBuildNumber = 0;
 DesktopType? desktopType;
+
+/// Check if the app is running with single view mode.
+bool isSingleViewApp() {
+  return desktopType == DesktopType.cm;
+}
 
 /// * debug or test only, DO NOT enable in release build
 bool isTest = false;
@@ -147,7 +158,7 @@ class MyTheme {
   static const Color canvasColor = Color(0xFF212121);
   static const Color border = Color(0xFFCCCCCC);
   static const Color idColor = Color(0xFF00B6F0);
-  static const Color darkGray = Color(0xFFB9BABC);
+  static const Color darkGray = Color.fromARGB(255, 148, 148, 148);
   static const Color cmIdColor = Color(0xFF21790B);
   static const Color dark = Colors.black87;
   static const Color button = Color(0xFF2C8CFF);
@@ -155,8 +166,8 @@ class MyTheme {
 
   static ThemeData lightTheme = ThemeData(
     brightness: Brightness.light,
-    backgroundColor: Color(0xFFFFFFFF),
-    scaffoldBackgroundColor: Color(0xFFEEEEEE),
+    hoverColor: Color.fromARGB(255, 224, 224, 224),
+    scaffoldBackgroundColor: Color(0xFFFFFFFF),
     textTheme: const TextTheme(
         titleLarge: TextStyle(fontSize: 19, color: Colors.black87),
         titleSmall: TextStyle(fontSize: 14, color: Colors.black87),
@@ -164,8 +175,8 @@ class MyTheme {
         bodyMedium:
             TextStyle(fontSize: 14, color: Colors.black87, height: 1.25),
         labelLarge: TextStyle(fontSize: 16.0, color: MyTheme.accent80)),
+    cardColor: Color(0xFFEEEEEE),
     hintColor: Color(0xFFAAAAAA),
-    primarySwatch: Colors.blue,
     visualDensity: VisualDensity.adaptivePlatformDensity,
     tabBarTheme: const TabBarTheme(
       labelColor: Colors.black87,
@@ -178,6 +189,10 @@ class MyTheme {
             style: ButtonStyle(splashFactory: NoSplash.splashFactory),
           )
         : null,
+    colorScheme: ColorScheme.fromSwatch(primarySwatch: Colors.blue).copyWith(
+      brightness: Brightness.light,
+      background: Color(0xFFEEEEEE),
+    ),
   ).copyWith(
     extensions: <ThemeExtension<dynamic>>[
       ColorThemeExtension.light,
@@ -186,8 +201,8 @@ class MyTheme {
   );
   static ThemeData darkTheme = ThemeData(
     brightness: Brightness.dark,
-    backgroundColor: Color(0xFF252525),
-    scaffoldBackgroundColor: Color(0xFF141414),
+    hoverColor: Color.fromARGB(255, 45, 46, 53),
+    scaffoldBackgroundColor: Color(0xFF18191E),
     textTheme: const TextTheme(
         titleLarge: TextStyle(fontSize: 19),
         titleSmall: TextStyle(fontSize: 14),
@@ -195,8 +210,7 @@ class MyTheme {
         bodyMedium: TextStyle(fontSize: 14, height: 1.25),
         labelLarge: TextStyle(
             fontSize: 16.0, fontWeight: FontWeight.bold, color: accent80)),
-    cardColor: Color(0xFF252525),
-    primarySwatch: Colors.blue,
+    cardColor: Color(0xFF24252B),
     visualDensity: VisualDensity.adaptivePlatformDensity,
     tabBarTheme: const TabBarTheme(
       labelColor: Colors.white70,
@@ -212,6 +226,12 @@ class MyTheme {
             style: ButtonStyle(splashFactory: NoSplash.splashFactory),
           )
         : null,
+    checkboxTheme:
+        const CheckboxThemeData(checkColor: MaterialStatePropertyAll(dark)),
+    colorScheme: ColorScheme.fromSwatch(
+      brightness: Brightness.dark,
+      primarySwatch: Colors.blue,
+    ).copyWith(background: Color(0xFF24252B)),
   ).copyWith(
     extensions: <ThemeExtension<dynamic>>[
       ColorThemeExtension.dark,
@@ -331,6 +351,9 @@ closeConnection({String? id}) {
 }
 
 void window_on_top(int? id) {
+  if (!isDesktop) {
+    return;
+  }
   if (id == null) {
     // main window
     windowManager.restore();
@@ -367,20 +390,25 @@ class Dialog<T> {
   }
 }
 
+class OverlayKeyState {
+  final _overlayKey = GlobalKey<OverlayState>();
+
+  /// use global overlay by default
+  OverlayState? get state =>
+      _overlayKey.currentState ?? globalKey.currentState?.overlay;
+
+  GlobalKey<OverlayState>? get key => _overlayKey;
+}
+
 class OverlayDialogManager {
-  OverlayState? _overlayState;
   final Map<String, Dialog> _dialogs = {};
+  var _overlayKeyState = OverlayKeyState();
   int _tagCount = 0;
 
   OverlayEntry? _mobileActionsOverlayEntry;
 
-  /// By default OverlayDialogManager use global overlay
-  OverlayDialogManager() {
-    _overlayState = globalKey.currentState?.overlay;
-  }
-
-  void setOverlayState(OverlayState? overlayState) {
-    _overlayState = overlayState;
+  void setOverlayState(OverlayKeyState overlayKeyState) {
+    _overlayKeyState = overlayKeyState;
   }
 
   void dismissAll() {
@@ -404,7 +432,7 @@ class OverlayDialogManager {
       bool useAnimation = true,
       bool forceGlobal = false}) {
     final overlayState =
-        forceGlobal ? globalKey.currentState?.overlay : _overlayState;
+        forceGlobal ? globalKey.currentState?.overlay : _overlayKeyState.state;
 
     if (overlayState == null) {
       return Future.error(
@@ -487,12 +515,14 @@ class OverlayDialogManager {
                   Offstage(
                       offstage: !showCancel,
                       child: Center(
-                          child: TextButton(
-                              style: flatButtonStyle,
-                              onPressed: cancel,
-                              child: Text(translate('Cancel'),
-                                  style:
-                                      const TextStyle(color: MyTheme.accent)))))
+                          child: isDesktop
+                              ? dialogButton('Cancel', onPressed: cancel)
+                              : TextButton(
+                                  style: flatButtonStyle,
+                                  onPressed: cancel,
+                                  child: Text(translate('Cancel'),
+                                      style: const TextStyle(
+                                          color: MyTheme.accent)))))
                 ])),
         onCancel: showCancel ? cancel : null,
       );
@@ -508,7 +538,8 @@ class OverlayDialogManager {
 
   void showMobileActionsOverlay({FFI? ffi}) {
     if (_mobileActionsOverlayEntry != null) return;
-    if (_overlayState == null) return;
+    final overlayState = _overlayKeyState.state;
+    if (overlayState == null) return;
 
     // compute overlay position
     final screenW = MediaQuery.of(globalKey.currentContext!).size.width;
@@ -534,7 +565,7 @@ class OverlayDialogManager {
         onHidePressed: () => hideMobileActionsOverlay(),
       );
     });
-    _overlayState!.insert(overlay);
+    overlayState.insert(overlay);
     _mobileActionsOverlayEntry = overlay;
   }
 
@@ -618,6 +649,7 @@ class CustomAlertDialog extends StatelessWidget {
       if (!scopeNode.hasFocus) scopeNode.requestFocus();
     });
     const double padding = 16;
+    bool tabTapped = false;
     return FocusScope(
       node: scopeNode,
       autofocus: true,
@@ -627,13 +659,15 @@ class CustomAlertDialog extends StatelessWidget {
             onCancel?.call();
           }
           return KeyEventResult.handled; // avoid TextField exception on escape
-        } else if (onSubmit != null &&
+        } else if (!tabTapped &&
+            onSubmit != null &&
             key.logicalKey == LogicalKeyboardKey.enter) {
           if (key is RawKeyDownEvent) onSubmit?.call();
           return KeyEventResult.handled;
         } else if (key.logicalKey == LogicalKeyboardKey.tab) {
           if (key is RawKeyDownEvent) {
             scopeNode.nextFocus();
+            tabTapped = true;
           }
           return KeyEventResult.handled;
         }
@@ -642,8 +676,9 @@ class CustomAlertDialog extends StatelessWidget {
       child: AlertDialog(
         scrollable: true,
         title: title,
-        contentPadding: EdgeInsets.fromLTRB(
-            contentPadding ?? padding, 25, contentPadding ?? padding, 10),
+        titlePadding: EdgeInsets.fromLTRB(padding, 24, padding, 0),
+        contentPadding: EdgeInsets.fromLTRB(contentPadding ?? padding, 25,
+            contentPadding ?? padding, actions is List ? 10 : padding),
         content: ConstrainedBox(
           constraints: contentBoxConstraints,
           child: Theme(
@@ -653,7 +688,7 @@ class CustomAlertDialog extends StatelessWidget {
               child: content),
         ),
         actions: actions,
-        actionsPadding: EdgeInsets.fromLTRB(0, 0, padding, padding),
+        actionsPadding: EdgeInsets.fromLTRB(padding, 0, padding, padding),
       ),
     );
   }
@@ -661,7 +696,7 @@ class CustomAlertDialog extends StatelessWidget {
 
 void msgBox(String id, String type, String title, String text, String link,
     OverlayDialogManager dialogManager,
-    {bool? hasCancel}) {
+    {bool? hasCancel, ReconnectHandle? reconnect}) {
   dialogManager.dismissAll();
   List<Widget> buttons = [];
   bool hasOk = false;
@@ -699,6 +734,13 @@ void msgBox(String id, String type, String title, String text, String link,
         0,
         dialogButton('Close', onPressed: () {
           dialogManager.dismissAll();
+        }));
+  }
+  if (reconnect != null && title == "Connection Error") {
+    buttons.insert(
+        0,
+        dialogButton('Reconnect', isOutline: true, onPressed: () {
+          reconnect(dialogManager, id, false);
         }));
   }
   if (link.isNotEmpty) {
@@ -1393,13 +1435,14 @@ bool callUniLinksUriHandler(Uri uri) {
 connectMainDesktop(String id,
     {required bool isFileTransfer,
     required bool isTcpTunneling,
-    required bool isRDP}) async {
+    required bool isRDP,
+    bool? forceRelay}) async {
   if (isFileTransfer) {
-    await rustDeskWinManager.newFileTransfer(id);
+    await rustDeskWinManager.newFileTransfer(id, forceRelay: forceRelay);
   } else if (isTcpTunneling || isRDP) {
-    await rustDeskWinManager.newPortForward(id, isRDP);
+    await rustDeskWinManager.newPortForward(id, isRDP, forceRelay: forceRelay);
   } else {
-    await rustDeskWinManager.newRemoteDesktop(id);
+    await rustDeskWinManager.newRemoteDesktop(id, forceRelay: forceRelay);
   }
 }
 
@@ -1410,7 +1453,8 @@ connectMainDesktop(String id,
 connect(BuildContext context, String id,
     {bool isFileTransfer = false,
     bool isTcpTunneling = false,
-    bool isRDP = false}) async {
+    bool isRDP = false,
+    bool forceRelay = false}) async {
   if (id == '') return;
   id = id.replaceAll(' ', '');
   assert(!(isFileTransfer && isTcpTunneling && isRDP),
@@ -1418,18 +1462,18 @@ connect(BuildContext context, String id,
 
   if (isDesktop) {
     if (desktopType == DesktopType.main) {
-      await connectMainDesktop(
-        id,
-        isFileTransfer: isFileTransfer,
-        isTcpTunneling: isTcpTunneling,
-        isRDP: isRDP,
-      );
+      await connectMainDesktop(id,
+          isFileTransfer: isFileTransfer,
+          isTcpTunneling: isTcpTunneling,
+          isRDP: isRDP,
+          forceRelay: forceRelay);
     } else {
       await rustDeskWinManager.call(WindowType.Main, kWindowConnect, {
         'id': id,
         'isFileTransfer': isFileTransfer,
         'isTcpTunneling': isTcpTunneling,
         'isRDP': isRDP,
+        "forceRelay": forceRelay,
       });
     }
   } else {
@@ -1723,6 +1767,7 @@ Future<void> updateSystemWindowTheme() async {
     }
   }
 }
+
 /// macOS only
 ///
 /// Note: not found a general solution for rust based AVFoundation bingding.
@@ -1749,4 +1794,44 @@ Future<PermissionAuthorizeType> osxCanRecordAudio() async {
 
 Future<bool> osxRequestAudio() async {
   return await kMacOSPermChannel.invokeMethod("requestRecordAudio");
+}
+
+class DraggableNeverScrollableScrollPhysics extends ScrollPhysics {
+  /// Creates scroll physics that does not let the user scroll.
+  const DraggableNeverScrollableScrollPhysics({super.parent});
+
+  @override
+  DraggableNeverScrollableScrollPhysics applyTo(ScrollPhysics? ancestor) {
+    return DraggableNeverScrollableScrollPhysics(parent: buildParent(ancestor));
+  }
+
+  @override
+  bool shouldAcceptUserOffset(ScrollMetrics position) {
+    // TODO: find a better solution to check if the offset change is caused by the scrollbar.
+    // Workaround: when dragging with the scrollbar, it always triggers an [IdleScrollActivity].
+    if (position is ScrollPositionWithSingleContext) {
+      // ignore: invalid_use_of_protected_member, invalid_use_of_visible_for_testing_member
+      return position.activity is IdleScrollActivity;
+    }
+    return false;
+  }
+
+  @override
+  bool get allowImplicitScrolling => false;
+}
+
+Widget futureBuilder(
+    {required Future? future, required Widget Function(dynamic data) hasData}) {
+  return FutureBuilder(
+      future: future,
+      builder: (BuildContext context, AsyncSnapshot snapshot) {
+        if (snapshot.hasData) {
+          return hasData(snapshot.data!);
+        } else {
+          if (snapshot.hasError) {
+            debugPrint(snapshot.error.toString());
+          }
+          return Container();
+        }
+      });
 }

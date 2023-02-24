@@ -239,6 +239,7 @@ def get_features(args):
         features.append('hwcodec')
     if args.flutter:
         features.append('flutter')
+        features.append('flutter_texture_render')
     if args.flatpak:
         features.append('flatpak')
     if args.appimage:
@@ -323,7 +324,7 @@ def build_flutter_dmg(version, features):
     os.chdir('flutter')
     os.system('flutter build macos --release')
     os.system(
-        "create-dmg rustdesk.dmg ./build/macos/Build/Products/Release/rustdesk.app")
+        "create-dmg rustdesk.dmg ./build/macos/Build/Products/Release/RustDesk.app")
     os.rename("rustdesk.dmg", f"../rustdesk-{version}.dmg")
     os.chdir("..")
 
