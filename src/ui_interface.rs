@@ -128,7 +128,7 @@ pub fn get_license() -> String {
 }
 
 #[inline]
-#[cfg(any(target_os = "linux", target_os = "windows"))]
+#[cfg(target_os = "windows")]
 pub fn get_option_opt(key: &str) -> Option<String> {
     OPTIONS.lock().unwrap().get(key).map(|x| x.clone())
 }
@@ -295,7 +295,7 @@ pub fn set_option(key: String, value: String) {
     #[cfg(target_os = "macos")]
     if &key == "stop-service" {
         let is_stop = value == "Y";
-        if is_stop && crate::platform::macos::uninstall() {
+        if is_stop && crate::platform::macos::uninstall(true) {
             return;
         }
     }
