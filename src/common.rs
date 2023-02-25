@@ -42,6 +42,8 @@ pub type NotifyMessageBox = fn(String, String, String, String) -> dyn Future<Out
 pub const CLIPBOARD_NAME: &'static str = "clipboard";
 pub const CLIPBOARD_INTERVAL: u64 = 333;
 
+pub const SYNC_PEER_INFO_DISPLAYS: i32 = 1;
+
 // the executable name of the portable version
 pub const PORTABLE_APPNAME_RUNTIME_ENV_KEY: &str = "RUSTDESK_APPNAME";
 
@@ -53,6 +55,11 @@ lazy_static::lazy_static! {
 lazy_static::lazy_static! {
     pub static ref DEVICE_ID: Arc<Mutex<String>> = Default::default();
     pub static ref DEVICE_NAME: Arc<Mutex<String>> = Default::default();
+}
+
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+lazy_static::lazy_static! {
+    static ref ARBOARD_MTX: Arc<Mutex<()>> = Arc::new(Mutex::new(()));
 }
 
 pub fn global_init() -> bool {
@@ -99,7 +106,11 @@ pub fn check_clipboard(
 ) -> Option<Message> {
     let side = if old.is_none() { "host" } else { "client" };
     let old = if let Some(old) = old { old } else { &CONTENT };
-    if let Ok(content) = ctx.get_text() {
+    let content = {
+        let _lock = ARBOARD_MTX.lock().unwrap();
+        ctx.get_text()
+    };
+    if let Ok(content) = content {
         if content.len() < 2_000_000 && !content.is_empty() {
             let changed = content != *old.lock().unwrap();
             if changed {
@@ -191,6 +202,7 @@ pub fn update_clipboard(clipboard: Clipboard, old: Option<&Arc<Mutex<String>>>) 
                 let side = if old.is_none() { "host" } else { "client" };
                 let old = if let Some(old) = old { old } else { &CONTENT };
                 *old.lock().unwrap() = content.clone();
+                let _lock = ARBOARD_MTX.lock().unwrap();
                 //..w%%%%%%2.2
                 allow_err!(ctx.set_text(content));
                 log::debug!("{} updated on {}", CLIPBOARD_NAME, side);
