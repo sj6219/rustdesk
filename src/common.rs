@@ -42,6 +42,8 @@ pub type NotifyMessageBox = fn(String, String, String, String) -> dyn Future<Out
 pub const CLIPBOARD_NAME: &'static str = "clipboard";
 pub const CLIPBOARD_INTERVAL: u64 = 333;
 
+pub const SYNC_PEER_INFO_DISPLAYS: i32 = 1;
+
 // the executable name of the portable version
 pub const PORTABLE_APPNAME_RUNTIME_ENV_KEY: &str = "RUSTDESK_APPNAME";
 
@@ -53,6 +55,11 @@ lazy_static::lazy_static! {
 lazy_static::lazy_static! {
     pub static ref DEVICE_ID: Arc<Mutex<String>> = Default::default();
     pub static ref DEVICE_NAME: Arc<Mutex<String>> = Default::default();
+}
+
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+lazy_static::lazy_static! {
+    static ref ARBOARD_MTX: Arc<Mutex<()>> = Arc::new(Mutex::new(()));
 }
 
 pub fn global_init() -> bool {
@@ -99,7 +106,11 @@ pub fn check_clipboard(
 ) -> Option<Message> {
     let side = if old.is_none() { "host" } else { "client" };
     let old = if let Some(old) = old { old } else { &CONTENT };
-    if let Ok(content) = ctx.get_text() {
+    let content = {
+        let _lock = ARBOARD_MTX.lock().unwrap();
+        ctx.get_text()
+    };
+    if let Ok(content) = content {
         if content.len() < 2_000_000 && !content.is_empty() {
             let changed = content != *old.lock().unwrap();
             if changed {
@@ -191,6 +202,7 @@ pub fn update_clipboard(clipboard: Clipboard, old: Option<&Arc<Mutex<String>>>) 
                 let side = if old.is_none() { "host" } else { "client" };
                 let old = if let Some(old) = old { old } else { &CONTENT };
                 *old.lock().unwrap() = content.clone();
+                let _lock = ARBOARD_MTX.lock().unwrap();
                 //..w%%%%%%2.2
                 allow_err!(ctx.set_text(content));
                 log::debug!("{} updated on {}", CLIPBOARD_NAME, side);
@@ -608,11 +620,6 @@ async fn check_software_update_() -> hbb_common::ResultType<()> {
     Ok(())
 }
 
-#[cfg(not(any(target_os = "android", target_os = "ios", feature = "cli")))]
-pub fn get_icon() -> String {
-    hbb_common::config::ICON.to_owned()
-}
-
 pub fn get_app_name() -> String {
     hbb_common::config::APP_NAME.read().unwrap().clone()
 }
@@ -781,4 +788,15 @@ pub fn make_fd_to_json(id: i32, path: String, entries: &Vec<FileEntry>) -> Strin
     }
     fd_json.insert("entries".into(), json!(entries_out));
     serde_json::to_string(&fd_json).unwrap_or("".into())
+}
+
+/// The function to handle the url scheme sent by the system.
+///
+/// 1. Try to send the url scheme from ipc.
+/// 2. If failed to send the url scheme, we open a new main window to handle this url scheme.
+pub fn handle_url_scheme(url: String) {
+    if let Err(err) = crate::ipc::send_url_scheme(url.clone()) {
+        log::debug!("Send the url to the existing flutter process failed, {}. Let's open a new program to handle this.", err);
+        let _ = crate::run_me(vec![url]);
+    }
 }
