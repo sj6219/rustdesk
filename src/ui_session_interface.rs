@@ -410,7 +410,7 @@ impl<T: InvokeUiSession> Session<T> {
                     "windows" => {
                         let key = rdev::win_key_from_scancode(code);
                         let key = match key {
-                            rdev::Key::ControlLeft => rdev::Key::MetaLeft, 
+                            rdev::Key::ControlLeft => rdev::Key::MetaLeft,
                             rdev::Key::MetaLeft => rdev::Key::ControlLeft,
                             rdev::Key::ControlRight => rdev::Key::MetaLeft,
                             rdev::Key::MetaRight => rdev::Key::ControlLeft,
@@ -452,14 +452,11 @@ impl<T: InvokeUiSession> Session<T> {
 
         let mut msg = evt.clone();
         self.swab_modifier_key(&mut msg);
-
         let mut msg_out = Message::new();
         msg_out.set_key_event(msg);
-
         //..m!!!!!!1.2
         #[cfg(debug_assertions)]
         log::error!("send_key_event {:?}", msg_out);
-
         
         self.send(Data::Message(msg_out));
     }
@@ -628,7 +625,6 @@ impl<T: InvokeUiSession> Session<T> {
         command: bool,
     ) {
         //..m!!!!!!3.1
-
         #[allow(unused_mut)]
         let mut command = command;
         #[cfg(windows)]
@@ -1020,6 +1016,7 @@ impl<T: InvokeUiSession> Interface for Session<T> {
             handle_test_delay(t, peer).await;
         }
     }
+    
     fn swap_modifier_mouse(&self, msg : &mut hbb_common::protos::message::MouseEvent) {
         let allow_swap_key = self.get_toggle_option("allow_swap_key".to_string());
         if allow_swap_key  {
