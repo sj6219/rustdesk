@@ -109,27 +109,32 @@ class IconFont {
 class ColorThemeExtension extends ThemeExtension<ColorThemeExtension> {
   const ColorThemeExtension({
     required this.border,
+    required this.border2,
     required this.highlight,
   });
 
   final Color? border;
+  final Color? border2;
   final Color? highlight;
 
   static const light = ColorThemeExtension(
     border: Color(0xFFCCCCCC),
+    border2: Color(0xFFBBBBBB),
     highlight: Color(0xFFE5E5E5),
   );
 
   static const dark = ColorThemeExtension(
     border: Color(0xFF555555),
+    border2: Color(0xFFE5E5E5),
     highlight: Color(0xFF3F3F3F),
   );
 
   @override
   ThemeExtension<ColorThemeExtension> copyWith(
-      {Color? border, Color? highlight}) {
+      {Color? border, Color? border2, Color? highlight}) {
     return ColorThemeExtension(
       border: border ?? this.border,
+      border2: border2 ?? this.border2,
       highlight: highlight ?? this.highlight,
     );
   }
@@ -142,6 +147,7 @@ class ColorThemeExtension extends ThemeExtension<ColorThemeExtension> {
     }
     return ColorThemeExtension(
       border: Color.lerp(border, other.border, t),
+      border2: Color.lerp(border2, other.border2, t),
       highlight: Color.lerp(highlight, other.highlight, t),
     );
   }
@@ -168,6 +174,27 @@ class MyTheme {
     brightness: Brightness.light,
     hoverColor: Color.fromARGB(255, 224, 224, 224),
     scaffoldBackgroundColor: Color(0xFFFFFFFF),
+    dialogBackgroundColor: Color(0xFFFFFFFF),
+    dialogTheme: DialogTheme(
+      elevation: 15,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18.0),
+        side: BorderSide(
+          width: 1,
+          color: Color(0xFFEEEEEE),
+        ),
+      ),
+    ),
+    inputDecorationTheme: InputDecorationTheme(
+      fillColor: Color(0xFFEEEEEE),
+      filled: true,
+      isDense: true,
+      contentPadding: EdgeInsets.all(15),
+      border: UnderlineInputBorder(
+        borderRadius: BorderRadius.circular(18),
+        borderSide: BorderSide.none,
+      ),
+    ),
     textTheme: const TextTheme(
         titleLarge: TextStyle(fontSize: 19, color: Colors.black87),
         titleSmall: TextStyle(fontSize: 14, color: Colors.black87),
@@ -186,9 +213,48 @@ class MyTheme {
     splashFactory: isDesktop ? NoSplash.splashFactory : null,
     textButtonTheme: isDesktop
         ? TextButtonThemeData(
-            style: ButtonStyle(splashFactory: NoSplash.splashFactory),
+            style: TextButton.styleFrom(
+              splashFactory: NoSplash.splashFactory,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(18.0),
+              ),
+            ),
           )
         : null,
+    elevatedButtonTheme: ElevatedButtonThemeData(
+      style: ElevatedButton.styleFrom(
+        backgroundColor: MyTheme.accent,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8.0),
+        ),
+      ),
+    ),
+    outlinedButtonTheme: OutlinedButtonThemeData(
+      style: OutlinedButton.styleFrom(
+        backgroundColor: Color(
+          0xFFEEEEEE,
+        ),
+        foregroundColor: Colors.black87,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8.0),
+        ),
+      ),
+    ),
+    checkboxTheme: const CheckboxThemeData(
+      splashRadius: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.all(
+          Radius.circular(5),
+        ),
+      ),
+    ),
+    listTileTheme: ListTileThemeData(
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.all(
+          Radius.circular(5),
+        ),
+      ),
+    ),
     colorScheme: ColorScheme.fromSwatch(
       primarySwatch: Colors.blue,
     ).copyWith(
@@ -205,6 +271,27 @@ class MyTheme {
     brightness: Brightness.dark,
     hoverColor: Color.fromARGB(255, 45, 46, 53),
     scaffoldBackgroundColor: Color(0xFF18191E),
+    dialogBackgroundColor: Color(0xFF18191E),
+    dialogTheme: DialogTheme(
+      elevation: 15,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18.0),
+        side: BorderSide(
+          width: 1,
+          color: Color(0xFF24252B),
+        ),
+      ),
+    ),
+    inputDecorationTheme: InputDecorationTheme(
+      fillColor: Color(0xFF24252B),
+      filled: true,
+      isDense: true,
+      contentPadding: EdgeInsets.all(15),
+      border: UnderlineInputBorder(
+        borderRadius: BorderRadius.circular(18),
+        borderSide: BorderSide.none,
+      ),
+    ),
     textTheme: const TextTheme(
         titleLarge: TextStyle(fontSize: 19),
         titleSmall: TextStyle(fontSize: 14),
@@ -217,19 +304,61 @@ class MyTheme {
     tabBarTheme: const TabBarTheme(
       labelColor: Colors.white70,
     ),
+    scrollbarTheme: ScrollbarThemeData(
+      thumbColor: MaterialStateProperty.all(Colors.grey[500]),
+    ),
     splashColor: Colors.transparent,
     highlightColor: Colors.transparent,
     splashFactory: isDesktop ? NoSplash.splashFactory : null,
-    outlinedButtonTheme: OutlinedButtonThemeData(
-        style:
-            OutlinedButton.styleFrom(side: BorderSide(color: Colors.white38))),
     textButtonTheme: isDesktop
         ? TextButtonThemeData(
-            style: ButtonStyle(splashFactory: NoSplash.splashFactory),
+            style: TextButton.styleFrom(
+              splashFactory: NoSplash.splashFactory,
+              disabledForegroundColor: Colors.white70,
+              foregroundColor: Colors.white70,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(18.0),
+              ),
+            ),
           )
         : null,
-    checkboxTheme:
-        const CheckboxThemeData(checkColor: MaterialStatePropertyAll(dark)),
+    elevatedButtonTheme: ElevatedButtonThemeData(
+      style: ElevatedButton.styleFrom(
+        backgroundColor: MyTheme.accent,
+        disabledForegroundColor: Colors.white70,
+        disabledBackgroundColor: Colors.white10,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8.0),
+        ),
+      ),
+    ),
+    outlinedButtonTheme: OutlinedButtonThemeData(
+      style: OutlinedButton.styleFrom(
+        backgroundColor: Color(0xFF24252B),
+        side: BorderSide(color: Colors.white12, width: 0.5),
+        disabledForegroundColor: Colors.white70,
+        foregroundColor: Colors.white70,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8.0),
+        ),
+      ),
+    ),
+    checkboxTheme: const CheckboxThemeData(
+      checkColor: MaterialStatePropertyAll(dark),
+      splashRadius: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.all(
+          Radius.circular(5),
+        ),
+      ),
+    ),
+    listTileTheme: ListTileThemeData(
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.all(
+          Radius.circular(5),
+        ),
+      ),
+    ),
     colorScheme: ColorScheme.fromSwatch(
       primarySwatch: Colors.blue,
     ).copyWith(
@@ -460,7 +589,7 @@ class OverlayDialogManager {
       BackButtonInterceptor.removeByName(dialogTag);
     }
 
-    dialog.entry = OverlayEntry(builder: (_) {
+    dialog.entry = OverlayEntry(builder: (context) {
       bool innerClicked = false;
       return Listener(
           onPointerUp: (_) {
@@ -470,7 +599,9 @@ class OverlayDialogManager {
             innerClicked = false;
           },
           child: Container(
-              color: Colors.black12,
+              color: Theme.of(context).brightness == Brightness.light
+                  ? Colors.black12
+                  : Colors.black45,
               child: StatefulBuilder(builder: (context, setState) {
                 return Listener(
                   onPointerUp: (_) => innerClicked = true,
@@ -652,7 +783,7 @@ class CustomAlertDialog extends StatelessWidget {
     Future.delayed(Duration.zero, () {
       if (!scopeNode.hasFocus) scopeNode.requestFocus();
     });
-    const double padding = 16;
+    const double padding = 30;
     bool tabTapped = false;
     return FocusScope(
       node: scopeNode,
@@ -681,18 +812,19 @@ class CustomAlertDialog extends StatelessWidget {
         scrollable: true,
         title: title,
         titlePadding: EdgeInsets.fromLTRB(padding, 24, padding, 0),
-        contentPadding: EdgeInsets.fromLTRB(contentPadding ?? padding, 25,
-            contentPadding ?? padding, actions is List ? 10 : padding),
+        contentPadding: EdgeInsets.fromLTRB(
+          contentPadding ?? padding,
+          25,
+          contentPadding ?? padding,
+          actions is List ? 10 : padding,
+        ),
         content: ConstrainedBox(
           constraints: contentBoxConstraints,
-          child: Theme(
-              data: Theme.of(context).copyWith(
-                  inputDecorationTheme: InputDecorationTheme(
-                      isDense: true, contentPadding: EdgeInsets.all(15))),
-              child: content),
+          child: content,
         ),
         actions: actions,
         actionsPadding: EdgeInsets.fromLTRB(padding, 0, padding, padding),
+        actionsAlignment: MainAxisAlignment.center,
       ),
     );
   }
@@ -907,21 +1039,14 @@ class AccessibilityListener extends StatelessWidget {
   }
 }
 
-class PermissionManager {
+class AndroidPermissionManager {
   static Completer<bool>? _completer;
   static Timer? _timer;
   static var _current = "";
 
-  static final permissions = [
-    "audio",
-    "file",
-    "ignore_battery_optimizations",
-    "application_details_settings"
-  ];
-
   static bool isWaitingFile() {
     if (_completer != null) {
-      return !_completer!.isCompleted && _current == "file";
+      return !_completer!.isCompleted && _current == kManageExternalStorage;
     }
     return false;
   }
@@ -930,31 +1055,33 @@ class PermissionManager {
     if (isDesktop) {
       return Future.value(true);
     }
-    if (!permissions.contains(type)) {
-      return Future.error("Wrong permission!$type");
-    }
     return gFFI.invokeMethod("check_permission", type);
   }
 
+  // startActivity goto Android Setting's page to request permission manually by user
+  static void startAction(String action) {
+    gFFI.invokeMethod(AndroidChannel.kStartAction, action);
+  }
+
+  /// We use XXPermissions to request permissions,
+  /// for supported types, see https://github.com/getActivity/XXPermissions/blob/e46caea32a64ad7819df62d448fb1c825481cd28/library/src/main/java/com/hjq/permissions/Permission.java
   static Future<bool> request(String type) {
     if (isDesktop) {
       return Future.value(true);
     }
-    if (!permissions.contains(type)) {
-      return Future.error("Wrong permission!$type");
-    }
 
     gFFI.invokeMethod("request_permission", type);
-    if (type == "ignore_battery_optimizations") {
-      return Future.value(false);
+
+    // clear last task
+    if (_completer?.isCompleted == false) {
+      _completer?.complete(false);
     }
+    _timer?.cancel();
+
     _current = type;
     _completer = Completer<bool>();
-    gFFI.invokeMethod("request_permission", type);
 
-    // timeout
-    _timer?.cancel();
-    _timer = Timer(Duration(seconds: 60), () {
+    _timer = Timer(Duration(seconds: 120), () {
       if (_completer == null) return;
       if (!_completer!.isCompleted) {
         _completer!.complete(false);
@@ -1484,8 +1611,8 @@ connect(BuildContext context, String id,
     }
   } else {
     if (isFileTransfer) {
-      if (!await PermissionManager.check("file")) {
-        if (!await PermissionManager.request("file")) {
+      if (!await AndroidPermissionManager.check(kManageExternalStorage)) {
+        if (!await AndroidPermissionManager.request(kManageExternalStorage)) {
           return;
         }
       }
@@ -1712,28 +1839,43 @@ class ServerConfig {
 Widget dialogButton(String text,
     {required VoidCallback? onPressed,
     bool isOutline = false,
+    Widget? icon,
     TextStyle? style,
     ButtonStyle? buttonStyle}) {
   if (isDesktop) {
     if (isOutline) {
-      return OutlinedButton(
-        onPressed: onPressed,
-        child: Text(translate(text), style: style),
-      );
+      return icon == null
+          ? OutlinedButton(
+              onPressed: onPressed,
+              child: Text(translate(text), style: style),
+            )
+          : OutlinedButton.icon(
+              icon: icon,
+              onPressed: onPressed,
+              label: Text(translate(text), style: style),
+            );
     } else {
-      return ElevatedButton(
-        style: ElevatedButton.styleFrom(elevation: 0).merge(buttonStyle),
-        onPressed: onPressed,
-        child: Text(translate(text), style: style),
-      );
+      return icon == null
+          ? ElevatedButton(
+              style: ElevatedButton.styleFrom(elevation: 0).merge(buttonStyle),
+              onPressed: onPressed,
+              child: Text(translate(text), style: style),
+            )
+          : ElevatedButton.icon(
+              icon: icon,
+              style: ElevatedButton.styleFrom(elevation: 0).merge(buttonStyle),
+              onPressed: onPressed,
+              label: Text(translate(text), style: style),
+            );
     }
   } else {
     return TextButton(
-        onPressed: onPressed,
-        child: Text(
-          translate(text),
-          style: style,
-        ));
+      onPressed: onPressed,
+      child: Text(
+        translate(text),
+        style: style,
+      ),
+    );
   }
 }
 
