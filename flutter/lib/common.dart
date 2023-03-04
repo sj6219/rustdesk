@@ -189,7 +189,9 @@ class MyTheme {
             style: ButtonStyle(splashFactory: NoSplash.splashFactory),
           )
         : null,
-    colorScheme: ColorScheme.fromSwatch(primarySwatch: Colors.blue).copyWith(
+    colorScheme: ColorScheme.fromSwatch(
+      primarySwatch: Colors.blue,
+    ).copyWith(
       brightness: Brightness.light,
       background: Color(0xFFEEEEEE),
     ),
@@ -215,6 +217,9 @@ class MyTheme {
     tabBarTheme: const TabBarTheme(
       labelColor: Colors.white70,
     ),
+    scrollbarTheme: ScrollbarThemeData(
+      thumbColor: MaterialStateProperty.all(Colors.grey[500])
+    ),
     splashColor: Colors.transparent,
     highlightColor: Colors.transparent,
     splashFactory: isDesktop ? NoSplash.splashFactory : null,
@@ -229,9 +234,11 @@ class MyTheme {
     checkboxTheme:
         const CheckboxThemeData(checkColor: MaterialStatePropertyAll(dark)),
     colorScheme: ColorScheme.fromSwatch(
-      brightness: Brightness.dark,
       primarySwatch: Colors.blue,
-    ).copyWith(background: Color(0xFF24252B)),
+    ).copyWith(
+      brightness: Brightness.dark,
+      background: Color(0xFF24252B),
+    ),
   ).copyWith(
     extensions: <ThemeExtension<dynamic>>[
       ColorThemeExtension.dark,
@@ -1453,10 +1460,12 @@ connectMainDesktop(String id,
 connect(BuildContext context, String id,
     {bool isFileTransfer = false,
     bool isTcpTunneling = false,
-    bool isRDP = false,
-    bool forceRelay = false}) async {
+    bool isRDP = false}) async {
   if (id == '') return;
   id = id.replaceAll(' ', '');
+  final oldId = id;
+  id = await bind.mainHandleRelayId(id: id);
+  final forceRelay = id != oldId;
   assert(!(isFileTransfer && isTcpTunneling && isRDP),
       "more than one connect type");
 
