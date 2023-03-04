@@ -23,6 +23,10 @@ import '../../common/shared_state.dart';
 import './popup_menu.dart';
 import './kb_layout_type_chooser.dart';
 
+const _kKeyLegacyMode = 'legacy';
+const _kKeyMapMode = 'map';
+const _kKeyTranslateMode = 'translate';
+
 class MenubarState {
   final kStoreKey = 'remoteMenubarState';
   late RxBool show;
@@ -598,6 +602,7 @@ class _ControlMenu extends StatelessWidget {
         hoverColor: _MenubarTheme.hoverBlueColor,
         ffi: ffi,
         menuChildren: [
+          requestElevation(),
           osPassword(),
           transferFile(context),
           tcpTunneling(context),
@@ -605,10 +610,20 @@ class _ControlMenu extends StatelessWidget {
           Divider(),
           ctrlAltDel(),
           restart(),
+          insertLock(),
           blockUserInput(),
           switchSides(),
           refresh(),
         ]);
+  }
+
+  requestElevation() {
+    final visible = ffi.elevationModel.showRequestMenu;
+    if (!visible) return Offstage();
+    return _MenuItemButton(
+        child: Text(translate('Request Elevation')),
+        ffi: ffi,
+        onPressed: () => showRequestElevationDialog(id, ffi.dialogManager));
   }
 
   osPassword() {
@@ -779,6 +794,16 @@ class _ControlMenu extends StatelessWidget {
         onPressed: () => showRestartRemoteDevice(pi, id, ffi.dialogManager));
   }
 
+  insertLock() {
+    final perms = ffi.ffiModel.permissions;
+    final visible = perms['keyboard'] != false;
+    if (!visible) return Offstage();
+    return _MenuItemButton(
+        child: Text(translate('Insert Lock')),
+        ffi: ffi,
+        onPressed: () => bind.sessionLockScreen(id: id));
+  }
+
   blockUserInput() {
     final perms = ffi.ffiModel.permissions;
     final pi = ffi.ffiModel.pi;
@@ -895,6 +920,7 @@ class _DisplayMenuState extends State<_DisplayMenu> {
           disableClipboard(),
           lockAfterSessionEnd(),
           privacyMode(),
+          swapKey(),
         ]);
   }
 
@@ -928,12 +954,13 @@ class _DisplayMenuState extends State<_DisplayMenu> {
 
       final canvasModel = widget.ffi.canvasModel;
       final width = (canvasModel.getDisplayWidth() * canvasModel.scale +
-                  canvasModel.windowBorderWidth * 2) *
+                  CanvasModel.leftToEdge +
+                  CanvasModel.rightToEdge) *
               scale +
           magicWidth;
       final height = (canvasModel.getDisplayHeight() * canvasModel.scale +
-                  canvasModel.tabBarHeight +
-                  canvasModel.windowBorderWidth * 2) *
+                  CanvasModel.topToEdge +
+                  CanvasModel.bottomToEdge) *
               scale +
           magicHeight;
       double left = wndRect.left + (wndRect.width - width) / 2;
@@ -1002,10 +1029,10 @@ class _DisplayMenuState extends State<_DisplayMenu> {
     final canvasModel = widget.ffi.canvasModel;
     final displayWidth = canvasModel.getDisplayWidth();
     final displayHeight = canvasModel.getDisplayHeight();
-    final requiredWidth = displayWidth +
-        (canvasModel.tabBarHeight + canvasModel.windowBorderWidth * 2);
-    final requiredHeight = displayHeight +
-        (canvasModel.tabBarHeight + canvasModel.windowBorderWidth * 2);
+    final requiredWidth =
+        CanvasModel.leftToEdge + displayWidth + CanvasModel.rightToEdge;
+    final requiredHeight =
+        CanvasModel.topToEdge + displayHeight + CanvasModel.bottomToEdge;
     return selfWidth > (requiredWidth * scale) &&
         selfHeight > (requiredHeight * scale);
   }
@@ -1091,7 +1118,8 @@ class _DisplayMenuState extends State<_DisplayMenu> {
         await bind.sessionSetImageQuality(id: widget.id, value: value);
       }
 
-      return SubmenuButton(
+      return _SubmenuButton(
+        ffi: widget.ffi,
         child: Text(translate('Image Quality')),
         menuChildren: [
           _RadioMenuButton<String>(
@@ -1125,7 +1153,7 @@ class _DisplayMenuState extends State<_DisplayMenu> {
             },
             ffi: widget.ffi,
           ),
-        ].map((e) => _buildPointerTrackWidget(e, widget.ffi)).toList(),
+        ],
       );
     });
   }
@@ -1300,7 +1328,8 @@ class _DisplayMenuState extends State<_DisplayMenu> {
         bind.sessionChangePreferCodec(id: widget.id);
       }
 
-      return SubmenuButton(
+      return _SubmenuButton(
+          ffi: widget.ffi,
           child: Text(translate('Codec')),
           menuChildren: [
             _RadioMenuButton<String>(
@@ -1331,7 +1360,7 @@ class _DisplayMenuState extends State<_DisplayMenu> {
               onChanged: onChanged,
               ffi: widget.ffi,
             ),
-          ].map((e) => _buildPointerTrackWidget(e, widget.ffi)).toList());
+          ]);
     });
   }
 
@@ -1363,7 +1392,8 @@ class _DisplayMenuState extends State<_DisplayMenu> {
       }
     }
 
-    return SubmenuButton(
+    return _SubmenuButton(
+        ffi: widget.ffi,
         menuChildren: resolutions
             .map((e) => _RadioMenuButton(
                 value: '${e.width}x${e.height}',
@@ -1371,8 +1401,6 @@ class _DisplayMenuState extends State<_DisplayMenu> {
                 onChanged: onChanged,
                 ffi: widget.ffi,
                 child: Text('${e.width}x${e.height}')))
-            .toList()
-            .map((e) => _buildPointerTrackWidget(e, widget.ffi))
             .toList(),
         child: Text(translate("Resolution")));
   }
@@ -1501,6 +1529,23 @@ class _DisplayMenuState extends State<_DisplayMenu> {
         ffi: widget.ffi,
         child: Text(translate('Privacy mode')));
   }
+
+  swapKey() {
+    final visible = perms['keyboard'] != false &&
+        ((Platform.isMacOS && pi.platform != kPeerPlatformMacOS) ||
+            (!Platform.isMacOS && pi.platform == kPeerPlatformMacOS));
+    if (!visible) return Offstage();
+    final option = 'allow_swap_key';
+    final value = bind.sessionGetToggleOptionSync(id: widget.id, arg: option);
+    return _CheckboxMenuButton(
+        value: value,
+        onChanged: (value) {
+          if (value == null) return;
+          bind.sessionToggleOption(id: widget.id, value: option);
+        },
+        ffi: widget.ffi,
+        child: Text(translate('Swap control-command key')));
+  }
 }
 
 class _KeyboardMenu extends StatelessWidget {
@@ -1516,11 +1561,16 @@ class _KeyboardMenu extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    var ffiModel = Provider.of<FfiModel>(context);
-    if (ffiModel.permissions['keyboard'] == false) return Offstage();
-    // Do not support peer 1.1.9.
+    // Do not check permission here?
+    // var ffiModel = Provider.of<FfiModel>(context);
+    // if (ffiModel.permissions['keyboard'] == false) return Offstage();
     if (stateGlobal.grabKeyboard) {
-      bind.sessionSetKeyboardMode(id: id, value: 'map');
+      if (bind.sessionIsKeyboardModeSupported(id: id, mode: _kKeyMapMode)) {
+        bind.sessionSetKeyboardMode(id: id, value: _kKeyMapMode);
+      } else if (bind.sessionIsKeyboardModeSupported(
+          id: id, mode: _kKeyLegacyMode)) {
+        bind.sessionSetKeyboardMode(id: id, value: _kKeyLegacyMode);
+      }
       return Offstage();
     }
     return _IconSubmenuButton(
@@ -1533,13 +1583,13 @@ class _KeyboardMenu extends StatelessWidget {
 
   mode() {
     return futureBuilder(future: () async {
-      return await bind.sessionGetKeyboardMode(id: id) ?? 'legacy';
+      return await bind.sessionGetKeyboardMode(id: id) ?? _kKeyLegacyMode;
     }(), hasData: (data) {
       final groupValue = data as String;
       List<KeyboardModeMenu> modes = [
-        KeyboardModeMenu(key: 'legacy', menu: 'Legacy mode'),
-        KeyboardModeMenu(key: 'map', menu: 'Map mode'),
-        KeyboardModeMenu(key: 'translate', menu: 'Translate mode'),
+        KeyboardModeMenu(key: _kKeyLegacyMode, menu: 'Legacy mode'),
+        KeyboardModeMenu(key: _kKeyMapMode, menu: 'Map mode'),
+        KeyboardModeMenu(key: _kKeyTranslateMode, menu: 'Translate mode'),
       ];
       List<_RadioMenuButton> list = [];
       onChanged(String? value) async {
@@ -1549,13 +1599,13 @@ class _KeyboardMenu extends StatelessWidget {
 
       for (KeyboardModeMenu mode in modes) {
         if (bind.sessionIsKeyboardModeSupported(id: id, mode: mode.key)) {
-          if (mode.key == 'translate') {
+          if (mode.key == _kKeyTranslateMode) {
             if (Platform.isLinux || pi.platform == kPeerPlatformLinux) {
               continue;
             }
           }
           var text = translate(mode.menu);
-          if (mode.key == 'translate') {
+          if (mode.key == _kKeyTranslateMode) {
             text = '$text beta';
           }
           list.add(_RadioMenuButton<String>(
@@ -1856,6 +1906,28 @@ class _IconSubmenuButtonState extends State<_IconSubmenuButton> {
         .marginSymmetric(
             horizontal: _MenubarTheme.buttonHMargin,
             vertical: _MenubarTheme.buttonVMargin);
+  }
+}
+
+class _SubmenuButton extends StatelessWidget {
+  final List<Widget> menuChildren;
+  final Widget? child;
+  final FFI ffi;
+  const _SubmenuButton({
+    Key? key,
+    required this.menuChildren,
+    required this.child,
+    required this.ffi,
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return SubmenuButton(
+      key: key,
+      child: child,
+      menuChildren:
+          menuChildren.map((e) => _buildPointerTrackWidget(e, ffi)).toList(),
+    );
   }
 }
 

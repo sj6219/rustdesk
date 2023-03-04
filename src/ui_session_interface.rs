@@ -410,7 +410,7 @@ impl<T: InvokeUiSession> Session<T> {
                     "windows" => {
                         let key = rdev::win_key_from_scancode(code);
                         let key = match key {
-                            rdev::Key::ControlLeft => rdev::Key::MetaLeft, 
+                            rdev::Key::ControlLeft => rdev::Key::MetaLeft,
                             rdev::Key::MetaLeft => rdev::Key::ControlLeft,
                             rdev::Key::ControlRight => rdev::Key::MetaLeft,
                             rdev::Key::MetaRight => rdev::Key::ControlLeft,
@@ -452,7 +452,6 @@ impl<T: InvokeUiSession> Session<T> {
 
         let mut msg = evt.clone();
         self.swab_modifier_key(&mut msg);
-
         let mut msg_out = Message::new();
         msg_out.set_key_event(msg);
 
@@ -891,6 +890,7 @@ pub trait InvokeUiSession: Send + Sync + Clone + 'static + Sized + Default {
     fn clipboard(&self, content: String);
     fn cancel_msgbox(&self, tag: &str);
     fn switch_back(&self, id: &str);
+    fn portable_service_running(&self, running: bool);
     fn on_voice_call_started(&self);
     fn on_voice_call_closed(&self, reason: &str);
     fn on_voice_call_waiting(&self);
@@ -1019,6 +1019,7 @@ impl<T: InvokeUiSession> Interface for Session<T> {
             handle_test_delay(t, peer).await;
         }
     }
+    
     fn swap_modifier_mouse(&self, msg : &mut hbb_common::protos::message::MouseEvent) {
         let allow_swap_key = self.get_toggle_option("allow_swap_key".to_string());
         if allow_swap_key  {
