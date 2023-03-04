@@ -454,11 +454,9 @@ impl<T: InvokeUiSession> Session<T> {
         self.swab_modifier_key(&mut msg);
         let mut msg_out = Message::new();
         msg_out.set_key_event(msg);
-
         //..m!!!!!!1.2
         #[cfg(debug_assertions)]
         log::error!("send_key_event {:?}", msg_out);
-
         
         self.send(Data::Message(msg_out));
     }
@@ -627,7 +625,6 @@ impl<T: InvokeUiSession> Session<T> {
         command: bool,
     ) {
         //..m!!!!!!3.1
-
         #[allow(unused_mut)]
         let mut command = command;
         #[cfg(windows)]
