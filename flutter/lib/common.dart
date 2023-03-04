@@ -109,27 +109,32 @@ class IconFont {
 class ColorThemeExtension extends ThemeExtension<ColorThemeExtension> {
   const ColorThemeExtension({
     required this.border,
+    required this.border2,
     required this.highlight,
   });
 
   final Color? border;
+  final Color? border2;
   final Color? highlight;
 
   static const light = ColorThemeExtension(
     border: Color(0xFFCCCCCC),
+    border2: Color(0xFFBBBBBB),
     highlight: Color(0xFFE5E5E5),
   );
 
   static const dark = ColorThemeExtension(
     border: Color(0xFF555555),
+    border2: Color(0xFFE5E5E5),
     highlight: Color(0xFF3F3F3F),
   );
 
   @override
   ThemeExtension<ColorThemeExtension> copyWith(
-      {Color? border, Color? highlight}) {
+      {Color? border, Color? border2, Color? highlight}) {
     return ColorThemeExtension(
       border: border ?? this.border,
+      border2: border2 ?? this.border2,
       highlight: highlight ?? this.highlight,
     );
   }
@@ -142,6 +147,7 @@ class ColorThemeExtension extends ThemeExtension<ColorThemeExtension> {
     }
     return ColorThemeExtension(
       border: Color.lerp(border, other.border, t),
+      border2: Color.lerp(border2, other.border2, t),
       highlight: Color.lerp(highlight, other.highlight, t),
     );
   }
@@ -218,19 +224,30 @@ class MyTheme {
       labelColor: Colors.white70,
     ),
     scrollbarTheme: ScrollbarThemeData(
-      thumbColor: MaterialStateProperty.all(Colors.grey[500])
+      thumbColor: MaterialStateProperty.all(Colors.grey[500]),
     ),
     splashColor: Colors.transparent,
     highlightColor: Colors.transparent,
     splashFactory: isDesktop ? NoSplash.splashFactory : null,
     outlinedButtonTheme: OutlinedButtonThemeData(
-        style:
-            OutlinedButton.styleFrom(side: BorderSide(color: Colors.white38))),
+      style: OutlinedButton.styleFrom(
+        side: BorderSide(color: Colors.white38),
+        disabledForegroundColor: Colors.white70,
+      ),
+    ),
     textButtonTheme: isDesktop
         ? TextButtonThemeData(
-            style: ButtonStyle(splashFactory: NoSplash.splashFactory),
-          )
+            style: TextButton.styleFrom(
+            splashFactory: NoSplash.splashFactory,
+            disabledForegroundColor: Colors.white70,
+          ))
         : null,
+    elevatedButtonTheme: ElevatedButtonThemeData(
+      style: ElevatedButton.styleFrom(
+        disabledForegroundColor: Colors.white70,
+        disabledBackgroundColor: Colors.white10,
+      ),
+    ),
     checkboxTheme:
         const CheckboxThemeData(checkColor: MaterialStatePropertyAll(dark)),
     colorScheme: ColorScheme.fromSwatch(
