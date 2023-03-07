@@ -312,6 +312,8 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Keep RustDesk background service", "Behold RustDesk baggrundstjeneste"),
         ("Ignore Battery Optimizations", "Ignorer betteri optimeringer"),
         ("android_open_battery_optimizations_tip", ""),
+        ("Start on Boot", ""),
+        ("Start the screen sharing service on boot, requires special permissions", ""),
         ("Connection not allowed", "Forbindelse ikke tilladt"),
         ("Legacy mode", "Bagudkompatibilitetstilstand"),
         ("Map mode", ""),
@@ -347,6 +349,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Security", "Sikkerhed"),
         ("Theme", "Thema"),
         ("Dark Theme", "Mørk Tema"),
+        ("Light Theme", ""),
         ("Dark", "Mørk"),
         ("Light", "Lys"),
         ("Follow System", "Følg System"),
@@ -456,5 +459,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Reconnect", ""),
         ("Codec", ""),
         ("Resolution", ""),
-        ].iter().cloned().collect();
+        ("No transfers in progress", ""),
+        ("Set one-time password length", ""),
+    ].iter().cloned().collect();
 }

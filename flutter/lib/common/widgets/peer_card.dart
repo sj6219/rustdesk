@@ -532,19 +532,7 @@ abstract class BasePeerCard extends StatelessWidget {
         ],
       ),
       proc: () {
-        () async {
-          if (isLan) {
-            // TODO
-          } else {
-            final favs = (await bind.mainGetFav()).toList();
-            if (favs.remove(id)) {
-              await bind.mainStoreFav(favs: favs);
-            }
-            await bind.mainRemovePeer(id: id);
-          }
-          removePreference(id);
-          await reloadFunc();
-        }();
+        _delete(id, isLan, reloadFunc);
       },
       padding: menuPadding,
       dismissOnClicked: true,
@@ -673,7 +661,13 @@ abstract class BasePeerCard extends StatelessWidget {
       }
 
       return CustomAlertDialog(
-        title: Text(translate('Rename')),
+        title: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.edit_rounded, color: MyTheme.accent),
+            Text(translate('Rename')).paddingOnly(left: 10),
+          ],
+        ),
         content: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -682,9 +676,7 @@ abstract class BasePeerCard extends StatelessWidget {
                 child: TextFormField(
                   controller: controller,
                   autofocus: true,
-                  decoration: InputDecoration(
-                      border: OutlineInputBorder(),
-                      labelText: translate('Name')),
+                  decoration: InputDecoration(labelText: translate('Name')),
                 ),
               ),
             ),
@@ -694,8 +686,17 @@ abstract class BasePeerCard extends StatelessWidget {
           ],
         ),
         actions: [
-          dialogButton("Cancel", onPressed: close, isOutline: true),
-          dialogButton("OK", onPressed: submit),
+          dialogButton(
+            "Cancel",
+            icon: Icon(Icons.close_rounded),
+            onPressed: close,
+            isOutline: true,
+          ),
+          dialogButton(
+            "OK",
+            icon: Icon(Icons.done_rounded),
+            onPressed: submit,
+          ),
         ],
         onSubmit: submit,
         onCancel: close,
@@ -705,6 +706,58 @@ abstract class BasePeerCard extends StatelessWidget {
 
   @protected
   void _update();
+
+  void _delete(String id, bool isLan, Function reloadFunc) async {
+    gFFI.dialogManager.show(
+      (setState, close) {
+        submit() async {
+          if (isLan) {
+            bind.mainRemoveDiscovered(id: id);
+          } else {
+            final favs = (await bind.mainGetFav()).toList();
+            if (favs.remove(id)) {
+              await bind.mainStoreFav(favs: favs);
+            }
+            await bind.mainRemovePeer(id: id);
+          }
+          removePreference(id);
+          await reloadFunc();
+          close();
+        }
+
+        return CustomAlertDialog(
+          title: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.delete_rounded,
+                color: Colors.red,
+              ),
+              Text(translate('Delete')).paddingOnly(
+                left: 10,
+              ),
+            ],
+          ),
+          content: SizedBox.shrink(),
+          actions: [
+            dialogButton(
+              "Cancel",
+              icon: Icon(Icons.close_rounded),
+              onPressed: close,
+              isOutline: true,
+            ),
+            dialogButton(
+              "OK",
+              icon: Icon(Icons.done_rounded),
+              onPressed: submit,
+            ),
+          ],
+          onSubmit: submit,
+          onCancel: close,
+        );
+      },
+    );
+  }
 }
 
 class RecentPeerCard extends BasePeerCard {
@@ -745,12 +798,9 @@ class RecentPeerCard extends BasePeerCard {
     }
 
     if (gFFI.userModel.userName.isNotEmpty) {
-      // if (!gFFI.abModel.idContainBy(peer.id)) {
-      //   menuItems.add(_addToAb(peer));
-      // } else {
-      //   menuItems.add(_removeFromAb(peer));
-      // }
-      menuItems.add(_addToAb(peer));
+      if (!gFFI.abModel.idContainBy(peer.id)) {
+        menuItems.add(_addToAb(peer));
+      }
     }
 
     menuItems.add(MenuEntryDivider());
@@ -797,12 +847,9 @@ class FavoritePeerCard extends BasePeerCard {
     }));
 
     if (gFFI.userModel.userName.isNotEmpty) {
-      // if (!gFFI.abModel.idContainBy(peer.id)) {
-      //   menuItems.add(_addToAb(peer));
-      // } else {
-      //   menuItems.add(_removeFromAb(peer));
-      // }
-      menuItems.add(_addToAb(peer));
+      if (!gFFI.abModel.idContainBy(peer.id)) {
+        menuItems.add(_addToAb(peer));
+      }
     }
 
     menuItems.add(MenuEntryDivider());
@@ -850,16 +897,17 @@ class DiscoveredPeerCard extends BasePeerCard {
     }
 
     if (gFFI.userModel.userName.isNotEmpty) {
-      // if (!gFFI.abModel.idContainBy(peer.id)) {
-      //   menuItems.add(_addToAb(peer));
-      // } else {
-      //   menuItems.add(_removeFromAb(peer));
-      // }
-      menuItems.add(_addToAb(peer));
+      if (!gFFI.abModel.idContainBy(peer.id)) {
+        menuItems.add(_addToAb(peer));
+      }
     }
 
     menuItems.add(MenuEntryDivider());
-    menuItems.add(_removeAction(peer.id, () async {}));
+    menuItems.add(
+      _removeAction(peer.id, () async {
+        await bind.mainLoadLanPeers();
+      }, isLan: true),
+    );
     return menuItems;
   }
 

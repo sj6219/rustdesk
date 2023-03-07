@@ -38,7 +38,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Stop service", "停止服务"),
         ("Change ID", "更改 ID"),
         ("Your new ID", "你的新 ID"),
-        ("length %min% to %max%", "长度在 %min 与 %max 之间"),
+        ("length %min% to %max%", "长度在 %min% 与 %max% 之间"),
         ("starts with a letter", "以字母开头"),
         ("allowed characters", "使用允许的字符"),
         ("id_change_tip", "只可以使用字母 a-z, A-Z, 0-9, _ (下划线)。首字母必须是 a-z, A-Z。长度在 6 与 16 之间。"),
@@ -137,7 +137,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Failed to connect to rendezvous server", "连接注册服务器失败"),
         ("Please try later", "请稍后再试"),
         ("Remote desktop is offline", "远程电脑处于离线状态"),
-        ("Key mismatch", "密钥不匹配"),
+        ("Key mismatch", "Key 不匹配"),
         ("Timeout", "连接超时"),
         ("Failed to connect to relay server", "无法连接到中继服务器"),
         ("Failed to connect via rendezvous server", "无法通过注册服务器建立连接"),
@@ -312,6 +312,8 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Keep RustDesk background service", "保持 RustDesk 后台服务"),
         ("Ignore Battery Optimizations", "忽略电池优化"),
         ("android_open_battery_optimizations_tip", "如需关闭此功能，请在接下来的 RustDesk 应用设置页面中，找到并进入 [电源] 页面，取消勾选 [不受限制]"),
+        ("Start on Boot", "开机自启动"),
+        ("Start the screen sharing service on boot, requires special permissions", "开机自动启动屏幕共享服务，此功能需要一些特殊权限。"),
         ("Connection not allowed", "对方不允许连接"),
         ("Legacy mode", "传统模式"),
         ("Map mode", "1：1 传输"),
@@ -347,6 +349,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Security", "安全"),
         ("Theme", "主题"),
         ("Dark Theme", "暗黑主题"),
+        ("Light Theme", ""),
         ("Dark", "黑暗"),
         ("Light", "明亮"),
         ("Follow System", "跟随系统"),
@@ -456,5 +459,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Reconnect", "重连"),
         ("Codec", "编解码"),
         ("Resolution", "分辨率"),
-        ].iter().cloned().collect();
+        ("No transfers in progress", ""),
+        ("Set one-time password length", ""),
+    ].iter().cloned().collect();
 }

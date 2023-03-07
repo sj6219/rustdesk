@@ -312,6 +312,8 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Keep RustDesk background service", "Dejar RustDesk como Servicio en 2do plano"),
         ("Ignore Battery Optimizations", "Ignorar optimizacioens de bateria"),
         ("android_open_battery_optimizations_tip", "Si deseas deshabilitar esta característica, por favor, ve a la página siguiente de ajustes, busca y entra en  [Batería] y desmarca [Sin restricción]"),
+        ("Start on Boot", ""),
+        ("Start the screen sharing service on boot, requires special permissions", ""),
         ("Connection not allowed", "Conexión no disponible"),
         ("Legacy mode", "Modo heredado"),
         ("Map mode", "Modo mapa"),
@@ -347,6 +349,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Security", "Seguridad"),
         ("Theme", "Tema"),
         ("Dark Theme", "Tema Oscuro"),
+        ("Light Theme", ""),
         ("Dark", "Oscuro"),
         ("Light", "Claro"),
         ("Follow System", "Tema del sistema"),
@@ -454,7 +457,9 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Stop voice call", "Detener llamada de voz"),
         ("relay_hint_tip", "Puede que no sea posible conectar directamente. Puedes tratar de conectar a través de relay. \nAdicionalmente, si quieres usar relay en el primer intento, puedes añadir el sufijo \"/r\" a la ID o seleccionar la opción \"Conectar siempre a través de relay\" en la tarjeta del par."),
         ("Reconnect", "Reconectar"),
-        ("Codec", ""),
-        ("Resolution", ""),
-        ].iter().cloned().collect();
+        ("Codec", "Códec"),
+        ("Resolution", "Resolución"),
+        ("No transfers in progress", "No hay transferencias en curso"),
+        ("Set one-time password length", "Establecer contraseña de un solo uso"),
+    ].iter().cloned().collect();
 }

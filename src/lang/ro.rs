@@ -312,6 +312,8 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Keep RustDesk background service", "Rulează serviciul RustDesk în fundal"),
         ("Ignore Battery Optimizations", "Ignoră optimizările de baterie"),
         ("android_open_battery_optimizations_tip", "Pentru dezactivarea acestei funcții, accesează setările aplicației RustDesk, deschide secțiunea [Baterie] și deselectează [Fără restricții]."),
+        ("Start on Boot", ""),
+        ("Start the screen sharing service on boot, requires special permissions", ""),
         ("Connection not allowed", "Conexiune neautoriztă"),
         ("Legacy mode", "Mod legacy"),
         ("Map mode", "Mod hartă"),
@@ -347,6 +349,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Security", "Securitate"),
         ("Theme", "Temă"),
         ("Dark Theme", "Temă întunecată"),
+        ("Light Theme", ""),
         ("Dark", "Întunecat"),
         ("Light", "Luminos"),
         ("Follow System", "Urmărește sistem"),
@@ -456,5 +459,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Reconnect", ""),
         ("Codec", ""),
         ("Resolution", ""),
-        ].iter().cloned().collect();
+        ("No transfers in progress", ""),
+        ("Set one-time password length", ""),
+    ].iter().cloned().collect();
 }

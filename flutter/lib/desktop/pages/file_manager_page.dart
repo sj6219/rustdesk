@@ -300,14 +300,13 @@ class _FileManagerPageState extends State<FileManagerPage>
             }
             skipCount = index + 1;
           }
-          var searchResult = entries
-              .skip(skipCount)
-              .where((element) => element.name.toLowerCase().startsWith(buffer));
+          var searchResult = entries.skip(skipCount).where(
+              (element) => element.name.toLowerCase().startsWith(buffer));
           if (searchResult.isEmpty) {
             // cannot find next, lets restart search from head
             debugPrint("restart search from head");
-            searchResult =
-                entries.where((element) => element.name.toLowerCase().startsWith(buffer));
+            searchResult = entries.where(
+                (element) => element.name.toLowerCase().startsWith(buffer));
           }
           if (searchResult.isEmpty) {
             setState(() {
@@ -321,8 +320,8 @@ class _FileManagerPageState extends State<FileManagerPage>
         onSearch: (buffer) {
           debugPrint("searching for $buffer");
           final selectedEntries = getSelectedItems(isLocal);
-          final searchResult =
-              entries.where((element) => element.name.toLowerCase().startsWith(buffer));
+          final searchResult = entries.where(
+              (element) => element.name.toLowerCase().startsWith(buffer));
           selectedEntries.clear();
           if (searchResult.isEmpty) {
             setState(() {
@@ -431,6 +430,7 @@ class _FileManagerPageState extends State<FileManagerPage>
                                           message: lastModifiedStr,
                                           child: Text(
                                             lastModifiedStr,
+                                            overflow: TextOverflow.ellipsis,
                                             style: TextStyle(
                                               fontSize: 12,
                                               color: MyTheme.darkGray,
@@ -504,8 +504,7 @@ class _FileManagerPageState extends State<FileManagerPage>
       debugPrint("entry is not valid: ${entry.path}");
     }
     final selectedEntries = getSelectedItems(isLocal);
-    final searchResult =
-        entries.where((element) => element == entry);
+    final searchResult = entries.where((element) => element == entry);
     selectedEntries.clear();
     if (searchResult.isEmpty) {
       return;
@@ -567,161 +566,187 @@ class _FileManagerPageState extends State<FileManagerPage>
     return false;
   }
 
+  Widget generateCard(Widget child) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.all(
+          Radius.circular(15.0),
+        ),
+      ),
+      child: child,
+    );
+  }
+
   /// transfer status list
   /// watch transfer status
   Widget statusList() {
     return PreferredSize(
-        preferredSize: const Size(200, double.infinity),
+      preferredSize: const Size(200, double.infinity),
+      child: Container(
+        margin: const EdgeInsets.only(top: 16.0, bottom: 16.0, right: 16.0),
+        padding: const EdgeInsets.all(8.0),
         child: model.jobTable.isEmpty
-            ? Center(child: Text(translate("Empty")))
-            : Container(
-                margin:
-                    const EdgeInsets.only(top: 16.0, bottom: 16.0, right: 16.0),
-                padding: const EdgeInsets.all(8.0),
-                child: Obx(
-                  () => ListView.builder(
-                    controller: ScrollController(),
-                    itemBuilder: (BuildContext context, int index) {
-                      final item = model.jobTable[index];
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 5),
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: Theme.of(context).cardColor,
-                            borderRadius: BorderRadius.all(
-                              Radius.circular(15.0),
-                            ),
-                          ),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Row(
-                                crossAxisAlignment: CrossAxisAlignment.center,
-                                children: [
-                                  Transform.rotate(
-                                    angle: item.isRemote ? pi : 0,
-                                    child: SvgPicture.asset(
-                                      "assets/arrow.svg",
-                                      color: Theme.of(context)
-                                          .tabBarTheme
-                                          .labelColor,
-                                    ),
-                                  ).paddingOnly(left: 15),
-                                  const SizedBox(
-                                    width: 16.0,
+            ? generateCard(
+                Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      SvgPicture.asset(
+                        "assets/transfer.svg",
+                        color: Theme.of(context).tabBarTheme.labelColor,
+                        height: 40,
+                      ).paddingOnly(bottom: 10),
+                      Text(
+                        translate("No transfers in progress"),
+                        textAlign: TextAlign.center,
+                        textScaleFactor: 1.20,
+                        style: TextStyle(
+                            color: Theme.of(context).tabBarTheme.labelColor),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            : Obx(
+                () => ListView.builder(
+                  controller: ScrollController(),
+                  itemBuilder: (BuildContext context, int index) {
+                    final item = model.jobTable[index];
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 5),
+                      child: generateCard(
+                        Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                Transform.rotate(
+                                  angle: item.isRemote ? pi : 0,
+                                  child: SvgPicture.asset(
+                                    "assets/arrow.svg",
+                                    color: Theme.of(context)
+                                        .tabBarTheme
+                                        .labelColor,
                                   ),
-                                  Expanded(
-                                    child: Column(
-                                      mainAxisSize: MainAxisSize.min,
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Tooltip(
-                                          waitDuration:
-                                              Duration(milliseconds: 500),
-                                          message: item.jobName,
-                                          child: Text(
-                                            item.jobName,
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                          ).paddingSymmetric(vertical: 10),
+                                ).paddingOnly(left: 15),
+                                const SizedBox(
+                                  width: 16.0,
+                                ),
+                                Expanded(
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Tooltip(
+                                        waitDuration:
+                                            Duration(milliseconds: 500),
+                                        message: item.jobName,
+                                        child: Text(
+                                          item.fileName,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ).paddingSymmetric(vertical: 10),
+                                      ),
+                                      Text(
+                                        '${translate("Total")} ${readableFileSize(item.totalSize.toDouble())}',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: MyTheme.darkGray,
                                         ),
-                                        Text(
-                                          '${translate("Total")} ${readableFileSize(item.totalSize.toDouble())}',
+                                      ),
+                                      Offstage(
+                                        offstage:
+                                            item.state != JobState.inProgress,
+                                        child: Text(
+                                          '${translate("Speed")} ${readableFileSize(item.speed)}/s',
                                           style: TextStyle(
                                             fontSize: 12,
                                             color: MyTheme.darkGray,
                                           ),
                                         ),
-                                        Offstage(
-                                          offstage:
-                                              item.state != JobState.inProgress,
-                                          child: Text(
-                                            '${translate("Speed")} ${readableFileSize(item.speed)}/s',
-                                            style: TextStyle(
-                                              fontSize: 12,
-                                              color: MyTheme.darkGray,
-                                            ),
-                                          ),
-                                        ),
-                                        Offstage(
-                                          offstage:
-                                              item.state == JobState.inProgress,
-                                          child: Text(
-                                            translate(
-                                              item.display(),
-                                            ),
-                                            style: TextStyle(
-                                              fontSize: 12,
-                                              color: MyTheme.darkGray,
-                                            ),
-                                          ),
-                                        ),
-                                        Offstage(
-                                          offstage:
-                                              item.state != JobState.inProgress,
-                                          child: LinearPercentIndicator(
-                                            padding: EdgeInsets.only(right: 15),
-                                            animateFromLastPercent: true,
-                                            center: Text(
-                                              '${(item.finishedSize / item.totalSize * 100).toStringAsFixed(0)}%',
-                                            ),
-                                            barRadius: Radius.circular(15),
-                                            percent: item.finishedSize /
-                                                item.totalSize,
-                                            progressColor: MyTheme.accent,
-                                            backgroundColor:
-                                                Theme.of(context).hoverColor,
-                                            lineHeight:
-                                                kDesktopFileTransferRowHeight,
-                                          ).paddingSymmetric(vertical: 15),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.end,
-                                    children: [
+                                      ),
                                       Offstage(
-                                        offstage: item.state != JobState.paused,
-                                        child: MenuButton(
-                                          onPressed: () {
-                                            model.resumeJob(item.id);
-                                          },
-                                          child: SvgPicture.asset(
-                                            "assets/refresh.svg",
-                                            color: Colors.white,
+                                        offstage:
+                                            item.state == JobState.inProgress,
+                                        child: Text(
+                                          translate(
+                                            item.display(),
                                           ),
-                                          color: MyTheme.accent,
-                                          hoverColor: MyTheme.accent80,
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: MyTheme.darkGray,
+                                          ),
                                         ),
                                       ),
-                                      MenuButton(
-                                        padding: EdgeInsets.only(right: 15),
-                                        child: SvgPicture.asset(
-                                          "assets/close.svg",
-                                          color: Colors.white,
-                                        ),
-                                        onPressed: () {
-                                          model.jobTable.removeAt(index);
-                                          model.cancelJob(item.id);
-                                        },
-                                        color: MyTheme.accent,
-                                        hoverColor: MyTheme.accent80,
+                                      Offstage(
+                                        offstage:
+                                            item.state != JobState.inProgress,
+                                        child: LinearPercentIndicator(
+                                          padding: EdgeInsets.only(right: 15),
+                                          animateFromLastPercent: true,
+                                          center: Text(
+                                            '${(item.finishedSize / item.totalSize * 100).toStringAsFixed(0)}%',
+                                          ),
+                                          barRadius: Radius.circular(15),
+                                          percent: item.finishedSize /
+                                              item.totalSize,
+                                          progressColor: MyTheme.accent,
+                                          backgroundColor:
+                                              Theme.of(context).hoverColor,
+                                          lineHeight:
+                                              kDesktopFileTransferRowHeight,
+                                        ).paddingSymmetric(vertical: 15),
                                       ),
                                     ],
                                   ),
-                                ],
-                              ),
-                            ],
-                          ).paddingSymmetric(vertical: 10),
-                        ),
-                      );
-                    },
-                    itemCount: model.jobTable.length,
-                  ),
+                                ),
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.end,
+                                  children: [
+                                    Offstage(
+                                      offstage: item.state != JobState.paused,
+                                      child: MenuButton(
+                                        onPressed: () {
+                                          model.resumeJob(item.id);
+                                        },
+                                        child: SvgPicture.asset(
+                                          "assets/refresh.svg",
+                                          color: Colors.white,
+                                        ),
+                                        color: MyTheme.accent,
+                                        hoverColor: MyTheme.accent80,
+                                      ),
+                                    ),
+                                    MenuButton(
+                                      padding: EdgeInsets.only(right: 15),
+                                      child: SvgPicture.asset(
+                                        "assets/close.svg",
+                                        color: Colors.white,
+                                      ),
+                                      onPressed: () {
+                                        model.jobTable.removeAt(index);
+                                        model.cancelJob(item.id);
+                                      },
+                                      color: MyTheme.accent,
+                                      hoverColor: MyTheme.accent80,
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ],
+                        ).paddingSymmetric(vertical: 10),
+                      ),
+                    );
+                  },
+                  itemCount: model.jobTable.length,
                 ),
-              ));
+              ),
+      ),
+    );
   }
 
   Widget headTools(bool isLocal) {
@@ -950,14 +975,26 @@ class _FileManagerPageState extends State<FileManagerPage>
 
                           cancel() => close(false);
                           return CustomAlertDialog(
-                            title: Text(translate("Create Folder")),
+                            title: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                SvgPicture.asset("assets/folder_new.svg",
+                                    color: MyTheme.accent),
+                                Text(
+                                  translate("Create Folder"),
+                                ).paddingOnly(
+                                  left: 10,
+                                ),
+                              ],
+                            ),
                             content: Column(
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 TextFormField(
                                   decoration: InputDecoration(
                                     labelText: translate(
-                                        "Please enter the folder name"),
+                                      "Please enter the folder name",
+                                    ),
                                   ),
                                   controller: name,
                                   autofocus: true,
@@ -965,9 +1002,17 @@ class _FileManagerPageState extends State<FileManagerPage>
                               ],
                             ),
                             actions: [
-                              dialogButton("Cancel",
-                                  onPressed: cancel, isOutline: true),
-                              dialogButton("OK", onPressed: submit)
+                              dialogButton(
+                                "Cancel",
+                                icon: Icon(Icons.close_rounded),
+                                onPressed: cancel,
+                                isOutline: true,
+                              ),
+                              dialogButton(
+                                "Ok",
+                                icon: Icon(Icons.done_rounded),
+                                onPressed: submit,
+                              ),
                             ],
                             onSubmit: submit,
                             onCancel: cancel,
@@ -1010,11 +1055,6 @@ class _FileManagerPageState extends State<FileManagerPage>
                         ? MyTheme.accent80
                         : MyTheme.accent,
                   ),
-                  shape: MaterialStateProperty.all<RoundedRectangleBorder>(
-                    RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(18.0),
-                    ),
-                  ),
                 ),
                 onPressed: validItems(selectedItems)
                     ? () {
@@ -1028,7 +1068,9 @@ class _FileManagerPageState extends State<FileManagerPage>
                         textAlign: TextAlign.right,
                         style: TextStyle(
                           color: selectedItems.length == 0
-                              ? MyTheme.darkGray
+                              ? Theme.of(context).brightness == Brightness.light
+                                  ? MyTheme.grayBg
+                                  : MyTheme.darkGray
                               : Colors.white,
                         ),
                       )
@@ -1037,7 +1079,9 @@ class _FileManagerPageState extends State<FileManagerPage>
                         child: SvgPicture.asset(
                           "assets/arrow.svg",
                           color: selectedItems.length == 0
-                              ? MyTheme.darkGray
+                              ? Theme.of(context).brightness == Brightness.light
+                                  ? MyTheme.grayBg
+                                  : MyTheme.darkGray
                               : Colors.white,
                           alignment: Alignment.bottomRight,
                         ),
@@ -1046,14 +1090,18 @@ class _FileManagerPageState extends State<FileManagerPage>
                     ? SvgPicture.asset(
                         "assets/arrow.svg",
                         color: selectedItems.length == 0
-                            ? MyTheme.darkGray
+                            ? Theme.of(context).brightness == Brightness.light
+                                ? MyTheme.grayBg
+                                : MyTheme.darkGray
                             : Colors.white,
                       )
                     : Text(
                         translate('Receive'),
                         style: TextStyle(
                           color: selectedItems.length == 0
-                              ? MyTheme.darkGray
+                              ? Theme.of(context).brightness == Brightness.light
+                                  ? MyTheme.grayBg
+                                  : MyTheme.darkGray
                               : Colors.white,
                         ),
                       ),
@@ -1396,14 +1444,14 @@ class _FileManagerPageState extends State<FileManagerPage>
                       ).marginSymmetric(horizontal: 4),
                     ),
                     Flexible(
-                      flex: 1,
-                      child: ascending.value != null
-                        ? Icon(
-                            ascending.value!
-                                ? Icons.keyboard_arrow_up_rounded
-                                : Icons.keyboard_arrow_down_rounded,
-                          )
-                        : const Offstage())
+                        flex: 1,
+                        child: ascending.value != null
+                            ? Icon(
+                                ascending.value!
+                                    ? Icons.keyboard_arrow_up_rounded
+                                    : Icons.keyboard_arrow_down_rounded,
+                              )
+                            : const Offstage())
                   ],
                 ),
               ),
@@ -1433,10 +1481,8 @@ class _FileManagerPageState extends State<FileManagerPage>
             axis: Axis.vertical,
             onPointerMove: (dx) {
               nameColWidth.value += dx;
-              nameColWidth.value = min(
-                    kDesktopFileTransferMaximumWidth,
-                    max(kDesktopFileTransferMinimumWidth,
-                        nameColWidth.value));
+              nameColWidth.value = min(kDesktopFileTransferMaximumWidth,
+                  max(kDesktopFileTransferMinimumWidth, nameColWidth.value));
             },
             padding: padding,
           ),

@@ -5,7 +5,7 @@
   <a href="#auf-docker-kompilieren">Docker</a> •
   <a href="#dateistruktur">Dateistruktur</a> •
   <a href="#screenshots">Screenshots</a><br>
-  [<a href="../README.md">English</a>] | [<a href="README-UA.md">Українська</a>] | [<a href="README-CS.md">česky</a>] | [<a href="README-ZH.md">中文</a>] | [<a href="README-HU.md">Magyar</a>] | [<a href="README-ES.md">Español</a>] | [<a href="README-FA.md">فارسی</a>] | [<a href="README-FR.md">Français</a>] | [<a href="README-PL.md">Polski</a>] | [<a href="README-ID.md">Indonesian</a>] | [<a href="README-FI.md">Suomi</a>] | [<a href="README-ML.md">മലയാളം</a>] | [<a href="README-JP.md">日本語</a>] | [<a href="README-NL.md">Nederlands</a>] | [<a href="README-IT.md">Italiano</a>] | [<a href="README-RU.md">Русский</a>] | [<a href="README-PTBR.md">Português (Brasil)</a>] | [<a href="README-EO.md">Esperanto</a>] | [<a href="README-KR.md">한국어</a>] | [<a href="README-AR.md">العربي</a>] | [<a href="README-VN.md">Tiếng Việt</a>] | [<a href="README-DA.md">Dansk</a>]<br>
+  [<a href="../README.md">English</a>] | [<a href="README-UA.md">Українська</a>] | [<a href="README-CS.md">česky</a>] | [<a href="README-ZH.md">中文</a>] | [<a href="README-HU.md">Magyar</a>] | [<a href="README-ES.md">Español</a>] | [<a href="README-FA.md">فارسی</a>] | [<a href="README-FR.md">Français</a>] | [<a href="README-PL.md">Polski</a>] | [<a href="README-ID.md">Indonesian</a>] | [<a href="README-FI.md">Suomi</a>] | [<a href="README-ML.md">മലയാളം</a>] | [<a href="README-JP.md">日本語</a>] | [<a href="README-NL.md">Nederlands</a>] | [<a href="README-IT.md">Italiano</a>] | [<a href="README-RU.md">Русский</a>] | [<a href="README-PTBR.md">Português (Brasil)</a>] | [<a href="README-EO.md">Esperanto</a>] | [<a href="README-KR.md">한국어</a>] | [<a href="README-AR.md">العربي</a>] | [<a href="README-VN.md">Tiếng Việt</a>] | [<a href="README-DA.md">Dansk</a>] | [<a href="README-GR.md">Ελληνικά</a>]<br>
   <b>Wir brauchen deine Hilfe, um dieses README, die <a href="https://github.com/rustdesk/rustdesk/tree/master/src/lang">RustDesk-Benutzeroberfläche</a> und die <a href="https://github.com/rustdesk/doc.rustdesk.com">Dokumentation</a> in deine Muttersprache zu übersetzen.</b>
 </p>
 
@@ -17,9 +17,9 @@ RustDesk ist eine in Rust geschriebene Remote-Desktop-Software, die out of the b
 
 ![image](https://user-images.githubusercontent.com/71636191/171661982-430285f0-2e12-4b1d-9957-4a58e375304d.png)
 
-RustDesk heißt jegliche Mitarbeit willkommen. Schau dir [`docs/CONTRIBUTING.md`](CONTRIBUTING.md) an, wenn du Unterstützung beim Start brauchst.
+RustDesk heißt jegliche Mitarbeit willkommen. Schau dir [CONTRIBUTING-DE.md](CONTRIBUTING-DE.md) an, wenn du Unterstützung beim Start brauchst.
 
-[**Wie arbeitet RustDesk?**](https://github.com/rustdesk/rustdesk/wiki/How-does-RustDesk-work%3F)
+[**FAQ**](https://github.com/rustdesk/rustdesk/wiki/FAQ)
 
 [**Programm herunterladen**](https://github.com/rustdesk/rustdesk/releases)
 
@@ -40,6 +40,14 @@ Nachfolgend sind die Server gelistet, die du kostenlos nutzen kannst. Es kann se
 | Finnland (Helsinki) | 0x101 Cyber Security | 4 vCPU / 8 GB RAM |
 | USA (Ashburn) | 0x101 Cyber Security | 4 vCPU / 8 GB RAM |
 | Ukraine (Kiew) | dc.volia (2VM) | 2 vCPU / 4 GB RAM |
+
+## Dev-Container
+
+[![In Dev-Containern öffnen](https://img.shields.io/static/v1?label=Dev%20Container&message=Open&color=blue&logo=visualstudiocode)](https://vscode.dev/redirect?url=vscode://ms-vscode-remote.remote-containers/cloneInVolume?url=https://github.com/rustdesk/rustdesk)
+
+Wenn du VS Code und Docker bereits installiert hast, kannst du auf das Abzeichen oben klicken, um loszulegen. Wenn du darauf klickst, wird VS Code automatisch die Dev-Container-Erweiterung installieren, den Quellcode in ein Container-Volume klonen und einen Dev-Container für die Verwendung aufsetzen.
+
+Weitere Informationen findest du in [DEVCONTAINER-DE.md](DEVCONTAINER-DE.md).
 
 ## Abhängigkeiten
 

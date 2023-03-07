@@ -597,6 +597,13 @@ pub fn get_lan_peers() -> Vec<HashMap<&'static str, String>> {
 }
 
 #[inline]
+pub fn remove_discovered(id: String) {
+    let mut peers = config::LanPeers::load().peers;
+    peers.retain(|x| x.id != id);
+    config::LanPeers::store(&peers);
+}
+
+#[inline]
 pub fn get_uuid() -> String {
     base64::encode(hbb_common::get_uuid())
 }
@@ -629,7 +636,13 @@ pub fn get_async_job_status() -> String {
 
 #[inline]
 pub fn get_langs() -> String {
-    crate::lang::LANGS.to_string()
+    use serde_json::json;
+    let mut x: Vec<(&str, String)> = crate::lang::LANGS
+        .iter()
+        .map(|a| (a.0, format!("{} ({})", a.1, a.0)))
+        .collect();
+    x.sort_by(|a, b| a.0.cmp(b.0));
+    json!(x).to_string()
 }
 
 #[inline]
@@ -700,10 +713,10 @@ pub fn is_root() -> bool {
 pub fn check_super_user_permission() -> bool {
     #[cfg(feature = "flatpak")]
     return true;
-    #[cfg(any(windows, target_os = "linux"))]
+    #[cfg(any(windows, target_os = "linux", target_os = "macos"))]
     return crate::platform::check_super_user_permission().unwrap_or(false);
-    #[cfg(not(any(windows, target_os = "linux")))]
-    true
+    #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
+    return true;
 }
 
 #[allow(dead_code)]
@@ -962,4 +975,13 @@ async fn check_id(
         return "Failed to connect to rendezvous server";
     }
     ""
+}
+
+// if it's relay id, return id processed, otherwise return original id
+pub fn handle_relay_id(id: String) -> String {
+    if id.ends_with(r"\r") || id.ends_with(r"/r") {
+        id[0..id.len() - 2].to_string()
+    } else {
+        id
+    }
 }
