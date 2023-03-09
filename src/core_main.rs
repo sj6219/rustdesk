@@ -15,6 +15,9 @@ pub fn core_main() -> Option<Vec<String>> {
         #[cfg(target_os = "macos")]
         {
             // unsafe { std::intrinsics::breakpoint(); }
+            
+//          mkfifo /tmp/RustDesk/pipe
+//          while :; do; cat /tmp/RustDesk/pipe; done
 
             use std::io::Write;
             let mut id : u64 = 0;
