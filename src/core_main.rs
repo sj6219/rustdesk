@@ -15,6 +15,9 @@ pub fn core_main() -> Option<Vec<String>> {
         #[cfg(target_os = "macos")]
         {
             // unsafe { std::intrinsics::breakpoint(); }
+            
+//          mkfifo /tmp/RustDesk/pipe
+//          while :; do; cat /tmp/RustDesk/pipe; done
 
             use std::io::Write;
             let mut id : u64 = 0;
@@ -160,6 +163,10 @@ pub fn core_main() -> Option<Vec<String>> {
             } else if args[0] == "--extract" {
                 #[cfg(feature = "with_rc")]
                 hbb_common::allow_err!(crate::rc::extract_resources(&args[1]));
+                return None;
+            } else if args[0] == "--install-cert" {
+                #[cfg(windows)]
+                hbb_common::allow_err!(crate::platform::windows::install_cert(&args[1]));
                 return None;
             } else if args[0] == "--portable-service" {
                 crate::platform::elevate_or_run_as_system(
