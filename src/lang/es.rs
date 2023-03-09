@@ -204,7 +204,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Warning", "Aviso"),
         ("Login screen using Wayland is not supported", "La pantalla de inicio de sesión con Wayland no es compatible"),
         ("Reboot required", "Reinicio requerido"),
-        ("Unsupported display server ", "Servidor de visualización no compatible"),
+        ("Unsupported display server", "Servidor de visualización no compatible"),
         ("x11 expected", "x11 necesario"),
         ("Port", "Puerto"),
         ("Settings", "Ajustes"),
@@ -312,6 +312,8 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Keep RustDesk background service", "Dejar RustDesk como Servicio en 2do plano"),
         ("Ignore Battery Optimizations", "Ignorar optimizacioens de bateria"),
         ("android_open_battery_optimizations_tip", "Si deseas deshabilitar esta característica, por favor, ve a la página siguiente de ajustes, busca y entra en  [Batería] y desmarca [Sin restricción]"),
+        ("Start on Boot", ""),
+        ("Start the screen sharing service on boot, requires special permissions", ""),
         ("Connection not allowed", "Conexión no disponible"),
         ("Legacy mode", "Modo heredado"),
         ("Map mode", "Modo mapa"),
@@ -347,6 +349,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Security", "Seguridad"),
         ("Theme", "Tema"),
         ("Dark Theme", "Tema Oscuro"),
+        ("Light Theme", ""),
         ("Dark", "Oscuro"),
         ("Light", "Claro"),
         ("Follow System", "Tema del sistema"),
@@ -456,6 +459,10 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Reconnect", "Reconectar"),
         ("Codec", "Códec"),
         ("Resolution", "Resolución"),
-        ("No transfers in progress", ""),
-        ].iter().cloned().collect();
+        ("No transfers in progress", "No hay transferencias en curso"),
+        ("Set one-time password length", "Establecer contraseña de un solo uso"),
+        ("idd_driver_tip", ""),
+        ("confirm_idd_driver_tip", ""),
+        ("RDP Settings", ""),
+    ].iter().cloned().collect();
 }

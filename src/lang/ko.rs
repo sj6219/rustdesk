@@ -204,7 +204,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Warning", "경고"),
         ("Login screen using Wayland is not supported", "Wayland를 사용한 로그인 화면이 지원되지 않습니다"),
         ("Reboot required", "재부팅이 필요합니다"),
-        ("Unsupported display server ", "지원하지 않는 디스플레이 서버"),
+        ("Unsupported display server", "지원하지 않는 디스플레이 서버"),
         ("x11 expected", "x11 예상됨"),
         ("Port", ""),
         ("Settings", "설정"),
@@ -312,6 +312,8 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Keep RustDesk background service", "RustDesk 백그라운드 서비스로 유지하기"),
         ("Ignore Battery Optimizations", "배터리 최적화 무시하기"),
         ("android_open_battery_optimizations_tip", "해당 기능을 비활성화하려면 RustDesk 응용 프로그램 설정 페이지로 이동하여 [배터리]에서 [제한 없음] 선택을 해제하십시오."),
+        ("Start on Boot", ""),
+        ("Start the screen sharing service on boot, requires special permissions", ""),
         ("Connection not allowed", "연결이 허용되지 않음"),
         ("Legacy mode", ""),
         ("Map mode", ""),
@@ -347,6 +349,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Security", ""),
         ("Theme", ""),
         ("Dark Theme", ""),
+        ("Light Theme", ""),
         ("Dark", ""),
         ("Light", ""),
         ("Follow System", ""),
@@ -457,5 +460,9 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Codec", ""),
         ("Resolution", ""),
         ("No transfers in progress", ""),
-        ].iter().cloned().collect();
+        ("Set one-time password length", ""),
+        ("idd_driver_tip", ""),
+        ("confirm_idd_driver_tip", ""),
+        ("RDP Settings", ""),
+    ].iter().cloned().collect();
 }

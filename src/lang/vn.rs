@@ -204,7 +204,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Warning", "Cảnh báo"),
         ("Login screen using Wayland is not supported", "Màn hình đăng nhập sử dụng Wayland không đựoc hỗ trợ"),
         ("Reboot required", "Yêu cầu khởi động lại"),
-        ("Unsupported display server ", "Máy chủ hiển thị không đuợc hỗ trọ"),
+        ("Unsupported display server", "Máy chủ hiển thị không đuợc hỗ trọ"),
         ("x11 expected", "Cần x11"),
         ("Port", ""),
         ("Settings", "Cài đặt"),
@@ -312,6 +312,8 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Keep RustDesk background service", "Giữ dịch vụ nền RustDesk"),
         ("Ignore Battery Optimizations", "Bỏ qua các tối ưu pin"),
         ("android_open_battery_optimizations_tip", "Nếu bạn muốn tắt tính năng này, vui lòng chuyển đến trang cài đặt ứng dụng RustDesk tiếp theo, tìm và nhập [Pin], Bỏ chọn [Không hạn chế]"),
+        ("Start on Boot", ""),
+        ("Start the screen sharing service on boot, requires special permissions", ""),
         ("Connection not allowed", "Kết nối không đuợc phép"),
         ("Legacy mode", ""),
         ("Map mode", ""),
@@ -347,6 +349,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Security", ""),
         ("Theme", ""),
         ("Dark Theme", ""),
+        ("Light Theme", ""),
         ("Dark", ""),
         ("Light", ""),
         ("Follow System", ""),
@@ -457,5 +460,9 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Codec", ""),
         ("Resolution", ""),
         ("No transfers in progress", ""),
-        ].iter().cloned().collect();
+        ("Set one-time password length", ""),
+        ("idd_driver_tip", ""),
+        ("confirm_idd_driver_tip", ""),
+        ("RDP Settings", ""),
+    ].iter().cloned().collect();
 }

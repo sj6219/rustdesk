@@ -411,17 +411,18 @@ class _RemoteMenubarState extends State<RemoteMenubar> {
             borderRadius: BorderRadius.all(Radius.circular(10)),
           ),
           child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Theme(
-                data: themeData(),
-                child: MenuBar(
-                  children: [
-                    SizedBox(width: _MenubarTheme.buttonHMargin),
-                    ...menubarItems,
-                    SizedBox(width: _MenubarTheme.buttonHMargin)
-                  ],
-                ),
-              )),
+            scrollDirection: Axis.horizontal,
+            child: Theme(
+              data: themeData(),
+              child: MenuBar(
+                children: [
+                  SizedBox(width: _MenubarTheme.buttonHMargin),
+                  ...menubarItems,
+                  SizedBox(width: _MenubarTheme.buttonHMargin)
+                ],
+              ),
+            ),
+          ),
         ),
         _buildDraggableShowHide(context),
       ],
@@ -431,10 +432,13 @@ class _RemoteMenubarState extends State<RemoteMenubar> {
   ThemeData themeData() {
     return Theme.of(context).copyWith(
       menuButtonTheme: MenuButtonThemeData(
-          style: ButtonStyle(
-              minimumSize: MaterialStatePropertyAll(Size(64, 36)),
-              textStyle: MaterialStatePropertyAll(
-                  TextStyle(fontWeight: FontWeight.normal)))),
+        style: ButtonStyle(
+          minimumSize: MaterialStatePropertyAll(Size(64, 36)),
+          textStyle: MaterialStatePropertyAll(
+            TextStyle(fontWeight: FontWeight.normal),
+          ),
+        ),
+      ),
       dividerTheme: DividerThemeData(space: 4),
     );
   }
@@ -505,7 +509,10 @@ class _MonitorMenu extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (stateGlobal.displaysCount.value < 2) return Offstage();
+    if (PrivacyModeState.find(id).isTrue ||
+        stateGlobal.displaysCount.value < 2) {
+      return Offstage();
+    }
     return _IconSubmenuButton(
         icon: icon(),
         ffi: ffi,
@@ -655,26 +662,44 @@ class _ControlMenu extends StatelessWidget {
       }
 
       return CustomAlertDialog(
-        title: Text(translate('OS Password')),
-        content: Column(mainAxisSize: MainAxisSize.min, children: [
-          PasswordWidget(controller: controller),
-          CheckboxListTile(
-            contentPadding: const EdgeInsets.all(0),
-            dense: true,
-            controlAffinity: ListTileControlAffinity.leading,
-            title: Text(
-              translate('Auto Login'),
+        title: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.password_rounded, color: MyTheme.accent),
+            Text(translate('OS Password')).paddingOnly(left: 10),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            PasswordWidget(controller: controller),
+            CheckboxListTile(
+              contentPadding: const EdgeInsets.all(0),
+              dense: true,
+              controlAffinity: ListTileControlAffinity.leading,
+              title: Text(
+                translate('Auto Login'),
+              ),
+              value: autoLogin,
+              onChanged: (v) {
+                if (v == null) return;
+                setState(() => autoLogin = v);
+              },
             ),
-            value: autoLogin,
-            onChanged: (v) {
-              if (v == null) return;
-              setState(() => autoLogin = v);
-            },
-          ),
-        ]),
+          ],
+        ),
         actions: [
-          dialogButton('Cancel', onPressed: close, isOutline: true),
-          dialogButton('OK', onPressed: submit),
+          dialogButton(
+            "Cancel",
+            icon: Icon(Icons.close_rounded),
+            onPressed: close,
+            isOutline: true,
+          ),
+          dialogButton(
+            "OK",
+            icon: Icon(Icons.done_rounded),
+            onPressed: submit,
+          ),
         ],
         onSubmit: submit,
         onCancel: close,
@@ -954,12 +979,13 @@ class _DisplayMenuState extends State<_DisplayMenu> {
 
       final canvasModel = widget.ffi.canvasModel;
       final width = (canvasModel.getDisplayWidth() * canvasModel.scale +
-                  canvasModel.windowBorderWidth * 2) *
+                  CanvasModel.leftToEdge +
+                  CanvasModel.rightToEdge) *
               scale +
           magicWidth;
       final height = (canvasModel.getDisplayHeight() * canvasModel.scale +
-                  canvasModel.tabBarHeight +
-                  canvasModel.windowBorderWidth * 2) *
+                  CanvasModel.topToEdge +
+                  CanvasModel.bottomToEdge) *
               scale +
           magicHeight;
       double left = wndRect.left + (wndRect.width - width) / 2;
@@ -1028,10 +1054,10 @@ class _DisplayMenuState extends State<_DisplayMenu> {
     final canvasModel = widget.ffi.canvasModel;
     final displayWidth = canvasModel.getDisplayWidth();
     final displayHeight = canvasModel.getDisplayHeight();
-    final requiredWidth = displayWidth +
-        (canvasModel.tabBarHeight + canvasModel.windowBorderWidth * 2);
-    final requiredHeight = displayHeight +
-        (canvasModel.tabBarHeight + canvasModel.windowBorderWidth * 2);
+    final requiredWidth =
+        CanvasModel.leftToEdge + displayWidth + CanvasModel.rightToEdge;
+    final requiredHeight =
+        CanvasModel.topToEdge + displayHeight + CanvasModel.bottomToEdge;
     return selfWidth > (requiredWidth * scale) &&
         selfHeight > (requiredHeight * scale);
   }
@@ -1523,6 +1549,16 @@ class _DisplayMenuState extends State<_DisplayMenu> {
         value: rxValue.value,
         onChanged: (value) {
           if (value == null) return;
+          if (widget.ffi.ffiModel.pi.currentDisplay != 0) {
+            msgBox(
+                widget.id,
+                'custom-nook-nocancel-hasclose',
+                'info',
+                'Please switch to Display 1 first',
+                '',
+                widget.ffi.dialogManager);
+            return;
+          }
           bind.sessionToggleOption(id: widget.id, value: option);
         },
         ffi: widget.ffi,
@@ -1560,9 +1596,8 @@ class _KeyboardMenu extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Do not check permission here?
-    // var ffiModel = Provider.of<FfiModel>(context);
-    // if (ffiModel.permissions['keyboard'] == false) return Offstage();
+    var ffiModel = Provider.of<FfiModel>(context);
+    if (ffiModel.permissions['keyboard'] == false) return Offstage();
     if (stateGlobal.grabKeyboard) {
       if (bind.sessionIsKeyboardModeSupported(id: id, mode: _kKeyMapMode)) {
         bind.sessionSetKeyboardMode(id: id, value: _kKeyMapMode);

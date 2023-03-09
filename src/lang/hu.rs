@@ -204,7 +204,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Warning", "Figyelmeztetés"),
         ("Login screen using Wayland is not supported", "Bejelentkezéskori Wayland használata nem támogatott"),
         ("Reboot required", "Újraindítás szükséges"),
-        ("Unsupported display server ", "Nem támogatott megjelenítő szerver"),
+        ("Unsupported display server", "Nem támogatott megjelenítő szerver"),
         ("x11 expected", "x11-re számítottt"),
         ("Port", "Port"),
         ("Settings", "Beállítások"),
@@ -312,6 +312,8 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Keep RustDesk background service", "RustDesk futtatása a háttérben"),
         ("Ignore Battery Optimizations", "Akkumulátorkímélő figyelmen kívűl hagyása"),
         ("android_open_battery_optimizations_tip", "Ha le szeretné tiltani ezt a funkciót, lépjen a RustDesk alkalmazás beállítási oldalára, keresse meg az [Akkumulátorkímélő] lehetőséget és válassza a nincs korlátozás lehetőséget."),
+        ("Start on Boot", ""),
+        ("Start the screen sharing service on boot, requires special permissions", ""),
         ("Connection not allowed", "A csatlakozás nem engedélyezett"),
         ("Legacy mode", ""),
         ("Map mode", ""),
@@ -347,6 +349,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Security", "Biztonság"),
         ("Theme", "Téma"),
         ("Dark Theme", "Sötét téma"),
+        ("Light Theme", ""),
         ("Dark", "Sötét"),
         ("Light", "Világos"),
         ("Follow System", ""),
@@ -457,5 +460,9 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Codec", ""),
         ("Resolution", ""),
         ("No transfers in progress", ""),
-        ].iter().cloned().collect();
+        ("Set one-time password length", ""),
+        ("idd_driver_tip", ""),
+        ("confirm_idd_driver_tip", ""),
+        ("RDP Settings", ""),
+    ].iter().cloned().collect();
 }

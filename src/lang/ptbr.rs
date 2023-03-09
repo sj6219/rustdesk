@@ -204,7 +204,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Warning", "Aviso"),
         ("Login screen using Wayland is not supported", "Tela de Login utilizando Wayland não é suportada"),
         ("Reboot required", "Reinicialização necessária"),
-        ("Unsupported display server ", "Servidor de display não suportado"),
+        ("Unsupported display server", "Servidor de display não suportado"),
         ("x11 expected", "x11 esperado"),
         ("Port", "Porta"),
         ("Settings", "Configurações"),
@@ -312,6 +312,8 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Keep RustDesk background service", "Manter o serviço do RustDesk executando em segundo plano"),
         ("Ignore Battery Optimizations", "Ignorar otimizações de bateria"),
         ("android_open_battery_optimizations_tip", "Abrir otimizações de bateria"),
+        ("Start on Boot", ""),
+        ("Start the screen sharing service on boot, requires special permissions", ""),
         ("Connection not allowed", "Conexão não permitida"),
         ("Legacy mode", "Modo legado"),
         ("Map mode", "Modo mapa"),
@@ -347,6 +349,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Security", "Segurança"),
         ("Theme", "Tema"),
         ("Dark Theme", "Tema escuro"),
+        ("Light Theme", ""),
         ("Dark", "Escuro"),
         ("Light", "Claro"),
         ("Follow System", "Seguir sistema"),
@@ -457,5 +460,9 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Codec", ""),
         ("Resolution", ""),
         ("No transfers in progress", ""),
-        ].iter().cloned().collect();
+        ("Set one-time password length", ""),
+        ("idd_driver_tip", ""),
+        ("confirm_idd_driver_tip", ""),
+        ("RDP Settings", ""),
+    ].iter().cloned().collect();
 }

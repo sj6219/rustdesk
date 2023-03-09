@@ -511,7 +511,7 @@ pub fn get_error() -> String {
         if dtype != "x11" {
             return format!(
                 "{} {}, {}",
-                crate::client::translate("Unsupported display server ".to_owned()),
+                crate::client::translate("Unsupported display server".to_owned()),
                 dtype,
                 crate::client::translate("x11 expected".to_owned()),
             );
@@ -636,7 +636,13 @@ pub fn get_async_job_status() -> String {
 
 #[inline]
 pub fn get_langs() -> String {
-    crate::lang::LANGS.to_string()
+    use serde_json::json;
+    let mut x: Vec<(&str, String)> = crate::lang::LANGS
+        .iter()
+        .map(|a| (a.0, format!("{} ({})", a.1, a.0)))
+        .collect();
+    x.sort_by(|a, b| a.0.cmp(b.0));
+    json!(x).to_string()
 }
 
 #[inline]

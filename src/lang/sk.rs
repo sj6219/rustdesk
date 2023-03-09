@@ -204,7 +204,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Warning", "Upozornenie"),
         ("Login screen using Wayland is not supported", "Prihlasovacia obrazovka prostredníctvom Wayland nie je podporovaná"),
         ("Reboot required", "Vyžaduje sa reštart"),
-        ("Unsupported display server ", "Nepodporovaný zobrazovací (display) server"),
+        ("Unsupported display server", "Nepodporovaný zobrazovací (display) server"),
         ("x11 expected", "očakáva sa x11"),
         ("Port", ""),
         ("Settings", "Nastavenia"),
@@ -312,6 +312,8 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Keep RustDesk background service", ""),
         ("Ignore Battery Optimizations", ""),
         ("android_open_battery_optimizations_tip", ""),
+        ("Start on Boot", ""),
+        ("Start the screen sharing service on boot, requires special permissions", ""),
         ("Connection not allowed", ""),
         ("Legacy mode", ""),
         ("Map mode", ""),
@@ -347,6 +349,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Security", ""),
         ("Theme", ""),
         ("Dark Theme", ""),
+        ("Light Theme", ""),
         ("Dark", ""),
         ("Light", ""),
         ("Follow System", ""),
@@ -457,5 +460,9 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Codec", ""),
         ("Resolution", ""),
         ("No transfers in progress", ""),
-        ].iter().cloned().collect();
+        ("Set one-time password length", ""),
+        ("idd_driver_tip", ""),
+        ("confirm_idd_driver_tip", ""),
+        ("RDP Settings", ""),
+    ].iter().cloned().collect();
 }

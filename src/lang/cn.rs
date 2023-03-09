@@ -204,7 +204,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Warning", "警告"),
         ("Login screen using Wayland is not supported", "不支持使用 Wayland 登录界面"),
         ("Reboot required", "重启后才能生效"),
-        ("Unsupported display server ", "不支持当前显示服务器"),
+        ("Unsupported display server", "不支持当前显示服务器"),
         ("x11 expected", "请切换到 x11"),
         ("Port", "端口"),
         ("Settings", "设置"),
@@ -312,6 +312,8 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Keep RustDesk background service", "保持 RustDesk 后台服务"),
         ("Ignore Battery Optimizations", "忽略电池优化"),
         ("android_open_battery_optimizations_tip", "如需关闭此功能，请在接下来的 RustDesk 应用设置页面中，找到并进入 [电源] 页面，取消勾选 [不受限制]"),
+        ("Start on Boot", "开机自启动"),
+        ("Start the screen sharing service on boot, requires special permissions", "开机自动启动屏幕共享服务，此功能需要一些特殊权限。"),
         ("Connection not allowed", "对方不允许连接"),
         ("Legacy mode", "传统模式"),
         ("Map mode", "1：1 传输"),
@@ -347,6 +349,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Security", "安全"),
         ("Theme", "主题"),
         ("Dark Theme", "暗黑主题"),
+        ("Light Theme", "明亮主题"),
         ("Dark", "黑暗"),
         ("Light", "明亮"),
         ("Follow System", "跟随系统"),
@@ -457,5 +460,9 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Codec", "编解码"),
         ("Resolution", "分辨率"),
         ("No transfers in progress", ""),
-        ].iter().cloned().collect();
+        ("Set one-time password length", ""),
+        ("idd_driver_tip", "安装虚拟显示器驱动，以便在没有连接显示器的情况下启动虚拟显示器进行控制。"),
+        ("confirm_idd_driver_tip", "安装虚拟显示器驱动的选项已勾选。请注意，测试证书将被安装以信任虚拟显示器驱动。测试证书仅会用于信任Rustdesk的驱动。"),
+        ("RDP Settings", ""),
+    ].iter().cloned().collect();
 }

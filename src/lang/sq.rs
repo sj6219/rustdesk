@@ -204,7 +204,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Warning", "Dicka po shkon keq"),
         ("Login screen using Wayland is not supported", "Hyrja në ekran duke përdorur Wayland muk suportohet"),
         ("Reboot required", "Kërkohet rinisja"),
-        ("Unsupported display server ", "Nuk supurtohet severi ekranit"),
+        ("Unsupported display server", "Nuk supurtohet severi ekranit"),
         ("x11 expected", "Pritet x11"),
         ("Port", "Port"),
         ("Settings", "Cilësimet"),
@@ -312,6 +312,8 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Keep RustDesk background service", "Mbaje shërbimin e sfondit të RustDesk"),
         ("Ignore Battery Optimizations", "Injoro optimizimet e baterisë"),
         ("android_open_battery_optimizations_tip", "Nëse dëshironi ta çaktivizoni këtë veçori, ju lutemi shkoni te faqja tjetër e cilësimeve të aplikacionit RustDesk, gjeni dhe shtypni [Batteri], hiqni zgjedhjen [Te pakufizuara]"),
+        ("Start on Boot", ""),
+        ("Start the screen sharing service on boot, requires special permissions", ""),
         ("Connection not allowed", "Lidhja nuk lejohet"),
         ("Legacy mode", "Modaliteti i trashëgimisë"),
         ("Map mode", "Modaliteti i hartës"),
@@ -347,6 +349,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Security", "Siguria"),
         ("Theme", "Theme"),
         ("Dark Theme", "Theme e errët"),
+        ("Light Theme", ""),
         ("Dark", "E errët"),
         ("Light", "Drita"),
         ("Follow System", "Ndiq sistemin"),
@@ -457,5 +460,9 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Codec", ""),
         ("Resolution", ""),
         ("No transfers in progress", ""),
-        ].iter().cloned().collect();
+        ("Set one-time password length", ""),
+        ("idd_driver_tip", ""),
+        ("confirm_idd_driver_tip", ""),
+        ("RDP Settings", ""),
+    ].iter().cloned().collect();
 }

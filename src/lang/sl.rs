@@ -204,7 +204,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Warning", "Opozorilo"),
         ("Login screen using Wayland is not supported", "Prijava z Waylandom ni podprta"),
         ("Reboot required", "Potreben je ponovni zagon"),
-        ("Unsupported display server ", "Nepodprt zaslonski strežnik"),
+        ("Unsupported display server", "Nepodprt zaslonski strežnik"),
         ("x11 expected", "Pričakovan X11"),
         ("Port", "Vrata"),
         ("Settings", "Nastavitve"),
@@ -312,6 +312,8 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Keep RustDesk background service", "Ohrani RustDeskovo storitev v ozadju"),
         ("Ignore Battery Optimizations", "Prezri optimizacije baterije"),
         ("android_open_battery_optimizations_tip", "Če želite izklopiti to možnost, pojdite v nastavitve aplikacije RustDesk, poiščite »Baterija« in izklopite »Neomejeno«"),
+        ("Start on Boot", ""),
+        ("Start the screen sharing service on boot, requires special permissions", ""),
         ("Connection not allowed", "Povezava ni dovoljena"),
         ("Legacy mode", "Stari način"),
         ("Map mode", "Način preslikave"),
@@ -347,6 +349,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Security", "Varnost"),
         ("Theme", "Tema"),
         ("Dark Theme", "Temna tema"),
+        ("Light Theme", ""),
         ("Dark", "Temna"),
         ("Light", "Svetla"),
         ("Follow System", "Sistemska"),
@@ -457,5 +460,9 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Codec", ""),
         ("Resolution", ""),
         ("No transfers in progress", ""),
-        ].iter().cloned().collect();
+        ("Set one-time password length", ""),
+        ("idd_driver_tip", ""),
+        ("confirm_idd_driver_tip", ""),
+        ("RDP Settings", ""),
+    ].iter().cloned().collect();
 }

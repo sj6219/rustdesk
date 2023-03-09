@@ -204,7 +204,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Warning", "警告"),
         ("Login screen using Wayland is not supported", "不支援使用 Wayland 的登入畫面"),
         ("Reboot required", "需要重新啟動"),
-        ("Unsupported display server ", "不支援顯示伺服器"),
+        ("Unsupported display server", "不支援顯示伺服器"),
         ("x11 expected", "預期 x11"),
         ("Port", "端口"),
         ("Settings", "設定"),
@@ -312,6 +312,8 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Keep RustDesk background service", "保持RustDesk後台服務"),
         ("Ignore Battery Optimizations", "忽略電池優化"),
         ("android_open_battery_optimizations_tip", "如需關閉此功能，請在接下來的RustDesk應用設置頁面中，找到並進入 [電源] 頁面，取消勾選 [不受限制]"),
+        ("Start on Boot", ""),
+        ("Start the screen sharing service on boot, requires special permissions", ""),
         ("Connection not allowed", "對方不允許連接"),
         ("Legacy mode", "傳統模式"),
         ("Map mode", "1：1傳輸"),
@@ -347,6 +349,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Security", "安全"),
         ("Theme", "主題"),
         ("Dark Theme", "暗黑主題"),
+        ("Light Theme", "明亮主題"),
         ("Dark", "黑暗"),
         ("Light", "明亮"),
         ("Follow System", "跟隨系統"),
@@ -457,5 +460,9 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Codec", "編解碼"),
         ("Resolution", "分辨率"),
         ("No transfers in progress", ""),
-        ].iter().cloned().collect();
+        ("Set one-time password length", ""),
+        ("idd_driver_tip", ""),
+        ("confirm_idd_driver_tip", ""),
+        ("RDP Settings", ""),
+    ].iter().cloned().collect();
 }

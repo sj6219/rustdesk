@@ -204,7 +204,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Warning", "Ескерту"),
         ("Login screen using Wayland is not supported", "Wayland қолданған Кіру екіреніне қолдау көрсетілмейді"),
         ("Reboot required", "Қайта-қосу қажет"),
-        ("Unsupported display server ", "Қолдаусыз дисплей сербері"),
+        ("Unsupported display server", "Қолдаусыз дисплей сербері"),
         ("x11 expected", "x11 күтілген"),
         ("Port", "Порт"),
         ("Settings", "Орнатпалар"),
@@ -312,6 +312,8 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Keep RustDesk background service", "Артжақтағы RustDesk сербесін сақтап тұру"),
         ("Ignore Battery Optimizations", "Бәтері Оңтайландыруларын Елемеу"),
         ("android_open_battery_optimizations_tip", "Егер де бұл ерекшелікті өшіруді қаласаңыз, келесі RustDesk апылқат орнатпалары бетіне барып, [Бәтері]'ні тауып кіріңіз де [Шектеусіз]'ден құсбелгіні алып тастауды өтінеміз"),
+        ("Start on Boot", ""),
+        ("Start the screen sharing service on boot, requires special permissions", ""),
         ("Connection not allowed", "Қосылу рұқсат етілмеген"),
         ("Legacy mode", ""),
         ("Map mode", ""),
@@ -347,6 +349,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Security", ""),
         ("Theme", ""),
         ("Dark Theme", ""),
+        ("Light Theme", ""),
         ("Dark", ""),
         ("Light", ""),
         ("Follow System", ""),
@@ -457,5 +460,9 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Codec", ""),
         ("Resolution", ""),
         ("No transfers in progress", ""),
-        ].iter().cloned().collect();
+        ("Set one-time password length", ""),
+        ("idd_driver_tip", ""),
+        ("confirm_idd_driver_tip", ""),
+        ("RDP Settings", ""),
+    ].iter().cloned().collect();
 }

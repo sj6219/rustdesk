@@ -204,7 +204,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Warning", "คำเตือน"),
         ("Login screen using Wayland is not supported", "หน้าจอการเข้าสู่ระบบโดยใช้ Wayland ยังไม่ถูกรองรับ"),
         ("Reboot required", "จำเป็นต้องเริ่มต้นระบบใหม่"),
-        ("Unsupported display server ", "เซิร์ฟเวอร์การแสดงผลที่ไม่รองรับ"),
+        ("Unsupported display server", "เซิร์ฟเวอร์การแสดงผลที่ไม่รองรับ"),
         ("x11 expected", "ต้องใช้งาน x11"),
         ("Port", "พอร์ท"),
         ("Settings", "ตั้งค่า"),
@@ -312,6 +312,8 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Keep RustDesk background service", "คงสถานะการทำงานเบื้องหลังของเซอร์วิส RustDesk"),
         ("Ignore Battery Optimizations", "เพิกเฉยการตั้งค่าการใช้งาน Battery Optimization"),
         ("android_open_battery_optimizations_tip", "หากคุณต้องการปิดการใช้งานฟีเจอร์นี้ กรุณาไปยังหน้าตั้งค่าในแอปพลิเคชัน RustDesk ค้นหาหัวข้อ [Battery] และยกเลิกการเลือกรายการ [Unrestricted]"),
+        ("Start on Boot", ""),
+        ("Start the screen sharing service on boot, requires special permissions", ""),
         ("Connection not allowed", "การเชื่อมต่อไม่อนุญาต"),
         ("Legacy mode", ""),
         ("Map mode", ""),
@@ -347,6 +349,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Security", "ความปลอดภัย"),
         ("Theme", "ธีม"),
         ("Dark Theme", "ธีมมืด"),
+        ("Light Theme", ""),
         ("Dark", "มืด"),
         ("Light", "สว่าง"),
         ("Follow System", "ตามระบบ"),
@@ -457,5 +460,9 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Codec", ""),
         ("Resolution", ""),
         ("No transfers in progress", ""),
-        ].iter().cloned().collect();
+        ("Set one-time password length", ""),
+        ("idd_driver_tip", ""),
+        ("confirm_idd_driver_tip", ""),
+        ("RDP Settings", ""),
+    ].iter().cloned().collect();
 }

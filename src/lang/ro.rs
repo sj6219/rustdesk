@@ -204,7 +204,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Warning", "Avertisment"),
         ("Login screen using Wayland is not supported", "Ecranele de conectare care folosesc Wayland nu sunt acceptate"),
         ("Reboot required", "Repornire necesară"),
-        ("Unsupported display server ", "Tipul de server de afișaj nu este acceptat"),
+        ("Unsupported display server", "Tipul de server de afișaj nu este acceptat"),
         ("x11 expected", "E necesar X11"),
         ("Port", "Port"),
         ("Settings", "Setări"),
@@ -312,6 +312,8 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Keep RustDesk background service", "Rulează serviciul RustDesk în fundal"),
         ("Ignore Battery Optimizations", "Ignoră optimizările de baterie"),
         ("android_open_battery_optimizations_tip", "Pentru dezactivarea acestei funcții, accesează setările aplicației RustDesk, deschide secțiunea [Baterie] și deselectează [Fără restricții]."),
+        ("Start on Boot", ""),
+        ("Start the screen sharing service on boot, requires special permissions", ""),
         ("Connection not allowed", "Conexiune neautoriztă"),
         ("Legacy mode", "Mod legacy"),
         ("Map mode", "Mod hartă"),
@@ -347,6 +349,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Security", "Securitate"),
         ("Theme", "Temă"),
         ("Dark Theme", "Temă întunecată"),
+        ("Light Theme", ""),
         ("Dark", "Întunecat"),
         ("Light", "Luminos"),
         ("Follow System", "Urmărește sistem"),
@@ -457,5 +460,9 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Codec", ""),
         ("Resolution", ""),
         ("No transfers in progress", ""),
-        ].iter().cloned().collect();
+        ("Set one-time password length", ""),
+        ("idd_driver_tip", ""),
+        ("confirm_idd_driver_tip", ""),
+        ("RDP Settings", ""),
+    ].iter().cloned().collect();
 }
