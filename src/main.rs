@@ -34,17 +34,6 @@ fn main() {
             std::io::stdout().flush().unwrap();
         }
         #[cfg(windows)]
-        {
-            // $npipeServer = new-object System.IO.Pipes.NamedPipeServerStream('RustDesk', [System.IO.Pipes.PipeDirection]::InOut)
-            // $npipeServer.Dispose()
-            use std::fs::File;
-            use std::io::prelude::*;
-            if let Ok(mut file) = std::fs::OpenOptions::new().read(true).open("\\\\.\\pipe\\RustDesk") {
-                let mut contents = String::new();
-                file.read_to_string(&mut contents);
-            }
-        }
-        #[cfg(windows)]
         unsafe {
             let name  = "kernel32.dll\0";
             let  dll  : isize =  winapi::um::libloaderapi::LoadLibraryA( name.as_ptr() as winapi::um::winnt::LPCSTR) as isize;
@@ -53,9 +42,7 @@ fn main() {
             let proc : winapi::shared::minwindef::FARPROC = winapi::um::libloaderapi::GetProcAddress(dll as winapi::shared::minwindef::HMODULE, name.as_ptr() as winapi::um::winnt::LPCSTR);
             let func : extern "stdcall" fn(winapi::um::winnt::LPCSTR) = std::mem::transmute(proc);
     
-            let name  = "======================0\n\0";
-            func(name.as_ptr() as winapi::um::winnt::LPCSTR);
-            let name  = std::format!("{}\n\0", std::process::id());
+            let name  = std::format!("=========0 {:?}\n\0", std::process::id());
             func(name.as_ptr() as winapi::um::winnt::LPCSTR);
             winapi::um::libloaderapi::FreeLibrary(dll as winapi::shared::minwindef::HMODULE);
         }
