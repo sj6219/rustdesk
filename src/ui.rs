@@ -21,9 +21,7 @@ mod cm;
 #[cfg(feature = "inline")]
 pub mod inline;
 pub mod remote;
-//..
-#[cfg(target_os = "macos")]
-pub mod macos;
+
 
 
 pub type Children = Arc<Mutex<(bool, HashMap<(String, String), Child>)>>;
