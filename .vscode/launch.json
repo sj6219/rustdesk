@@ -46,7 +46,7 @@
             "request": "launch",
             "program" : "${workspaceFolder}/build.py",
             "args": [
-                "--portable",  "--flutter", "--hwcodec",
+                "--portable",   "--hwcodec", "--flutter", "--feature", "IddDriver"
             ],
             "justMyCode": false,
         },   
