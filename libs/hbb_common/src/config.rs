@@ -650,6 +650,7 @@ impl Config {
         {
             // ~\AppData\Roaming\RustDesk\config\RustDesk.toml
             // ~/Library/Preferences/com.carriez.RustDesk/RustDesk.toml
+            // C:\WINDOWS\ServiceProfiles\LocalService\AppData\Roaming\RustDesk\config\RustDesk.toml
             // /var/root/Library/Preferences/com.carriez.RustDesk/RustDesk.toml
             return Some(
                 rand::thread_rng()
