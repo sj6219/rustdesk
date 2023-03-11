@@ -659,7 +659,7 @@ class MainService : Service() /* , ClipboardManager.OnPrimaryClipChangedListener
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setContentTitle(DEFAULT_NOTIFY_TITLE)
-            .setContentText(translate(DEFAULT_NOTIFY_TEXT) + '!')
+            .setContentText(translate(DEFAULT_NOTIFY_TEXT))
             .setOnlyAlertOnce(true)
             .setContentIntent(pendingIntent)
             .setColor(ContextCompat.getColor(this, R.color.primary))
@@ -725,7 +725,7 @@ class MainService : Service() /* , ClipboardManager.OnPrimaryClipChangedListener
 
     private fun setTextNotification(_title: String?, _text: String?) {
         val title = _title ?: DEFAULT_NOTIFY_TITLE
-        val text = _text ?: translate(DEFAULT_NOTIFY_TEXT) + '!'
+        val text = _text ?: translate(DEFAULT_NOTIFY_TEXT)
         val notification = notificationBuilder
             .clearActions()
             .setStyle(null)

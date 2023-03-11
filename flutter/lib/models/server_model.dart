@@ -263,8 +263,11 @@ class ServerModel with ChangeNotifier {
   toggleInput() {
     if (_inputOk) {
       parent.target?.invokeMethod("stop_input");
+      bind.mainSetOption(key: "enable-keyboard", value: 'N');
     } else {
       if (parent.target != null) {
+        /// the result of toggle-on depends on user actions in the settings page.
+        /// handle result, see [ServerModel.changeStatue]
         showInputWarnAlert(parent.target!);
       }
     }
@@ -286,7 +289,7 @@ class ServerModel with ChangeNotifier {
           content: Text(translate("android_stop_service_tip")),
           actions: [
             TextButton(onPressed: close, child: Text(translate("Cancel"))),
-            ElevatedButton(onPressed: submit, child: Text(translate("OK"))),
+            TextButton(onPressed: submit, child: Text(translate("OK"))),
           ],
           onSubmit: submit,
           onCancel: close,

@@ -42,6 +42,7 @@ class _PeerCardState extends State<_PeerCard>
     with AutomaticKeepAliveClientMixin {
   var _menuPos = RelativeRect.fill;
   final double _cardRadius = 16;
+  final double _tileRadius = 5;
   final double _borderWidth = 2;
 
   @override
@@ -116,27 +117,32 @@ class _PeerCardState extends State<_PeerCard>
 
   Widget _buildDesktop() {
     final peer = super.widget.peer;
-    var deco = Rx<BoxDecoration?>(BoxDecoration(
+    var deco = Rx<BoxDecoration?>(
+      BoxDecoration(
         border: Border.all(color: Colors.transparent, width: _borderWidth),
-        borderRadius: peerCardUiType.value == PeerUiType.grid
-            ? BorderRadius.circular(_cardRadius)
-            : null));
+        borderRadius: BorderRadius.circular(
+          peerCardUiType.value == PeerUiType.grid ? _cardRadius : _tileRadius,
+        ),
+      ),
+    );
     return MouseRegion(
       onEnter: (evt) {
         deco.value = BoxDecoration(
-            border: Border.all(
-                color: Theme.of(context).colorScheme.primary,
-                width: _borderWidth),
-            borderRadius: peerCardUiType.value == PeerUiType.grid
-                ? BorderRadius.circular(_cardRadius)
-                : null);
+          border: Border.all(
+              color: Theme.of(context).colorScheme.primary,
+              width: _borderWidth),
+          borderRadius: BorderRadius.circular(
+            peerCardUiType.value == PeerUiType.grid ? _cardRadius : _tileRadius,
+          ),
+        );
       },
       onExit: (evt) {
         deco.value = BoxDecoration(
-            border: Border.all(color: Colors.transparent, width: _borderWidth),
-            borderRadius: peerCardUiType.value == PeerUiType.grid
-                ? BorderRadius.circular(_cardRadius)
-                : null);
+          border: Border.all(color: Colors.transparent, width: _borderWidth),
+          borderRadius: BorderRadius.circular(
+            peerCardUiType.value == PeerUiType.grid ? _cardRadius : _tileRadius,
+          ),
+        );
       },
       child: GestureDetector(
           onDoubleTap: () => widget.connect(context, peer.id),
@@ -163,6 +169,10 @@ class _PeerCardState extends State<_PeerCard>
             Container(
               decoration: BoxDecoration(
                 color: str2color('${peer.id}${peer.platform}', 0x7f),
+                borderRadius: BorderRadius.only(
+                  topLeft: Radius.circular(_tileRadius),
+                  bottomLeft: Radius.circular(_tileRadius),
+                ),
               ),
               alignment: Alignment.center,
               width: 42,
@@ -171,7 +181,12 @@ class _PeerCardState extends State<_PeerCard>
             Expanded(
               child: Container(
                 decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.background),
+                  color: Theme.of(context).colorScheme.background,
+                  borderRadius: BorderRadius.only(
+                    topRight: Radius.circular(_tileRadius),
+                    bottomRight: Radius.circular(_tileRadius),
+                  ),
+                ),
                 child: Row(
                   children: [
                     Expanded(
@@ -1115,7 +1130,7 @@ void _rdpDialog(String id) async {
     }
 
     return CustomAlertDialog(
-      title: Text('RDP ${translate('Settings')}'),
+      title: Text(translate('RDP Settings')),
       content: ConstrainedBox(
         constraints: const BoxConstraints(minWidth: 500),
         child: Column(
@@ -1126,56 +1141,67 @@ void _rdpDialog(String id) async {
             ),
             Row(
               children: [
-                ConstrainedBox(
-                    constraints: const BoxConstraints(minWidth: 140),
-                    child: Text(
-                      "${translate('Port')}:",
-                      textAlign: TextAlign.right,
-                    ).marginOnly(right: 10)),
+                isDesktop
+                    ? ConstrainedBox(
+                        constraints: const BoxConstraints(minWidth: 140),
+                        child: Text(
+                          "${translate('Port')}:",
+                          textAlign: TextAlign.right,
+                        ).marginOnly(right: 10))
+                    : SizedBox.shrink(),
                 Expanded(
                   child: TextField(
                     inputFormatters: [
                       FilteringTextInputFormatter.allow(RegExp(
                           r'^([0-9]|[1-9]\d|[1-9]\d{2}|[1-9]\d{3}|[1-5]\d{4}|6[0-4]\d{3}|65[0-4]\d{2}|655[0-2]\d|6553[0-5])$'))
                     ],
-                    decoration: const InputDecoration(
-                        border: OutlineInputBorder(), hintText: '3389'),
+                    decoration: InputDecoration(
+                        labelText: isDesktop ? null : translate('Port'),
+                        border: isDesktop ? const OutlineInputBorder() : null,
+                        hintText: '3389'),
                     controller: portController,
                     autofocus: true,
                   ),
                 ),
               ],
-            ).marginOnly(bottom: 8),
+            ).marginOnly(bottom: isDesktop ? 8 : 0),
             Row(
               children: [
-                ConstrainedBox(
-                    constraints: const BoxConstraints(minWidth: 140),
-                    child: Text(
-                      "${translate('Username')}:",
-                      textAlign: TextAlign.right,
-                    ).marginOnly(right: 10)),
+                isDesktop
+                    ? ConstrainedBox(
+                        constraints: const BoxConstraints(minWidth: 140),
+                        child: Text(
+                          "${translate('Username')}:",
+                          textAlign: TextAlign.right,
+                        ).marginOnly(right: 10))
+                    : SizedBox.shrink(),
                 Expanded(
                   child: TextField(
-                    decoration:
-                        const InputDecoration(border: OutlineInputBorder()),
+                    decoration: InputDecoration(
+                        labelText: isDesktop ? null : translate('Username'),
+                        border: isDesktop ? const OutlineInputBorder() : null),
                     controller: userController,
                   ),
                 ),
               ],
-            ).marginOnly(bottom: 8),
+            ).marginOnly(bottom: isDesktop ? 8 : 0),
             Row(
               children: [
-                ConstrainedBox(
-                    constraints: const BoxConstraints(minWidth: 140),
-                    child: Text(
-                      "${translate('Password')}:",
-                      textAlign: TextAlign.right,
-                    ).marginOnly(right: 10)),
+                isDesktop
+                    ? ConstrainedBox(
+                        constraints: const BoxConstraints(minWidth: 140),
+                        child: Text(
+                          "${translate('Password')}:",
+                          textAlign: TextAlign.right,
+                        ).marginOnly(right: 10))
+                    : SizedBox.shrink(),
                 Expanded(
                   child: Obx(() => TextField(
                         obscureText: secure.value,
                         decoration: InputDecoration(
-                            border: const OutlineInputBorder(),
+                            labelText: isDesktop ? null : translate('Password'),
+                            border:
+                                isDesktop ? const OutlineInputBorder() : null,
                             suffixIcon: IconButton(
                                 onPressed: () => secure.value = !secure.value,
                                 icon: Icon(secure.value
@@ -1185,7 +1211,7 @@ void _rdpDialog(String id) async {
                       )),
                 ),
               ],
-            ).marginOnly(bottom: 8),
+            ).marginOnly(bottom: isDesktop ? 8 : 0),
           ],
         ),
       ),

@@ -252,7 +252,8 @@ class MyTheme {
         ),
       ),
     ),
-    colorScheme: ColorScheme.light(primary: Colors.blue, background: grayBg),
+    colorScheme: ColorScheme.light(
+        primary: Colors.blue, secondary: accent, background: grayBg),
   ).copyWith(
     extensions: <ThemeExtension<dynamic>>[
       ColorThemeExtension.light,
@@ -317,6 +318,7 @@ class MyTheme {
     elevatedButtonTheme: ElevatedButtonThemeData(
       style: ElevatedButton.styleFrom(
         backgroundColor: MyTheme.accent,
+        foregroundColor: Colors.white,
         disabledForegroundColor: Colors.white70,
         disabledBackgroundColor: Colors.white10,
         shape: RoundedRectangleBorder(
@@ -336,7 +338,6 @@ class MyTheme {
       ),
     ),
     checkboxTheme: const CheckboxThemeData(
-      checkColor: MaterialStatePropertyAll(dark),
       splashRadius: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.all(
@@ -353,6 +354,7 @@ class MyTheme {
     ),
     colorScheme: ColorScheme.dark(
       primary: Colors.blue,
+      secondary: accent,
       background: Color(0xFF24252B),
     ),
   ).copyWith(
@@ -368,7 +370,7 @@ class MyTheme {
 
   static void changeDarkMode(ThemeMode mode) async {
     Get.changeThemeMode(mode);
-    if (desktopType == DesktopType.main) {
+    if (desktopType == DesktopType.main || isAndroid || isIOS) {
       if (mode == ThemeMode.system) {
         await bind.mainSetLocalOption(key: kCommConfKeyTheme, value: '');
       } else {
@@ -430,7 +432,7 @@ final ButtonStyle flatButtonStyle = TextButton.styleFrom(
 );
 
 List<Locale> supportedLocales = const [
-  // specify CN/TW to fix CJK issue in flutter
+  Locale('en', 'US'),
   Locale('zh', 'CN'),
   Locale('zh', 'TW'),
   Locale('zh', 'SG'),
@@ -452,7 +454,7 @@ List<Locale> supportedLocales = const [
   Locale('vi'),
   Locale('pl'),
   Locale('kz'),
-  Locale('en', 'US'),
+  Locale('es'),
 ];
 
 String formatDurationToTime(Duration duration) {
@@ -946,7 +948,6 @@ Widget msgboxContent(String type, String title, String text) {
 void msgBoxCommon(OverlayDialogManager dialogManager, String title,
     Widget content, List<Widget> buttons,
     {bool hasCancel = true}) {
-  dialogManager.dismissAll();
   dialogManager.show((setState, close) => CustomAlertDialog(
         title: Text(
           translate(title),
