@@ -270,8 +270,6 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Note", "Notu"),
         ("Connection", ""),
         ("Share Screen", ""),
-        ("CLOSE", ""),
-        ("OPEN", ""),
         ("Chat", ""),
         ("Total", ""),
         ("items", ""),
@@ -464,5 +462,11 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("idd_driver_tip", ""),
         ("confirm_idd_driver_tip", ""),
         ("RDP Settings", ""),
+        ("Sort by", ""),
+        ("New connection", ""),
+        ("Restore", ""),
+        ("Minimize", ""),
+        ("Maximize", ""),
+        ("Your Device", ""),
     ].iter().cloned().collect();
 }
