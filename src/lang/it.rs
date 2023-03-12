@@ -463,10 +463,14 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("confirm_idd_driver_tip", "L'opzione per installare il driver per lo schermo virtuale è selezionata. Nota che un certificato di test sarà installato per l'attendibilità del driver dello schermo virtuale. Questo certificato di test verrà utilizzato solo per l'attendibilità dei driver di RustDesk."),
         ("RDP Settings", "Impostazioni RDP"),
         ("Sort by", "Ordina per"),
-        ("New connection", "Nuova connessione"),
+        ("New Connection", "Nuova connessione"),
         ("Restore", "Ripristina"),
         ("Minimize", "Minimizza"),
         ("Maximize", "Massimizza"),
         ("Your Device", "Il tuo dispositivo"),
+        ("empty_recent_tip", "Oops, non c'è nessuna sessione recente!\nTempo di pianificarne una."),
+        ("empty_favorite_tip", "Ancora nessun peer?\nTrova qualcuno con cui connetterti e aggiungilo ai tuoi preferiti!"),
+        ("empty_lan_tip", "Oh no, sembra proprio che non abbiamo ancora rilevato nessun peer."),
+        ("empty_address_book_tip", "Oh diamine, sembra che per ora non ci siano peer nella tua rubrica."),
     ].iter().cloned().collect();
 }
