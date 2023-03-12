@@ -463,10 +463,14 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("confirm_idd_driver_tip", "Είναι ενεργοποιημένη η επιλογή εγκατάστασης του προγράμματος οδήγησης εικονικής οθόνης. Λάβετε υπόψη ότι θα εγκατασταθεί ένα δοκιμαστικό πιστοποιητικό για το πρόγραμμα οδήγησης εικονικής οθόνης. Αυτό το πιστοποιητικό θα χρησιμοποιηθεί μόνο για την πιστοποίηση των προγραμμάτων οδήγησης του Rustdesk."),
         ("RDP Settings", "Ρυθμίσεις RDP"),
         ("Sort by", "Ταξινόμηση κατά"),
-        ("New connection", ""),
+        ("New Connection", ""),
         ("Restore", ""),
         ("Minimize", ""),
         ("Maximize", ""),
         ("Your Device", ""),
+        ("empty_recent_tip", ""),
+        ("empty_favorite_tip", ""),
+        ("empty_lan_tip", ""),
+        ("empty_address_book_tip", ""),
     ].iter().cloned().collect();
 }

@@ -541,7 +541,10 @@ impl Connection {
         conn.reset_resolution();
         ALIVE_CONNS.lock().unwrap().retain(|&c| c != id);
         if let Some(s) = conn.server.upgrade() {
-            s.write().unwrap().remove_connection(&conn.inner);
+            let mut s = s.write().unwrap();
+            s.remove_connection(&conn.inner);
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
+            try_stop_record_cursor_pos();
         }
         log::info!("#{} connection loop exited", id);
     }
@@ -955,9 +958,10 @@ impl Connection {
                 if !self.audio_enabled() {
                     noperms.push(super::audio_service::NAME);
                 }
-                s.write()
-                    .unwrap()
-                    .add_connection(self.inner.clone(), &noperms);
+                let mut s = s.write().unwrap();
+                #[cfg(not(any(target_os = "android", target_os = "ios")))]
+                try_start_record_cursor_pos();
+                s.add_connection(self.inner.clone(), &noperms);
             }
         }
     }
@@ -1758,6 +1762,7 @@ impl Connection {
                 self.lock_after_session_end = q == BoolOption::Yes;
             }
         }
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
         if let Ok(q) = o.show_remote_cursor.enum_value() {
             if q != BoolOption::NotSet {
                 self.show_remote_cursor = q == BoolOption::Yes;
