@@ -289,6 +289,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("android_stop_service_tip", "Закрытие службы автоматически закроет все установленные соединения."),
         ("android_version_audio_tip", "Текущая версия Android не поддерживает захват звука, обновите её до Android 10 или выше."),
         ("android_start_service_tip", "Нажмите [Запустить службу] или разрешите [Захват экрана], чтобы запустить службу демонстрации экрана."),
+        ("android_permission_may_not_change_tip", ""),
         ("Account", "Аккаунт"),
         ("Overwrite", "Перезаписать"),
         ("This file exists, skip or overwrite this file?", "Этот файл существует, пропустить или перезаписать файл?"),
@@ -472,5 +473,8 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("empty_favorite_tip", "Ещё нет избранных удалённых узлов?\nДавайте найдём, кого можно добавить в избранное!"),
         ("empty_lan_tip", "Не найдено удалённых узлов."),
         ("empty_address_book_tip", "В адресной книге нет удалённых узлов."),
+        ("eg: admin", ""),
+        ("Empty Username", ""),
+        ("Empty Password", ""),
     ].iter().cloned().collect();
 }

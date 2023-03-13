@@ -289,6 +289,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("android_stop_service_tip", "Menutup layanan akan secara otomatis menutup semua koneksi yang dibuat."),
         ("android_version_audio_tip", "Versi Android saat ini tidak mendukung pengambilan audio, harap tingkatkan ke Android 10 atau lebih tinggi."),
         ("android_start_service_tip", ""),
+        ("android_permission_may_not_change_tip", ""),
         ("Account", "Akun"),
         ("Overwrite", "Timpa"),
         ("This file exists, skip or overwrite this file?", "File ini sudah ada, lewati atau timpa file ini?"),
@@ -472,5 +473,8 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("empty_favorite_tip", ""),
         ("empty_lan_tip", ""),
         ("empty_address_book_tip", ""),
+        ("eg: admin", ""),
+        ("Empty Username", ""),
+        ("Empty Password", ""),
     ].iter().cloned().collect();
 }
