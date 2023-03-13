@@ -289,6 +289,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("android_stop_service_tip", "サービスを停止すると、現在確立されている接続が全て自動的に閉じられます。"),
         ("android_version_audio_tip", "現在のAndroidバージョンでは音声キャプチャはサポートされていません。Android 10以降にアップグレードしてください。"),
         ("android_start_service_tip", ""),
+        ("android_permission_may_not_change_tip", ""),
         ("Account", ""),
         ("Overwrite", "上書き"),
         ("This file exists, skip or overwrite this file?", "このファイルは存在しています。スキップするか上書きしますか？"),
@@ -472,5 +473,8 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("empty_favorite_tip", ""),
         ("empty_lan_tip", ""),
         ("empty_address_book_tip", ""),
+        ("eg: admin", ""),
+        ("Empty Username", ""),
+        ("Empty Password", ""),
     ].iter().cloned().collect();
 }

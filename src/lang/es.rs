@@ -289,6 +289,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("android_stop_service_tip", "Cerrar el servicio cerrará automáticamente todas las conexiones establecidas."),
         ("android_version_audio_tip", "La versión actual de Android no admite la captura de audio, actualice a Android 10 o posterior."),
         ("android_start_service_tip", ""),
+        ("android_permission_may_not_change_tip", ""),
         ("Account", "Cuenta"),
         ("Overwrite", "Sobrescribir"),
         ("This file exists, skip or overwrite this file?", "Este archivo existe, ¿omitir o sobrescribir este archivo?"),
@@ -472,5 +473,8 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("empty_favorite_tip", "¿Sin pares favoritos aún?\nEncuentra uno al que conectarte y añádelo a favoritos!"),
         ("empty_lan_tip", "Oh no, parece que aún no has descubierto ningún par."),
         ("empty_address_book_tip", "Parece que actualmente no hay pares en tu libreta de direcciones."),
+        ("eg: admin", ""),
+        ("Empty Username", ""),
+        ("Empty Password", ""),
     ].iter().cloned().collect();
 }
