@@ -1235,6 +1235,24 @@ impl LoginConfigHandler {
             config.show_quality_monitor.v = !config.show_quality_monitor.v;
         } else if name == "allow_swap_key" {
             config.allow_swap_key.v = !config.allow_swap_key.v;
+        } else if name == "view-only" {
+            config.view_only.v = !config.view_only.v;
+            let f = |b: bool| {
+                if b {
+                    BoolOption::Yes.into()
+                } else {
+                    BoolOption::No.into()
+                }
+            };
+            if config.view_only.v {
+                option.disable_keyboard = f(true);
+                option.disable_clipboard = f(true);
+                option.show_remote_cursor = f(true);
+            } else {
+                option.disable_keyboard = f(false);
+                option.disable_clipboard = f(self.get_toggle_option("disable-clipboard"));
+                option.show_remote_cursor = f(self.get_toggle_option("show-remote-cursor"));
+            }
         } else {
             let is_set = self
                 .options
@@ -1242,7 +1260,12 @@ impl LoginConfigHandler {
                 .map(|o| !o.is_empty())
                 .unwrap_or(false);
             if is_set {
-                self.config.options.remove(&name);
+                if name == "zoom-cursor" {
+                    self.config.options.insert(name, "".to_owned());
+                } else {
+                    // Notice: When PeerConfig loads, the default value is taken when the option key does not exist.
+                    self.config.options.remove(&name);
+                }
             } else {
                 self.config.options.insert(name, "Y".to_owned());
             }
@@ -1296,7 +1319,12 @@ impl LoginConfigHandler {
         if let Some(custom_fps) = self.options.get("custom-fps") {
             msg.custom_fps = custom_fps.parse().unwrap_or(30);
         }
-        if self.get_toggle_option("show-remote-cursor") {
+        let view_only = self.get_toggle_option("view-only");
+        if view_only {
+            msg.disable_keyboard = BoolOption::Yes.into();
+            n += 1;
+        }
+        if view_only || self.get_toggle_option("show-remote-cursor") {
             msg.show_remote_cursor = BoolOption::Yes.into();
             n += 1;
         }
@@ -1312,7 +1340,7 @@ impl LoginConfigHandler {
             msg.enable_file_transfer = BoolOption::Yes.into();
             n += 1;
         }
-        if self.get_toggle_option("disable-clipboard") {
+        if view_only || self.get_toggle_option("disable-clipboard") {
             msg.disable_clipboard = BoolOption::Yes.into();
             n += 1;
         }
@@ -1390,6 +1418,8 @@ impl LoginConfigHandler {
             self.config.show_quality_monitor.v
         } else if name == "allow_swap_key" {
             self.config.allow_swap_key.v
+        } else if name == "view-only" {
+            self.config.view_only.v
         } else {
             !self.get_option(name).is_empty()
         }
