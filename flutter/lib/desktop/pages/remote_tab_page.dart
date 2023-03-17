@@ -9,7 +9,7 @@ import 'package:flutter_hbb/common/shared_state.dart';
 import 'package:flutter_hbb/consts.dart';
 import 'package:flutter_hbb/models/state_model.dart';
 import 'package:flutter_hbb/desktop/pages/remote_page.dart';
-import 'package:flutter_hbb/desktop/widgets/remote_menubar.dart';
+import 'package:flutter_hbb/desktop/widgets/remote_toolbar.dart';
 import 'package:flutter_hbb/desktop/widgets/tabbar_widget.dart';
 import 'package:flutter_hbb/desktop/widgets/material_mod_popup_menu.dart'
     as mod_menu;
@@ -260,7 +260,7 @@ class _ConnectionTabPageState extends State<ConnectionTabPage> {
       ),
     ]);
 
-    if (!ffi.canvasModel.cursorEmbedded) {
+    if (!ffi.canvasModel.cursorEmbedded && !ffi.ffiModel.viewOnly) {
       menu.add(MenuEntryDivider<String>());
       menu.add(RemoteMenuEntry.showRemoteCursor(
         key,
@@ -269,7 +269,7 @@ class _ConnectionTabPageState extends State<ConnectionTabPage> {
       ));
     }
 
-    if (perms['keyboard'] != false) {
+    if (perms['keyboard'] != false && !ffi.ffiModel.viewOnly) {
       if (perms['clipboard'] != false) {
         menu.add(RemoteMenuEntry.disableClipboard(key, padding,
             dismissFunc: cancelFunc));

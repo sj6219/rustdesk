@@ -24,6 +24,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("android_stop_service_tip", "Closing the service will automatically close all established connections."),
         ("android_version_audio_tip", "The current Android version does not support audio capture, please upgrade to Android 10 or higher."),
         ("android_start_service_tip", "Tap [Start Service] or enable [Screen Capture] permission to start the screen sharing service."),
+        ("android_permission_may_not_change_tip", "Permissions for established connections may not be changed instantly until reconnected."),
         ("doc_mac_permission", "https://rustdesk.com/docs/en/manual/mac/#enable-permissions"),
         ("doc_fix_wayland", "https://rustdesk.com/docs/en/manual/linux/#x11-required"),
         ("server_not_support", "Not yet supported by the server"),
@@ -51,5 +52,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("empty_favorite_tip", "No favorite peers yet?\nLet's find someone to connect with and add it to your favorites!"),
         ("empty_lan_tip", "Oh no, it looks like we haven't discovered any peers yet."),
         ("empty_address_book_tip", "Oh dear, it appears that there are currently no peers listed in your address book."),
+        ("identical_file_tip", "This file is identical with the peer's one."),
+        ("show_monitors_tip", "Show monitors in toolbar")
         ].iter().cloned().collect();
 }

@@ -289,6 +289,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("android_stop_service_tip", ""),
         ("android_version_audio_tip", ""),
         ("android_start_service_tip", ""),
+        ("android_permission_may_not_change_tip", ""),
         ("Account", ""),
         ("Overwrite", ""),
         ("This file exists, skip or overwrite this file?", ""),
@@ -472,5 +473,12 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("empty_favorite_tip", ""),
         ("empty_lan_tip", ""),
         ("empty_address_book_tip", ""),
+        ("eg: admin", ""),
+        ("Empty Username", ""),
+        ("Empty Password", ""),
+        ("Me", ""),
+        ("identical_file_tip", ""),
+        ("show_monitors_tip", ""),
+        ("View Mode", ""),
     ].iter().cloned().collect();
 }

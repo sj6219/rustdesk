@@ -47,6 +47,7 @@ class FfiModel with ChangeNotifier {
   bool _touchMode = false;
   Timer? _timer;
   var _reconnects = 1;
+  bool _viewOnly = false;
   WeakReference<FFI> parent;
 
   Map<String, bool> get permissions => _permissions;
@@ -64,6 +65,8 @@ class FfiModel with ChangeNotifier {
   bool get touchMode => _touchMode;
 
   bool get isPeerAndroid => _pi.platform == kPeerPlatformAndroid;
+
+  bool get viewOnly => _viewOnly;
 
   set inputBlocked(v) {
     _inputBlocked = v;
@@ -173,7 +176,7 @@ class FfiModel with ChangeNotifier {
       } else if (name == 'job_error') {
         parent.target?.fileModel.jobController.jobError(evt);
       } else if (name == 'override_file_confirm') {
-        parent.target?.fileModel.overrideFileConfirm(evt);
+        parent.target?.fileModel.postOverrideFileConfirm(evt);
       } else if (name == 'load_last_job') {
         parent.target?.fileModel.jobController.loadLastJob(evt);
       } else if (name == 'update_folder_files') {
@@ -373,7 +376,8 @@ class FfiModel with ChangeNotifier {
   _updateSessionWidthHeight(String id) {
     parent.target?.canvasModel.updateViewStyle();
     if (display.width <= 0 || display.height <= 0) {
-      debugPrintStack(label: 'invalid display size (${display.width},${display.height})');
+      debugPrintStack(
+          label: 'invalid display size (${display.width},${display.height})');
     } else {
       bind.sessionSetSize(id: id, width: display.width, height: display.height);
     }
@@ -446,6 +450,8 @@ class FfiModel with ChangeNotifier {
       handleResolutions(peerId, evt["resolutions"]);
       parent.target?.elevationModel.onPeerInfo(_pi);
     }
+    setViewOnly(
+        peerId, bind.sessionGetToggleOptionSync(id: peerId, arg: 'view-only'));
     notifyListeners();
   }
 
@@ -514,6 +520,20 @@ class FfiModel with ChangeNotifier {
           bind.sessionGetToggleOptionSync(id: peerId, arg: 'privacy-mode');
     } catch (e) {
       //
+    }
+  }
+
+  void setViewOnly(String id, bool value) {
+    if (version_cmp(_pi.version, '1.2.0') < 0) return;
+    if (value) {
+      ShowRemoteCursorState.find(id).value = value;
+    } else {
+      ShowRemoteCursorState.find(id).value =
+          bind.sessionGetToggleOptionSync(id: id, arg: 'show-remote-cursor');
+    }
+    if (_viewOnly != value) {
+      _viewOnly = value;
+      notifyListeners();
     }
   }
 }

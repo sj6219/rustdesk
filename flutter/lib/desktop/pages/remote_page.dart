@@ -22,7 +22,7 @@ import '../../models/model.dart';
 import '../../models/platform_model.dart';
 import '../../common/shared_state.dart';
 import '../../utils/image.dart';
-import '../widgets/remote_menubar.dart';
+import '../widgets/remote_toolbar.dart';
 import '../widgets/kb_layout_type_chooser.dart';
 
 bool _isCustomCursorInited = false;
@@ -308,6 +308,10 @@ class _RemotePageState extends State<RemotePage>
   }
 
   void leaveView(PointerExitEvent evt) {
+    if (_ffi.ffiModel.keyboard()) {
+      _ffi.inputModel.tryMoveEdgeOnExit(evt.position);
+    }
+
     _cursorOverImage.value = false;
     _firstEnterImage.value = false;
     if (_onEnterOrLeaveImage4Menubar != null) {
@@ -329,8 +333,8 @@ class _RemotePageState extends State<RemotePage>
     PointerExitEventListener? onExit,
   ) {
     return RawPointerMouseRegion(
-      onEnter: enterView,
-      onExit: leaveView,
+      onEnter: onEnter,
+      onExit: onExit,
       onPointerDown: (event) {
         // A double check for blur status.
         // Note: If there's an `onPointerDown` event is triggered, `_isWindowBlur` is expected being false.
