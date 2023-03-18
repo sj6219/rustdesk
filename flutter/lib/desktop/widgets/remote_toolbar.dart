@@ -356,7 +356,7 @@ class _RemoteMenubarState extends State<RemoteMenubar> {
     return Align(
       alignment: Alignment.topCenter,
       child: Obx(() => show.value
-          ? _buildMenubar(context)
+          ? _buildToolbar(context)
           : _buildDraggableShowHide(context)),
     );
   }
@@ -372,6 +372,7 @@ class _RemoteMenubarState extends State<RemoteMenubar> {
           offstage: _dragging.isTrue,
           child: Material(
             elevation: _MenubarTheme.elevation,
+            shadowColor: MyTheme.color(context).shadow,
             child: _DraggableShowHide(
               dragging: _dragging,
               fractionX: _fractionX,
@@ -383,35 +384,45 @@ class _RemoteMenubarState extends State<RemoteMenubar> {
     });
   }
 
-  Widget _buildMenubar(BuildContext context) {
-    final List<Widget> menubarItems = [];
+  Widget _buildToolbar(BuildContext context) {
+    final List<Widget> toolbarItems = [];
     if (!isWebDesktop) {
-      menubarItems.add(_PinMenu(state: widget.state));
-      menubarItems.add(
+      toolbarItems.add(_PinMenu(state: widget.state));
+      toolbarItems.add(
           _FullscreenMenu(state: widget.state, setFullscreen: _setFullscreen));
-      menubarItems.add(_MobileActionMenu(ffi: widget.ffi));
+      toolbarItems.add(_MobileActionMenu(ffi: widget.ffi));
     }
-    menubarItems.add(_MonitorMenu(id: widget.id, ffi: widget.ffi));
-    menubarItems
+
+    if (PrivacyModeState.find(widget.id).isFalse &&
+        stateGlobal.displaysCount.value > 1) {
+      toolbarItems.add(
+        bind.mainGetUserDefaultOption(key: 'show_monitors_toolbar') == 'Y'
+            ? _MultiMonitorMenu(id: widget.id, ffi: widget.ffi)
+            : _MonitorMenu(id: widget.id, ffi: widget.ffi),
+      );
+    }
+
+    toolbarItems
         .add(_ControlMenu(id: widget.id, ffi: widget.ffi, state: widget.state));
-    menubarItems.add(_DisplayMenu(
+    toolbarItems.add(_DisplayMenu(
       id: widget.id,
       ffi: widget.ffi,
       state: widget.state,
       setFullscreen: _setFullscreen,
     ));
-    menubarItems.add(_KeyboardMenu(id: widget.id, ffi: widget.ffi));
+    toolbarItems.add(_KeyboardMenu(id: widget.id, ffi: widget.ffi));
     if (!isWeb) {
-      menubarItems.add(_ChatMenu(id: widget.id, ffi: widget.ffi));
-      menubarItems.add(_VoiceCallMenu(id: widget.id, ffi: widget.ffi));
+      toolbarItems.add(_ChatMenu(id: widget.id, ffi: widget.ffi));
+      toolbarItems.add(_VoiceCallMenu(id: widget.id, ffi: widget.ffi));
     }
-    menubarItems.add(_RecordMenu());
-    menubarItems.add(_CloseMenu(id: widget.id, ffi: widget.ffi));
+    toolbarItems.add(_RecordMenu());
+    toolbarItems.add(_CloseMenu(id: widget.id, ffi: widget.ffi));
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         Material(
           elevation: _MenubarTheme.elevation,
+          shadowColor: MyTheme.color(context).shadow,
           borderRadius: BorderRadius.all(Radius.circular(4.0)),
           color: Theme.of(context)
               .menuBarTheme
@@ -425,7 +436,7 @@ class _RemoteMenubarState extends State<RemoteMenubar> {
               child: Row(
                 children: [
                   SizedBox(width: _MenubarTheme.buttonHMargin * 2),
-                  ...menubarItems,
+                  ...toolbarItems,
                   SizedBox(width: _MenubarTheme.buttonHMargin * 2)
                 ],
               ),
@@ -525,10 +536,6 @@ class _MonitorMenu extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (PrivacyModeState.find(id).isTrue ||
-        stateGlobal.displaysCount.value < 2) {
-      return Offstage();
-    }
     return _IconSubmenuButton(
         tooltip: 'Select Monitor',
         icon: icon(),
@@ -547,19 +554,20 @@ class _MonitorMenu extends StatelessWidget {
       alignment: Alignment.center,
       children: [
         SvgPicture.asset(
-          "assets/display.svg",
+          "assets/screen.svg",
           color: Colors.white,
         ),
-        Padding(
-          padding: const EdgeInsets.only(bottom: 3.9),
-          child: Obx(() {
-            RxInt display = CurrentDisplayState.find(id);
-            return Text(
-              '${display.value + 1}/${pi.displays.length}',
-              style: const TextStyle(color: Colors.white, fontSize: 8),
-            );
-          }),
-        )
+        Obx(() {
+          RxInt display = CurrentDisplayState.find(id);
+          return Text(
+            '${display.value + 1}/${pi.displays.length}',
+            style: const TextStyle(
+              color: _MenubarTheme.blueColor,
+              fontSize: 8,
+              fontWeight: FontWeight.bold,
+            ),
+          );
+        }),
       ],
     );
   }
@@ -582,19 +590,17 @@ class _MonitorMenu extends StatelessWidget {
             alignment: Alignment.center,
             children: [
               SvgPicture.asset(
-                "assets/display.svg",
+                "assets/screen.svg",
                 color: Colors.white,
               ),
-              Padding(
-                padding: const EdgeInsets.only(bottom: 3.5 /*2.5*/),
-                child: Text(
-                  (i + 1).toString(),
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 12,
-                  ),
+              Text(
+                (i + 1).toString(),
+                style: TextStyle(
+                  color: _MenubarTheme.blueColor,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
                 ),
-              )
+              ),
             ],
           ),
         ),
@@ -814,8 +820,10 @@ class _ControlMenu extends StatelessWidget {
 
   ctrlAltDel() {
     final perms = ffi.ffiModel.permissions;
+    final viewOnly = ffi.ffiModel.viewOnly;
     final pi = ffi.ffiModel.pi;
-    final visible = perms['keyboard'] != false &&
+    final visible = !viewOnly &&
+        perms['keyboard'] != false &&
         (pi.platform == kPeerPlatformLinux || pi.sasEnabled);
     if (!visible) return Offstage();
     return _MenuItemButton(
@@ -840,7 +848,8 @@ class _ControlMenu extends StatelessWidget {
 
   insertLock() {
     final perms = ffi.ffiModel.permissions;
-    final visible = perms['keyboard'] != false;
+    final viewOnly = ffi.ffiModel.viewOnly;
+    final visible = !viewOnly && perms['keyboard'] != false;
     if (!visible) return Offstage();
     return _MenuItemButton(
         child: Text(translate('Insert Lock')),
@@ -1395,14 +1404,14 @@ class _DisplayMenuState extends State<_DisplayMenu> {
               child: Text(translate('H264')),
               value: 'h264',
               groupValue: groupValue,
-              onChanged: onChanged,
+              onChanged: codecs[0] ? onChanged : null,
               ffi: widget.ffi,
             ),
             _RadioMenuButton<String>(
               child: Text(translate('H265')),
               value: 'h265',
               groupValue: groupValue,
-              onChanged: onChanged,
+              onChanged: codecs[1] ? onChanged : null,
               ffi: widget.ffi,
             ),
           ]);
@@ -1454,18 +1463,22 @@ class _DisplayMenuState extends State<_DisplayMenu> {
     if (widget.ffi.ffiModel.pi.platform == kPeerPlatformAndroid) {
       return Offstage();
     }
+    final ffiModel = widget.ffi.ffiModel;
     final visible = !widget.ffi.canvasModel.cursorEmbedded;
     if (!visible) return Offstage();
+    final enabled = !ffiModel.viewOnly;
     final state = ShowRemoteCursorState.find(widget.id);
     final option = 'show-remote-cursor';
     return _CheckboxMenuButton(
         value: state.value,
-        onChanged: (value) async {
-          if (value == null) return;
-          await bind.sessionToggleOption(id: widget.id, value: option);
-          state.value =
-              bind.sessionGetToggleOptionSync(id: widget.id, arg: option);
-        },
+        onChanged: enabled
+            ? (value) async {
+                if (value == null) return;
+                await bind.sessionToggleOption(id: widget.id, value: option);
+                state.value =
+                    bind.sessionGetToggleOptionSync(id: widget.id, arg: option);
+              }
+            : null,
         ffi: widget.ffi,
         child: Text(translate('Show remote cursor')));
   }
@@ -1537,16 +1550,21 @@ class _DisplayMenuState extends State<_DisplayMenu> {
   }
 
   disableClipboard() {
+    final ffiModel = widget.ffi.ffiModel;
     final visible = perms['keyboard'] != false && perms['clipboard'] != false;
     if (!visible) return Offstage();
+    final enabled = !ffiModel.viewOnly;
     final option = 'disable-clipboard';
-    final value = bind.sessionGetToggleOptionSync(id: widget.id, arg: option);
+    var value = bind.sessionGetToggleOptionSync(id: widget.id, arg: option);
+    if (ffiModel.viewOnly) value = true;
     return _CheckboxMenuButton(
         value: value,
-        onChanged: (value) {
-          if (value == null) return;
-          bind.sessionToggleOption(id: widget.id, value: option);
-        },
+        onChanged: enabled
+            ? (value) {
+                if (value == null) return;
+                bind.sessionToggleOption(id: widget.id, value: option);
+              }
+            : null,
         ffi: widget.ffi,
         child: Text(translate('Disable clipboard')));
   }
@@ -1639,7 +1657,12 @@ class _KeyboardMenu extends StatelessWidget {
         ffi: ffi,
         color: _MenubarTheme.blueColor,
         hoverColor: _MenubarTheme.hoverBlueColor,
-        menuChildren: [mode(), localKeyboardType()]);
+        menuChildren: [
+          mode(),
+          localKeyboardType(),
+          Divider(),
+          view_mode(),
+        ]);
   }
 
   mode() {
@@ -1653,6 +1676,7 @@ class _KeyboardMenu extends StatelessWidget {
         KeyboardModeMenu(key: _kKeyTranslateMode, menu: 'Translate mode'),
       ];
       List<_RadioMenuButton> list = [];
+      final enabled = !ffi.ffiModel.viewOnly;
       onChanged(String? value) async {
         if (value == null) return;
         await bind.sessionSetKeyboardMode(id: id, value: value);
@@ -1673,7 +1697,7 @@ class _KeyboardMenu extends StatelessWidget {
             child: Text(text),
             value: mode.key,
             groupValue: groupValue,
-            onChanged: onChanged,
+            onChanged: enabled ? onChanged : null,
             ffi: ffi,
           ));
         }
@@ -1686,6 +1710,7 @@ class _KeyboardMenu extends StatelessWidget {
     final localPlatform = getLocalPlatformForKBLayoutType(pi.platform);
     final visible = localPlatform != '';
     if (!visible) return Offstage();
+    final enabled = !ffi.ffiModel.viewOnly;
     return Column(
       children: [
         Divider(),
@@ -1694,11 +1719,29 @@ class _KeyboardMenu extends StatelessWidget {
               '${translate('Local keyboard type')}: ${KBLayoutType.value}'),
           trailingIcon: const Icon(Icons.settings),
           ffi: ffi,
-          onPressed: () =>
-              showKBLayoutTypeChooser(localPlatform, ffi.dialogManager),
+          onPressed: enabled
+              ? () => showKBLayoutTypeChooser(localPlatform, ffi.dialogManager)
+              : null,
         )
       ],
     );
+  }
+
+  view_mode() {
+    final ffiModel = ffi.ffiModel;
+    final enabled = version_cmp(pi.version, '1.2.0') >= 0 &&
+        ffiModel.permissions["keyboard"] != false;
+    return _CheckboxMenuButton(
+        value: ffiModel.viewOnly,
+        onChanged: enabled
+            ? (value) async {
+                if (value == null) return;
+                await bind.sessionToggleOption(id: id, value: 'view-only');
+                ffiModel.setViewOnly(id, value);
+              }
+            : null,
+        ffi: ffi,
+        child: Text(translate('View Mode')));
   }
 }
 
@@ -2203,4 +2246,70 @@ Widget _buildPointerTrackWidget(Widget child, FFI ffi) {
       child: child,
     ),
   );
+}
+
+class _MultiMonitorMenu extends StatelessWidget {
+  final String id;
+  final FFI ffi;
+
+  const _MultiMonitorMenu({
+    super.key,
+    required this.id,
+    required this.ffi,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final List<Widget> rowChildren = [];
+    final pi = ffi.ffiModel.pi;
+
+    for (int i = 0; i < pi.displays.length; i++) {
+      rowChildren.add(
+        Obx(() {
+          RxInt display = CurrentDisplayState.find(id);
+          return _IconMenuButton(
+            topLevel: false,
+            color: i == display.value
+                ? _MenubarTheme.blueColor
+                : Colors.grey[800]!,
+            hoverColor: i == display.value
+                ? _MenubarTheme.hoverBlueColor
+                : Colors.grey[850]!,
+            icon: Container(
+              alignment: AlignmentDirectional.center,
+              constraints:
+                  const BoxConstraints(minHeight: _MenubarTheme.height),
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  SvgPicture.asset(
+                    "assets/screen.svg",
+                    color: Colors.white,
+                  ),
+                  Obx(
+                    () => Text(
+                      (i + 1).toString(),
+                      style: TextStyle(
+                        color: i == display.value
+                            ? _MenubarTheme.blueColor
+                            : Colors.grey[800]!,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            onPressed: () {
+              if (display.value != i) {
+                bind.sessionSwitchDisplay(id: id, value: i);
+              }
+            },
+          );
+        }),
+      );
+    }
+    return Row(children: rowChildren);
+  }
 }

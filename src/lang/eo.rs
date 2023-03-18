@@ -476,5 +476,9 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("eg: admin", ""),
         ("Empty Username", ""),
         ("Empty Password", ""),
+        ("Me", ""),
+        ("identical_file_tip", ""),
+        ("show_monitors_tip", ""),
+        ("View Mode", ""),
     ].iter().cloned().collect();
 }

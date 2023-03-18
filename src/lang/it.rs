@@ -473,8 +473,12 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("empty_favorite_tip", "Ancora nessun peer?\nTrova qualcuno con cui connetterti e aggiungilo ai tuoi preferiti!"),
         ("empty_lan_tip", "Oh no, sembra proprio che non abbiamo ancora rilevato nessun peer."),
         ("empty_address_book_tip", "Oh diamine, sembra che per ora non ci siano peer nella tua rubrica."),
-        ("eg: admin", ""),
-        ("Empty Username", ""),
-        ("Empty Password", ""),
+        ("eg: admin", "es: admin"),
+        ("Empty Username", "Nome Utente Vuoto"),
+        ("Empty Password", "Password Vuota"),
+        ("Me", "Io"),
+        ("identical_file_tip", "Questo file è identico a quello del peer."),
+        ("show_monitors_tip", "Mostra schermi nella barra degli strumenti"),
+        ("View Mode", ""),
     ].iter().cloned().collect();
 }
