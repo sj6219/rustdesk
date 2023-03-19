@@ -1,6 +1,6 @@
 #windows
 python3 res/inline-sciter.py
-cargo build --release --features inline,with_rc --target=aarch64-pc-windows-msvc -vv 
+cargo build --release --features inline,with_rc --target=aarch64-pc-windows-msvc
 
 Push-Location flutter ; flutter pub get ; Pop-Location
 ~/.cargo/bin/flutter_rust_bridge_codegen --rust-input ./src/flutter_ffi.rs --dart-output ./flutter/lib/generated_bridge.dart
