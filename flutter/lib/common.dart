@@ -112,18 +112,21 @@ class ColorThemeExtension extends ThemeExtension<ColorThemeExtension> {
     required this.border2,
     required this.highlight,
     required this.drag_indicator,
+    required this.shadow,
   });
 
   final Color? border;
   final Color? border2;
   final Color? highlight;
   final Color? drag_indicator;
+  final Color? shadow;
 
   static final light = ColorThemeExtension(
     border: Color(0xFFCCCCCC),
     border2: Color(0xFFBBBBBB),
     highlight: Color(0xFFE5E5E5),
     drag_indicator: Colors.grey[800],
+    shadow: Colors.black,
   );
 
   static final dark = ColorThemeExtension(
@@ -131,19 +134,24 @@ class ColorThemeExtension extends ThemeExtension<ColorThemeExtension> {
     border2: Color(0xFFE5E5E5),
     highlight: Color(0xFF3F3F3F),
     drag_indicator: Colors.grey,
+    shadow: Colors.grey,
   );
 
   @override
-  ThemeExtension<ColorThemeExtension> copyWith(
-      {Color? border,
-      Color? border2,
-      Color? highlight,
-      Color? drag_indicator}) {
+  ThemeExtension<ColorThemeExtension> copyWith({
+    Color? border,
+    Color? border2,
+    Color? highlight,
+    Color? drag_indicator,
+    Color? shadow,
+  }) {
     return ColorThemeExtension(
-        border: border ?? this.border,
-        border2: border2 ?? this.border2,
-        highlight: highlight ?? this.highlight,
-        drag_indicator: drag_indicator ?? this.drag_indicator);
+      border: border ?? this.border,
+      border2: border2 ?? this.border2,
+      highlight: highlight ?? this.highlight,
+      drag_indicator: drag_indicator ?? this.drag_indicator,
+      shadow: shadow ?? this.shadow,
+    );
   }
 
   @override
@@ -157,6 +165,7 @@ class ColorThemeExtension extends ThemeExtension<ColorThemeExtension> {
       border2: Color.lerp(border2, other.border2, t),
       highlight: Color.lerp(highlight, other.highlight, t),
       drag_indicator: Color.lerp(drag_indicator, other.drag_indicator, t),
+      shadow: Color.lerp(shadow, other.shadow, t),
     );
   }
 }
@@ -192,16 +201,16 @@ class MyTheme {
         ),
       ),
     ),
-    inputDecorationTheme: InputDecorationTheme(
-      fillColor: grayBg,
-      filled: true,
-      isDense: true,
-      contentPadding: EdgeInsets.all(15),
-      border: UnderlineInputBorder(
-        borderRadius: BorderRadius.circular(18),
-        borderSide: BorderSide.none,
-      ),
-    ),
+    inputDecorationTheme: isDesktop
+        ? InputDecorationTheme(
+            fillColor: grayBg,
+            filled: true,
+            isDense: true,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          )
+        : null,
     textTheme: const TextTheme(
         titleLarge: TextStyle(fontSize: 19, color: Colors.black87),
         titleSmall: TextStyle(fontSize: 14, color: Colors.black87),
@@ -286,16 +295,16 @@ class MyTheme {
         ),
       ),
     ),
-    inputDecorationTheme: InputDecorationTheme(
-      fillColor: Color(0xFF24252B),
-      filled: true,
-      isDense: true,
-      contentPadding: EdgeInsets.all(15),
-      border: UnderlineInputBorder(
-        borderRadius: BorderRadius.circular(18),
-        borderSide: BorderSide.none,
-      ),
-    ),
+    inputDecorationTheme: isDesktop
+        ? InputDecorationTheme(
+            fillColor: Color(0xFF24252B),
+            filled: true,
+            isDense: true,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          )
+        : null,
     textTheme: const TextTheme(
         titleLarge: TextStyle(fontSize: 19),
         titleSmall: TextStyle(fontSize: 14),
@@ -830,7 +839,6 @@ class CustomAlertDialog extends StatelessWidget {
         ),
         actions: actions,
         actionsPadding: EdgeInsets.fromLTRB(padding, 0, padding, padding),
-        actionsAlignment: MainAxisAlignment.center,
       ),
     );
   }
@@ -1515,6 +1523,11 @@ bool checkArguments() {
   }
   String? id =
       kBootArgs.length < connectIndex + 1 ? null : kBootArgs[connectIndex + 1];
+  String? password =
+      kBootArgs.length < connectIndex + 2 ? null : kBootArgs[connectIndex + 2];
+  if (password != null && password.startsWith("--")) {
+    password = null;
+  }
   final switchUuidIndex = kBootArgs.indexOf("--switch_uuid");
   String? switchUuid = kBootArgs.length < switchUuidIndex + 1
       ? null
@@ -1528,7 +1541,8 @@ bool checkArguments() {
       kBootArgs.removeAt(connectIndex);
       // fallback to peer id
       Future.delayed(Duration.zero, () {
-        rustDeskWinManager.newRemoteDesktop(id, switch_uuid: switchUuid);
+        rustDeskWinManager.newRemoteDesktop(id,
+            password: password, switch_uuid: switchUuid);
       });
       return true;
     }
@@ -1809,10 +1823,15 @@ class ServerConfig {
   /// also see [encode]
   /// throw when decoding failure
   ServerConfig.decode(String msg) {
-    final input = msg.split('').reversed.join('');
-    final bytes = base64Decode(base64.normalize(input));
-    final json = jsonDecode(utf8.decode(bytes));
-
+    var json = {};
+    try {
+      // back compatible
+      json = jsonDecode(msg);
+    } catch (err) {
+      final input = msg.split('').reversed.join('');
+      final bytes = base64Decode(base64.normalize(input));
+      json = jsonDecode(utf8.decode(bytes));
+    }
     idServer = json['host'] ?? '';
     relayServer = json['relay'] ?? '';
     apiServer = json['api'] ?? '';
