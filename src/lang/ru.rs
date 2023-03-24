@@ -460,7 +460,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Resolution", "Разрешение"),
         ("No transfers in progress", "Передача не осуществляется"),
         ("Set one-time password length", "Установить длину одноразового пароля"),
-        ("idd_driver_tip", "Установите драйвер виртуального дисплея, который используется при отсутствии физических дисплеев."),
+        ("idd_driver_tip", "Установить драйвер виртуального дисплея (используется при отсутствии физических дисплеев)"),
         ("confirm_idd_driver_tip", "Включена функция установки драйвера виртуального дисплея. Обратите внимание, что для доверия к драйверу будет установлен тестовый сертификат. Этот сертификат будет использоваться только для подтверждения доверия драйверам Rustdesk."),
         ("RDP Settings", "Настройки RDP"),
         ("Sort by", "Сортировка"),
@@ -480,5 +480,8 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("identical_file_tip", "Файл идентичен файлу на удалённом узле."),
         ("show_monitors_tip", "Показывать мониторы на панели инструментов"),
         ("View Mode", "Режим просмотра"),
+        ("enter_rustdesk_passwd_tip", ""),
+        ("remember_rustdesk_passwd_tip", ""),
+        ("login_linux_tip", ""),
     ].iter().cloned().collect();
 }

@@ -479,6 +479,9 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Me", "Io"),
         ("identical_file_tip", "Questo file è identico a quello del peer."),
         ("show_monitors_tip", "Mostra schermi nella barra degli strumenti"),
-        ("View Mode", ""),
+        ("View Mode", "Modalità di visualizzazione"),
+        ("enter_rustdesk_passwd_tip", ""),
+        ("remember_rustdesk_passwd_tip", ""),
+        ("login_linux_tip", ""),
     ].iter().cloned().collect();
 }

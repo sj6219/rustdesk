@@ -16,7 +16,7 @@ import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:window_size/window_size.dart' as window_size;
 
 import '../../common.dart';
-import '../../mobile/widgets/dialog.dart';
+import '../../common/widgets/dialog.dart';
 import '../../models/model.dart';
 import '../../models/platform_model.dart';
 import '../../common/shared_state.dart';
@@ -394,7 +394,7 @@ class _RemoteMenubarState extends State<RemoteMenubar> {
     }
 
     if (PrivacyModeState.find(widget.id).isFalse &&
-        stateGlobal.displaysCount.value > 1) {
+        widget.ffi.ffiModel.pi.displays.length > 1) {
       toolbarItems.add(
         bind.mainGetUserDefaultOption(key: 'show_monitors_toolbar') == 'Y'
             ? _MultiMonitorMenu(id: widget.id, ffi: widget.ffi)
@@ -1464,7 +1464,8 @@ class _DisplayMenuState extends State<_DisplayMenu> {
       return Offstage();
     }
     final ffiModel = widget.ffi.ffiModel;
-    final visible = !widget.ffi.canvasModel.cursorEmbedded;
+    final visible =
+        !widget.ffi.canvasModel.cursorEmbedded && !ffiModel.pi.is_wayland;
     if (!visible) return Offstage();
     final enabled = !ffiModel.viewOnly;
     final state = ShowRemoteCursorState.find(widget.id);
@@ -1684,10 +1685,8 @@ class _KeyboardMenu extends StatelessWidget {
 
       for (KeyboardModeMenu mode in modes) {
         if (bind.sessionIsKeyboardModeSupported(id: id, mode: mode.key)) {
-          if (mode.key == _kKeyTranslateMode) {
-            if (Platform.isLinux || pi.platform == kPeerPlatformLinux) {
-              continue;
-            }
+          if (pi.is_wayland && mode.key != _kKeyMapMode) {
+            continue;
           }
           var text = translate(mode.menu);
           if (mode.key == _kKeyTranslateMode) {
@@ -2253,10 +2252,10 @@ class _MultiMonitorMenu extends StatelessWidget {
   final FFI ffi;
 
   const _MultiMonitorMenu({
-    super.key,
+    Key? key,
     required this.id,
     required this.ffi,
-  });
+  }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
