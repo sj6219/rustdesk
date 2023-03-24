@@ -16,7 +16,7 @@ import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:window_size/window_size.dart' as window_size;
 
 import '../../common.dart';
-import '../../mobile/widgets/dialog.dart';
+import '../../common/widgets/dialog.dart';
 import '../../models/model.dart';
 import '../../models/platform_model.dart';
 import '../../common/shared_state.dart';
@@ -394,7 +394,7 @@ class _RemoteMenubarState extends State<RemoteMenubar> {
     }
 
     if (PrivacyModeState.find(widget.id).isFalse &&
-        stateGlobal.displaysCount.value > 1) {
+        widget.ffi.ffiModel.pi.displays.length > 1) {
       toolbarItems.add(
         bind.mainGetUserDefaultOption(key: 'show_monitors_toolbar') == 'Y'
             ? _MultiMonitorMenu(id: widget.id, ffi: widget.ffi)
@@ -1688,11 +1688,6 @@ class _KeyboardMenu extends StatelessWidget {
           if (pi.is_wayland && mode.key != _kKeyMapMode) {
             continue;
           }
-          if (mode.key == _kKeyTranslateMode) {
-            if (Platform.isLinux) {
-              continue;
-            }
-          }
           var text = translate(mode.menu);
           if (mode.key == _kKeyTranslateMode) {
             text = '$text beta';
@@ -2257,10 +2252,10 @@ class _MultiMonitorMenu extends StatelessWidget {
   final FFI ffi;
 
   const _MultiMonitorMenu({
-    super.key,
+    Key? key,
     required this.id,
     required this.ffi,
-  });
+  }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
