@@ -7,9 +7,9 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Launch rustdesk",
+            "name": "launch 'rustdesk'",
             "args": [],
-            //"args": ["--connect", "192.168.111.11"],
+            //"args": ["--connect", "192.168.111.10"],
             "cwd": "${workspaceFolder}",
             "sourceLanguages": ["rust"],     
             // "cargo": {
@@ -23,7 +23,8 @@
             //         "kind": "bin"
             //     }
             // },        
-            "program": "${workspaceFolder}/target/debug/rustdesk.exe",
+            "program": "${workspaceFolder}/flutter/build/windows/runner/Release/rustdesk.exe",
+            //"program": "${workspaceFolder}/target/debug/rustdesk.exe",
             //"preLaunchTask": "build",   
         },
         {
@@ -44,7 +45,7 @@
             "request": "launch",
             "program" : "${workspaceFolder}/build.py",
             "args": [
-                //"--flutter",
+                "--portable",   "--hwcodec", "--flutter", "--feature", "IddDriver"
             ],
             "justMyCode": false,
         },   

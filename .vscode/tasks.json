@@ -3,30 +3,42 @@
 	"tasks": [
 		{
 			"label": "build",
-			"args": [
-				"build"
-			],
-			"command": "cargo",
-			"group": "build",
-			"problemMatcher": [
-				{
-					"owner": "rust",
-					"fileLocation": [
-						"relative",
-						"${workspaceRoot}"
-					],
-					"pattern": {
-						"regexp": "^(.*):(\\d+):(\\d+):\\s+(\\d+):(\\d+)\\s+(warning|error):\\s+(.*)$",
-						"file": 1,
-						"line": 2,
-						"column": 3,
-						"endLine": 4,
-						"endColumn": 5,
-						"severity": 6,
-						"message": 7
-					}
-				}
-			]
+			"type" : "shell",
+			"command": "cargo build --features flutter,hwcodec,flutter_texture_render --lib ; cp target/debug/librustdesk.dll flutter/build/windows/runner/Release/librustdesk.dll",
+			//"command": "cargo build",
+			"options": {
+				"cwd": "${workspaceFolder}",
+				"env": { 
+					"MACOSX_DEPLOYMENT_TARGET" : "10.14",	
+				},
+			},
 		},
+		// {
+		// 	"label": "build",
+		// 	"args": [
+		// 		"build"
+		// 	],
+		// 	"command": "cargo",
+		// 	"group": "build",
+		// 	"problemMatcher": [
+		// 		{
+		// 			"owner": "rust",
+		// 			"fileLocation": [
+		// 				"relative",
+		// 				"${workspaceRoot}"
+		// 			],
+		// 			"pattern": {
+		// 				"regexp": "^(.*):(\\d+):(\\d+):\\s+(\\d+):(\\d+)\\s+(warning|error):\\s+(.*)$",
+		// 				"file": 1,
+		// 				"line": 2,
+		// 				"column": 3,
+		// 				"endLine": 4,
+		// 				"endColumn": 5,
+		// 				"severity": 6,
+		// 				"message": 7
+		// 			}
+		// 		}
+		// 	]
+		// },
 	]
 }
