@@ -25,7 +25,7 @@ import 'package:get/get.dart';
 
 import '../common.dart';
 import '../utils/image.dart' as img;
-import '../mobile/widgets/dialog.dart';
+import '../common/widgets/dialog.dart';
 import 'input_model.dart';
 import 'platform_model.dart';
 
@@ -293,6 +293,11 @@ class FfiModel with ChangeNotifier {
       wrongPasswordDialog(id, dialogManager, type, title, text);
     } else if (type == 'input-password') {
       enterPasswordDialog(id, dialogManager);
+    } else if (type == 'xsession-login' || type == 'xsession-re-login') {
+      // to-do
+    } else if (type == 'xsession-login-password' ||
+        type == 'xsession-login-password') {
+      // to-do
     } else if (type == 'restarting') {
       showMsgBox(id, type, title, text, link, false, dialogManager,
           hasCancel: false);
@@ -452,6 +457,16 @@ class FfiModel with ChangeNotifier {
       setViewOnly(peerId,
           bind.sessionGetToggleOptionSync(id: peerId, arg: 'view-only'));
     }
+    if (connType == ConnType.defaultConn) {
+      final platform_additions = evt['platform_additions'];
+      if (platform_additions != null && platform_additions != '') {
+        try {
+          _pi.platform_additions = json.decode(platform_additions);
+        } catch (e) {
+          debugPrint('Failed to decode platform_additions $e');
+        }
+      }
+    }
     notifyListeners();
   }
 
@@ -525,11 +540,18 @@ class FfiModel with ChangeNotifier {
 
   void setViewOnly(String id, bool value) {
     if (version_cmp(_pi.version, '1.2.0') < 0) return;
-    if (value) {
-      ShowRemoteCursorState.find(id).value = value;
-    } else {
-      ShowRemoteCursorState.find(id).value =
-          bind.sessionGetToggleOptionSync(id: id, arg: 'show-remote-cursor');
+    // tmp fix for https://github.com/rustdesk/rustdesk/pull/3706#issuecomment-1481242389
+    // because below rx not used in mobile version, so not initialized, below code will cause crash
+    // current our flutter code quality is fucking shit now. !!!!!!!!!!!!!!!!
+    try {
+      if (value) {
+        ShowRemoteCursorState.find(id).value = value;
+      } else {
+        ShowRemoteCursorState.find(id).value =
+            bind.sessionGetToggleOptionSync(id: id, arg: 'show-remote-cursor');
+      }
+    } catch (e) {
+      //
     }
     if (_viewOnly != value) {
       _viewOnly = value;
@@ -1687,6 +1709,9 @@ class PeerInfo {
   List<Display> displays = [];
   Features features = Features();
   List<Resolution> resolutions = [];
+  Map<String, dynamic> platform_additions = {};
+
+  bool get is_wayland => platform_additions['is_wayland'] == true;
 }
 
 const canvasKey = 'canvas';

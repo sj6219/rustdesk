@@ -14,6 +14,7 @@ import 'package:wakelock/wakelock.dart';
 
 import '../../common.dart';
 import '../../common/widgets/overlay.dart';
+import '../../common/widgets/dialog.dart';
 import '../../common/widgets/remote_input.dart';
 import '../../models/input_model.dart';
 import '../../models/model.dart';
@@ -1059,7 +1060,7 @@ void showOptions(
     final toggles = [
       getToggle(id, setState, 'show-quality-monitor', 'Show quality monitor'),
     ];
-    if (!gFFI.canvasModel.cursorEmbedded) {
+    if (!gFFI.canvasModel.cursorEmbedded && !pi.is_wayland) {
       toggles.insert(0,
           getToggle(id, setState, 'show-remote-cursor', 'Show remote cursor'));
     }
