@@ -10,7 +10,7 @@ use std::time::{Duration, SystemTime};
 
 use async_trait::async_trait;
 use bytes::Bytes;
-use rdev::{Event, EventType::*};
+use rdev::{Event, EventType::*, KeyCode};
 use uuid::Uuid;
 
 use hbb_common::config::{Config, LocalConfig, PeerConfig};
@@ -421,7 +421,7 @@ impl<T: InvokeUiSession> Session<T> {
                         rdev::win_scancode_from_key(key).unwrap_or_default()
                     }
                     "macos" => {
-                        let key = rdev::macos_key_from_code(code);
+                        let key = rdev::macos_key_from_code(code as _);
                         let key = match key {
                             rdev::Key::ControlLeft => rdev::Key::MetaLeft,
                             rdev::Key::MetaLeft => rdev::Key::ControlLeft,
@@ -429,7 +429,7 @@ impl<T: InvokeUiSession> Session<T> {
                             rdev::Key::MetaRight => rdev::Key::ControlLeft,
                             _ => key,
                         };
-                        rdev::macos_keycode_from_key(key).unwrap_or_default()
+                        rdev::macos_keycode_from_key(key).unwrap_or_default() as _
                     }
                     _ => {
                         let key = rdev::linux_key_from_code(code);
@@ -549,8 +549,8 @@ impl<T: InvokeUiSession> Session<T> {
         if scancode < 0 || keycode < 0 {
             return;
         }
-        let keycode: u32 = keycode as u32;
-        let scancode: u32 = scancode as u32;
+        let keycode: KeyCode = keycode as _;
+        let scancode: u32 = scancode as _;
 
         #[cfg(not(target_os = "windows"))]
         let key = rdev::key_from_code(keycode) as rdev::Key;
@@ -1058,6 +1058,9 @@ impl<T: InvokeUiSession> Session<T> {
 
 #[tokio::main(flavor = "current_thread")]
 pub async fn io_loop<T: InvokeUiSession>(handler: Session<T>) {
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    let (sender, receiver) = mpsc::unbounded_channel::<Data>();
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
     let (sender, mut receiver) = mpsc::unbounded_channel::<Data>();
     *handler.sender.write().unwrap() = Some(sender.clone());
     let token = LocalConfig::get_option("access_token");
@@ -1151,13 +1154,15 @@ pub async fn io_loop<T: InvokeUiSession>(handler: Session<T>) {
     let frame_count = Arc::new(AtomicUsize::new(0));
     let frame_count_cl = frame_count.clone();
     let ui_handler = handler.ui_handler.clone();
-    let (video_sender, audio_sender) = start_video_audio_threads(move |data: &mut Vec<u8>| {
-        frame_count_cl.fetch_add(1, Ordering::Relaxed);
-        ui_handler.on_rgba(data);
-    });
+    let (video_sender, audio_sender, video_queue) =
+        start_video_audio_threads(move |data: &mut Vec<u8>| {
+            frame_count_cl.fetch_add(1, Ordering::Relaxed);
+            ui_handler.on_rgba(data);
+        });
 
     let mut remote = Remote::new(
         handler,
+        video_queue,
         video_sender,
         audio_sender,
         receiver,
