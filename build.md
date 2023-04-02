@@ -2,11 +2,8 @@
 
 ## Install rustdesk
 
-Install rustdesk for x64 version. 
-
-Extract aarch64-pc-windows-msvc.zip at https://github.com/sj6219/rustdesk/releases/tag/alpha/ to C:\Program Files\RustDesk.
-
-Restart the computer.
+Install rustdesk-1.2.0-aarch64-pc-windows-msvc-sciter-install.exe
+ at https://github.com/sj6219/rustdesk/releases/tag/alpha/ 
 
 ## Build rustdesk
 
