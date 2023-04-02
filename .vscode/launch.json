@@ -9,7 +9,7 @@
             "request": "launch",
             "name": "launch 'rustdesk'",
             "args": [],
-            //"args": ["--connect", "192.168.111.10"],
+            "args": ["--connect", "192.168.111.5"],
             "cwd": "${workspaceFolder}",
             "sourceLanguages": ["rust"],     
             // "cargo": {
@@ -24,7 +24,7 @@
             //     }
             // },        
             "program": "${workspaceFolder}/flutter/build/windows/runner/Release/rustdesk.exe",
-            //"program": "${workspaceFolder}/target/debug/rustdesk.exe",
+            "program": "${workspaceFolder}/target/debug/rustdesk.exe",
             //"preLaunchTask": "build",   
         },
         {
