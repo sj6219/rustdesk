@@ -17,7 +17,7 @@ import '../../consts.dart';
 import '../../common/widgets/overlay.dart';
 import '../../common/widgets/remote_input.dart';
 import '../../common.dart';
-import '../../mobile/widgets/dialog.dart';
+import '../../common/widgets/dialog.dart';
 import '../../models/model.dart';
 import '../../models/platform_model.dart';
 import '../../common/shared_state.dart';
@@ -158,12 +158,7 @@ class _RemotePageState extends State<RemotePage>
     //   _isCustomCursorInited = true;
     // }
 
-    _ffi.dialogManager.setOverlayState(_blockableOverlayState);
-    _ffi.chatModel.setOverlayState(_blockableOverlayState);
-    // make remote page penetrable automatically, effective for chat over remote
-    _blockableOverlayState.onMiddleBlockedClick = () {
-      _blockableOverlayState.setMiddleBlocked(false);
-    };
+    _blockableOverlayState.applyFfi(_ffi);
   }
 
   @override
@@ -310,7 +305,7 @@ class _RemotePageState extends State<RemotePage>
   }
 
   void leaveView(PointerExitEvent evt) {
-    if (_ffi.ffiModel.keyboard()) {
+    if (_ffi.ffiModel.keyboard) {
       _ffi.inputModel.tryMoveEdgeOnExit(evt.position);
     }
 

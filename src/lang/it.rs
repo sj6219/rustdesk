@@ -479,6 +479,17 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Me", "Io"),
         ("identical_file_tip", "Questo file è identico a quello del peer."),
         ("show_monitors_tip", "Mostra schermi nella barra degli strumenti"),
-        ("View Mode", ""),
+        ("View Mode", "Modalità di visualizzazione"),
+        ("login_linux_tip", ""),
+        ("verify_rustdesk_password_tip", ""),
+        ("remember_account_tip", ""),
+        ("os_account_desk_tip", ""),
+        ("OS Account", ""),
+        ("another_user_login_title_tip", ""),
+        ("another_user_login_text_tip", ""),
+        ("xorg_not_found_title_tip", ""),
+        ("xorg_not_found_text_tip", ""),
+        ("no_desktop_title_tip", ""),
+        ("no_desktop_text_tip", ""),
     ].iter().cloned().collect();
 }
