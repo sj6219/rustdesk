@@ -317,6 +317,11 @@ class _RemoteMenubarState extends State<RemoteMenubar> {
   RxBool get show => widget.state.show;
   bool get pin => widget.state.pin;
 
+  PeerInfo get pi => widget.ffi.ffiModel.pi;
+  FfiModel get ffiModel => widget.ffi.ffiModel;
+
+  triggerAutoHide() => _debouncerHide.value = _debouncerHide.value + 1;
+
   @override
   initState() {
     super.initState();
@@ -329,7 +334,7 @@ class _RemoteMenubarState extends State<RemoteMenubar> {
 
     widget.onEnterOrLeaveImageSetter((enter) {
       if (enter) {
-        _debouncerHide.value = 0;
+        triggerAutoHide();
         _isCursorOverImage = true;
       } else {
         _isCursorOverImage = false;
@@ -364,7 +369,7 @@ class _RemoteMenubarState extends State<RemoteMenubar> {
   Widget _buildDraggableShowHide(BuildContext context) {
     return Obx(() {
       if (show.isTrue && _dragging.isFalse) {
-        _debouncerHide.value = 1;
+        triggerAutoHide();
       }
       return Align(
         alignment: FractionalOffset(_fractionX.value, 0),
@@ -393,8 +398,7 @@ class _RemoteMenubarState extends State<RemoteMenubar> {
       toolbarItems.add(_MobileActionMenu(ffi: widget.ffi));
     }
 
-    if (PrivacyModeState.find(widget.id).isFalse &&
-        widget.ffi.ffiModel.pi.displays.length > 1) {
+    if (PrivacyModeState.find(widget.id).isFalse && pi.displays.length > 1) {
       toolbarItems.add(
         bind.mainGetUserDefaultOption(key: 'show_monitors_toolbar') == 'Y'
             ? _MultiMonitorMenu(id: widget.id, ffi: widget.ffi)
@@ -635,7 +639,7 @@ class _ControlMenu extends StatelessWidget {
         ffi: ffi,
         menuChildren: [
           requestElevation(),
-          osPassword(),
+          ffi.ffiModel.pi.is_headless ? osAccount() : osPassword(),
           transferFile(context),
           tcpTunneling(context),
           note(),
@@ -658,78 +662,20 @@ class _ControlMenu extends StatelessWidget {
         onPressed: () => showRequestElevationDialog(id, ffi.dialogManager));
   }
 
+  osAccount() {
+    return _MenuItemButton(
+        child: Text(translate('OS Account')),
+        trailingIcon: Transform.scale(scale: 0.8, child: Icon(Icons.edit)),
+        ffi: ffi,
+        onPressed: () => showSetOSAccount(id, ffi.dialogManager));
+  }
+
   osPassword() {
     return _MenuItemButton(
         child: Text(translate('OS Password')),
         trailingIcon: Transform.scale(scale: 0.8, child: Icon(Icons.edit)),
         ffi: ffi,
-        onPressed: () => _showSetOSPassword(id, false, ffi.dialogManager));
-  }
-
-  _showSetOSPassword(
-      String id, bool login, OverlayDialogManager dialogManager) async {
-    final controller = TextEditingController();
-    var password =
-        await bind.sessionGetOption(id: id, arg: 'os-password') ?? '';
-    var autoLogin =
-        await bind.sessionGetOption(id: id, arg: 'auto-login') != '';
-    controller.text = password;
-    dialogManager.show((setState, close) {
-      submit() {
-        var text = controller.text.trim();
-        bind.sessionPeerOption(id: id, name: 'os-password', value: text);
-        bind.sessionPeerOption(
-            id: id, name: 'auto-login', value: autoLogin ? 'Y' : '');
-        if (text != '' && login) {
-          bind.sessionInputOsPassword(id: id, value: text);
-        }
-        close();
-      }
-
-      return CustomAlertDialog(
-        title: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.password_rounded, color: MyTheme.accent),
-            Text(translate('OS Password')).paddingOnly(left: 10),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            PasswordWidget(controller: controller),
-            CheckboxListTile(
-              contentPadding: const EdgeInsets.all(0),
-              dense: true,
-              controlAffinity: ListTileControlAffinity.leading,
-              title: Text(
-                translate('Auto Login'),
-              ),
-              value: autoLogin,
-              onChanged: (v) {
-                if (v == null) return;
-                setState(() => autoLogin = v);
-              },
-            ),
-          ],
-        ),
-        actions: [
-          dialogButton(
-            "Cancel",
-            icon: Icon(Icons.close_rounded),
-            onPressed: close,
-            isOutline: true,
-          ),
-          dialogButton(
-            "OK",
-            icon: Icon(Icons.done_rounded),
-            onPressed: submit,
-          ),
-        ],
-        onSubmit: submit,
-        onCancel: close,
-      );
-    });
+        onPressed: () => showSetOSPassword(id, false, ffi.dialogManager));
   }
 
   transferFile(BuildContext context) {
@@ -819,11 +765,10 @@ class _ControlMenu extends StatelessWidget {
   }
 
   ctrlAltDel() {
-    final perms = ffi.ffiModel.permissions;
     final viewOnly = ffi.ffiModel.viewOnly;
     final pi = ffi.ffiModel.pi;
     final visible = !viewOnly &&
-        perms['keyboard'] != false &&
+        ffi.ffiModel.keyboard &&
         (pi.platform == kPeerPlatformLinux || pi.sasEnabled);
     if (!visible) return Offstage();
     return _MenuItemButton(
@@ -847,9 +792,8 @@ class _ControlMenu extends StatelessWidget {
   }
 
   insertLock() {
-    final perms = ffi.ffiModel.permissions;
     final viewOnly = ffi.ffiModel.viewOnly;
-    final visible = !viewOnly && perms['keyboard'] != false;
+    final visible = !viewOnly && ffi.ffiModel.keyboard;
     if (!visible) return Offstage();
     return _MenuItemButton(
         child: Text(translate('Insert Lock')),
@@ -858,10 +802,9 @@ class _ControlMenu extends StatelessWidget {
   }
 
   blockUserInput() {
-    final perms = ffi.ffiModel.permissions;
     final pi = ffi.ffiModel.pi;
     final visible =
-        perms['keyboard'] != false && pi.platform == kPeerPlatformWindows;
+        ffi.ffiModel.keyboard && pi.platform == kPeerPlatformWindows;
     if (!visible) return Offstage();
     return _MenuItemButton(
         child: Obx(() => Text(translate(
@@ -876,9 +819,8 @@ class _ControlMenu extends StatelessWidget {
   }
 
   switchSides() {
-    final perms = ffi.ffiModel.permissions;
     final pi = ffi.ffiModel.pi;
-    final visible = perms['keyboard'] != false &&
+    final visible = ffi.ffiModel.keyboard &&
         pi.platform != kPeerPlatformAndroid &&
         pi.platform != kPeerPlatformMacOS &&
         version_cmp(pi.version, '1.2.0') >= 0;
@@ -948,6 +890,7 @@ class _DisplayMenuState extends State<_DisplayMenu> {
   Map<String, bool> get perms => widget.ffi.ffiModel.permissions;
 
   PeerInfo get pi => widget.ffi.ffiModel.pi;
+  FfiModel get ffiModel => widget.ffi.ffiModel;
 
   @override
   Widget build(BuildContext context) {
@@ -1350,29 +1293,30 @@ class _DisplayMenuState extends State<_DisplayMenu> {
 
   codec() {
     return futureBuilder(future: () async {
-      final supportedHwcodec =
-          await bind.sessionSupportedHwcodec(id: widget.id);
+      final alternativeCodecs =
+          await bind.sessionAlternativeCodecs(id: widget.id);
       final codecPreference =
           await bind.sessionGetOption(id: widget.id, arg: 'codec-preference') ??
               '';
       return {
-        'supportedHwcodec': supportedHwcodec,
+        'alternativeCodecs': alternativeCodecs,
         'codecPreference': codecPreference
       };
     }(), hasData: (data) {
       final List<bool> codecs = [];
       try {
-        final Map codecsJson = jsonDecode(data['supportedHwcodec']);
+        final Map codecsJson = jsonDecode(data['alternativeCodecs']);
+        final vp8 = codecsJson['vp8'] ?? false;
         final h264 = codecsJson['h264'] ?? false;
         final h265 = codecsJson['h265'] ?? false;
+        codecs.add(vp8);
         codecs.add(h264);
         codecs.add(h265);
       } catch (e) {
         debugPrint("Show Codec Preference err=$e");
       }
-      final visible = bind.mainHasHwcodec() &&
-          codecs.length == 2 &&
-          (codecs[0] || codecs[1]);
+      final visible =
+          codecs.length == 3 && (codecs[0] || codecs[1] || codecs[2]);
       if (!visible) return Offstage();
       final groupValue = data['codecPreference'] as String;
       onChanged(String? value) async {
@@ -1394,6 +1338,13 @@ class _DisplayMenuState extends State<_DisplayMenu> {
               ffi: widget.ffi,
             ),
             _RadioMenuButton<String>(
+              child: Text(translate('VP8')),
+              value: 'vp8',
+              groupValue: groupValue,
+              onChanged: codecs[0] ? onChanged : null,
+              ffi: widget.ffi,
+            ),
+            _RadioMenuButton<String>(
               child: Text(translate('VP9')),
               value: 'vp9',
               groupValue: groupValue,
@@ -1404,14 +1355,14 @@ class _DisplayMenuState extends State<_DisplayMenu> {
               child: Text(translate('H264')),
               value: 'h264',
               groupValue: groupValue,
-              onChanged: codecs[0] ? onChanged : null,
+              onChanged: codecs[1] ? onChanged : null,
               ffi: widget.ffi,
             ),
             _RadioMenuButton<String>(
               child: Text(translate('H265')),
               value: 'h265',
               groupValue: groupValue,
-              onChanged: codecs[1] ? onChanged : null,
+              onChanged: codecs[2] ? onChanged : null,
               ffi: widget.ffi,
             ),
           ]);
@@ -1419,11 +1370,10 @@ class _DisplayMenuState extends State<_DisplayMenu> {
   }
 
   resolutions() {
-    final resolutions = widget.ffi.ffiModel.pi.resolutions;
-    final visible = widget.ffi.ffiModel.permissions["keyboard"] != false &&
-        resolutions.length > 1;
+    final resolutions = pi.resolutions;
+    final visible = ffiModel.keyboard && resolutions.length > 1;
     if (!visible) return Offstage();
-    final display = widget.ffi.ffiModel.display;
+    final display = ffiModel.display;
     final groupValue = "${display.width}x${display.height}";
     onChanged(String? value) async {
       if (value == null) return;
@@ -1435,7 +1385,7 @@ class _DisplayMenuState extends State<_DisplayMenu> {
           await bind.sessionChangeResolution(
               id: widget.id, width: w, height: h);
           Future.delayed(Duration(seconds: 3), () async {
-            final display = widget.ffi.ffiModel.display;
+            final display = ffiModel.display;
             if (w == display.width && h == display.height) {
               if (_isWindowCanBeAdjusted()) {
                 _doAdjustWindow();
@@ -1460,10 +1410,9 @@ class _DisplayMenuState extends State<_DisplayMenu> {
   }
 
   showRemoteCursor() {
-    if (widget.ffi.ffiModel.pi.platform == kPeerPlatformAndroid) {
+    if (pi.platform == kPeerPlatformAndroid) {
       return Offstage();
     }
-    final ffiModel = widget.ffi.ffiModel;
     final visible =
         !widget.ffi.canvasModel.cursorEmbedded && !ffiModel.pi.is_wayland;
     if (!visible) return Offstage();
@@ -1485,7 +1434,7 @@ class _DisplayMenuState extends State<_DisplayMenu> {
   }
 
   zoomCursor() {
-    if (widget.ffi.ffiModel.pi.platform == kPeerPlatformAndroid) {
+    if (pi.platform == kPeerPlatformAndroid) {
       return Offstage();
     }
     final visible = widget.state.viewStyle.value != kRemoteViewStyleOriginal;
@@ -1551,8 +1500,7 @@ class _DisplayMenuState extends State<_DisplayMenu> {
   }
 
   disableClipboard() {
-    final ffiModel = widget.ffi.ffiModel;
-    final visible = perms['keyboard'] != false && perms['clipboard'] != false;
+    final visible = ffiModel.keyboard && perms['clipboard'] != false;
     if (!visible) return Offstage();
     final enabled = !ffiModel.viewOnly;
     final option = 'disable-clipboard';
@@ -1571,8 +1519,7 @@ class _DisplayMenuState extends State<_DisplayMenu> {
   }
 
   lockAfterSessionEnd() {
-    final visible = perms['keyboard'] != false;
-    if (!visible) return Offstage();
+    if (!ffiModel.keyboard) return Offstage();
     final option = 'lock-after-session-end';
     final value = bind.sessionGetToggleOptionSync(id: widget.id, arg: option);
     return _CheckboxMenuButton(
@@ -1586,7 +1533,7 @@ class _DisplayMenuState extends State<_DisplayMenu> {
   }
 
   privacyMode() {
-    bool visible = perms['keyboard'] != false && pi.features.privacyMode;
+    bool visible = ffiModel.keyboard && pi.features.privacyMode;
     if (!visible) return Offstage();
     final option = 'privacy-mode';
     final rxValue = PrivacyModeState.find(widget.id);
@@ -1594,7 +1541,7 @@ class _DisplayMenuState extends State<_DisplayMenu> {
         value: rxValue.value,
         onChanged: (value) {
           if (value == null) return;
-          if (widget.ffi.ffiModel.pi.currentDisplay != 0) {
+          if (ffiModel.pi.currentDisplay != 0) {
             msgBox(
                 widget.id,
                 'custom-nook-nocancel-hasclose',
@@ -1611,7 +1558,7 @@ class _DisplayMenuState extends State<_DisplayMenu> {
   }
 
   swapKey() {
-    final visible = perms['keyboard'] != false &&
+    final visible = ffiModel.keyboard &&
         ((Platform.isMacOS && pi.platform != kPeerPlatformMacOS) ||
             (!Platform.isMacOS && pi.platform == kPeerPlatformMacOS));
     if (!visible) return Offstage();
@@ -1642,15 +1589,17 @@ class _KeyboardMenu extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     var ffiModel = Provider.of<FfiModel>(context);
-    if (ffiModel.permissions['keyboard'] == false) return Offstage();
+    if (!ffiModel.keyboard) return Offstage();
+    String? modeOnly;
     if (stateGlobal.grabKeyboard) {
       if (bind.sessionIsKeyboardModeSupported(id: id, mode: _kKeyMapMode)) {
         bind.sessionSetKeyboardMode(id: id, value: _kKeyMapMode);
+        modeOnly = _kKeyMapMode;
       } else if (bind.sessionIsKeyboardModeSupported(
           id: id, mode: _kKeyLegacyMode)) {
         bind.sessionSetKeyboardMode(id: id, value: _kKeyLegacyMode);
+        modeOnly = _kKeyLegacyMode;
       }
-      return Offstage();
     }
     return _IconSubmenuButton(
         tooltip: 'Keyboard Settings',
@@ -1659,14 +1608,14 @@ class _KeyboardMenu extends StatelessWidget {
         color: _MenubarTheme.blueColor,
         hoverColor: _MenubarTheme.hoverBlueColor,
         menuChildren: [
-          mode(),
+          mode(modeOnly),
           localKeyboardType(),
           Divider(),
           view_mode(),
         ]);
   }
 
-  mode() {
+  mode(String? modeOnly) {
     return futureBuilder(future: () async {
       return await bind.sessionGetKeyboardMode(id: id) ?? _kKeyLegacyMode;
     }(), hasData: (data) {
@@ -1684,22 +1633,28 @@ class _KeyboardMenu extends StatelessWidget {
       }
 
       for (KeyboardModeMenu mode in modes) {
-        if (bind.sessionIsKeyboardModeSupported(id: id, mode: mode.key)) {
-          if (pi.is_wayland && mode.key != _kKeyMapMode) {
-            continue;
-          }
-          var text = translate(mode.menu);
-          if (mode.key == _kKeyTranslateMode) {
-            text = '$text beta';
-          }
-          list.add(_RadioMenuButton<String>(
-            child: Text(text),
-            value: mode.key,
-            groupValue: groupValue,
-            onChanged: enabled ? onChanged : null,
-            ffi: ffi,
-          ));
+        if (modeOnly != null && mode.key != modeOnly) {
+          continue;
+        } else if (!bind.sessionIsKeyboardModeSupported(
+            id: id, mode: mode.key)) {
+          continue;
         }
+
+        if (pi.is_wayland && mode.key != _kKeyMapMode) {
+          continue;
+        }
+
+        var text = translate(mode.menu);
+        if (mode.key == _kKeyTranslateMode) {
+          text = '$text beta';
+        }
+        list.add(_RadioMenuButton<String>(
+          child: Text(text),
+          value: mode.key,
+          groupValue: groupValue,
+          onChanged: enabled ? onChanged : null,
+          ffi: ffi,
+        ));
       }
       return Column(children: list);
     });
@@ -1728,8 +1683,7 @@ class _KeyboardMenu extends StatelessWidget {
 
   view_mode() {
     final ffiModel = ffi.ffiModel;
-    final enabled = version_cmp(pi.version, '1.2.0') >= 0 &&
-        ffiModel.permissions["keyboard"] != false;
+    final enabled = version_cmp(pi.version, '1.2.0') >= 0 && ffiModel.keyboard;
     return _CheckboxMenuButton(
         value: ffiModel.viewOnly,
         onChanged: enabled
