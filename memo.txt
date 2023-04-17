@@ -39,10 +39,12 @@ target/release/bundle/osx/RustDesk.app/Contents/Info.plist
 python3 res/inline-sciter.py
 cargo build --release --features inline
 cp target/release/rustdesk ../Documents/RustDesk.app/Contents/MacOS/rustdesk 
-codesign -s "Developer ID Application" --force --options runtime  ../Documents/RustDesk.app/Contents/MacOS/*
-codesign -s "Developer ID Application" --force --options runtime  ../Documents/RustDesk.app
+codesign --force --options runtime -s "Developer ID Application" --deep --strict ../Documents/RustDesk.app -vvv
 rm -r /Applications/RustDesk.app
 cp -r ../Documents/RustDesk.app /Applications/RustDesk.app
+
+create-dmg --icon "RustDesk.app" 200 190 --hide-extension "RustDesk.app" --window-size 800 400 --app-drop-link 600 185 rustdesk-1.2.0-aarch64-macos-sciter.dmg ../Documents/RustDesk.app
+codesign --force --options runtime -s "Developer ID Application" --deep --strict rustdesk-1.2.0-aarch64-macos-sciter.dmg -vvv
 
 csrutil disable
 file target\release\rustdesk

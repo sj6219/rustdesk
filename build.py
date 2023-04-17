@@ -41,8 +41,8 @@ def get_version():
 def parse_rc_features(feature):
     available_features = {
         'IddDriver': {
-            'zip_url': 'https://github.com/fufesou/RustDeskIddDriver/releases/download/v0.1/RustDeskIddDriver_x64.zip',
-            'checksum_url': 'https://github.com/fufesou/RustDeskIddDriver/releases/download/v0.1/checksum_md5',
+            'zip_url': 'https://github.com/fufesou/RustDeskIddDriver/releases/download/v0.3/RustDeskIddDriver_x64.zip',
+            'checksum_url': 'https://github.com/fufesou/RustDeskIddDriver/releases/download/v0.3/checksum_md5',
             'exclude': ['README.md', 'certmgr.exe', 'install_cert_runas_admin.bat'],
         },
         'PrivacyMode': {
@@ -242,6 +242,7 @@ def get_features(args):
     features = ['inline'] if not args.flutter else []
     if windows:
         features.extend(get_rc_features(args))
+        features.append('virtual_display_driver')
     if args.hwcodec:
         features.append('hwcodec')
     if args.flutter:
@@ -262,9 +263,9 @@ def generate_control_file(version):
     content = """Package: rustdesk
 Version: %s
 Architecture: %s
-Maintainer: open-trade <info@rustdesk.com>
+Maintainer: rustdesk <info@rustdesk.com>
 Homepage: https://rustdesk.com
-Depends: libgtk-3-0, libxcb-randr0, libxdo3, libxfixes3, libxcb-shape0, libxcb-xfixes0, libasound2, libsystemd0, curl, libva-drm2, libva-x11-2, libvdpau1, libgstreamer-plugins-base1.0-0
+Depends: libgtk-3-0, libxcb-randr0, libxdo3, libxfixes3, libxcb-shape0, libxcb-xfixes0, libasound2, libsystemd0, curl, libva-drm2, libva-x11-2, libvdpau1, libgstreamer-plugins-base1.0-0, libpam0g
 Description: A remote control software.
 
 """ % (version, get_arch())
