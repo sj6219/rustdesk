@@ -1,5 +1,8 @@
+// ignore_for_file: avoid_web_libraries_in_flutter
+
+import 'dart:convert';
 import 'dart:typed_data';
-import 'dart:js' as js;
+import 'dart:js';
 
 import '../common.dart';
 import 'dart:html';
@@ -7,46 +10,60 @@ import 'dart:async';
 
 final List<StreamSubscription<MouseEvent>> mouseListeners = [];
 final List<StreamSubscription<KeyboardEvent>> keyListeners = [];
-int lastMouseDownButtons = 0;
-bool mouseIn = false;
 
 class PlatformFFI {
-  static void clearRgbaFrame() {}
-
-  static Uint8List? getRgba() {
-    return js.context.callMethod('getRgba');
-  }
-
   static String getByName(String name, [String arg = '']) {
-    return js.context.callMethod('getByName', [name, arg]);
+    return context.callMethod('getByName', [name, arg]);
   }
 
   static void setByName(String name, [String value = '']) {
-    js.context.callMethod('setByName', [name, value]);
+    context.callMethod('setByName', [name, value]);
   }
 
-  static Future<Null> init() async {
+  PlatformFFI._();
+  static final PlatformFFI instance = PlatformFFI._();
+
+  static get localeName => window.navigator.language;
+
+  static Future<void> init(String _appType) async {
     isWeb = true;
-    isDesktop = !js.context.callMethod('isMobile');
-    js.context.callMethod('init');
+    isWebDesktop = !context.callMethod('isMobile');
+    context.callMethod('init');
     version = getByName('version');
   }
 
+  static void setEventCallback(void Function(Map<String, dynamic>) fun) {
+    context["onGlobalEvent"] = (String message) {
+      try {
+        Map<String, dynamic> event = json.decode(message);
+        fun(event);
+      } catch (e) {
+        print('json.decode fail(): $e');
+      }
+    };
+  }
+
+  static void setRgbaCallback(void Function(Uint8List) fun) {
+    context["onRgba"] = (Uint8List? rgba) {
+      if (rgba != null) {
+        fun(rgba);
+      }
+    };
+  }
+
   static void startDesktopWebListener() {
-    mouseIn = true;
     mouseListeners.add(
         window.document.onContextMenu.listen((evt) => evt.preventDefault()));
   }
 
   static void stopDesktopWebListener() {
-    mouseIn = true;
-    mouseListeners.forEach((l) {
-      l.cancel();
-    });
+    for (var ml in mouseListeners) {
+      ml.cancel();
+    }
     mouseListeners.clear();
-    keyListeners.forEach((l) {
-      l.cancel();
-    });
+    for (var kl in keyListeners) {
+      kl.cancel();
+    }
     keyListeners.clear();
   }
 
@@ -56,5 +73,3 @@ class PlatformFFI {
     return true;
   }
 }
-
-final localeName = window.navigator.language;

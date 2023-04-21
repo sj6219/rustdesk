@@ -1,8 +1,11 @@
+package com.carriez.flutter_hbb
+
 /**
  * Capture screen,get video and audio,send to rust.
- * Handle notification
+ * Dispatch notifications
+ *
+ * Inspired by [droidVNC-NG] https://github.com/bk138/droidVNC-NG
  */
-package com.carriez.flutter_hbb
 
 import android.Manifest
 import android.annotation.SuppressLint
@@ -32,6 +35,7 @@ import androidx.annotation.RequiresApi
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import io.flutter.embedding.android.FlutterActivity
 import java.util.concurrent.Executors
 import kotlin.concurrent.thread
 import org.json.JSONException
@@ -39,11 +43,12 @@ import org.json.JSONObject
 import java.nio.ByteBuffer
 import kotlin.math.max
 import kotlin.math.min
+import android.content.ClipboardManager
+import android.content.ClipData
+import java.util.Timer
+import java.util.TimerTask
+//import android.content.ClipboardManager.OnPrimaryClipChangedListener
 
-const val EXTRA_MP_DATA = "mp_intent"
-const val INIT_SERVICE = "init_service"
-const val ACTION_LOGIN_REQ_NOTIFY = "ACTION_LOGIN_REQ_NOTIFY"
-const val EXTRA_LOGIN_REQ_NOTIFY = "EXTRA_LOGIN_REQ_NOTIFY"
 
 const val DEFAULT_NOTIFY_TITLE = "RustDesk"
 const val DEFAULT_NOTIFY_TEXT = "Service is running"
@@ -63,16 +68,43 @@ const val AUDIO_ENCODING = AudioFormat.ENCODING_PCM_FLOAT //  ENCODING_OPUS need
 const val AUDIO_SAMPLE_RATE = 48000
 const val AUDIO_CHANNEL_MASK = AudioFormat.CHANNEL_IN_STEREO
 
-class MainService : Service() {
+class MainService : Service() /* , ClipboardManager.OnPrimaryClipChangedListener */ {
 
     init {
         System.loadLibrary("rustdesk")
     }
 
     @Keep
+    @RequiresApi(Build.VERSION_CODES.N)
+    fun rustMouseInput(mask: Int, x: Int, y: Int) {
+        // turn on screen with LIFT_DOWN when screen off
+        if (!powerManager.isInteractive && mask == LIFT_DOWN) {
+            if (wakeLock.isHeld) {
+                Log.d(logTag,"Turn on Screen, WakeLock release")
+                wakeLock.release()
+            }
+            Log.d(logTag,"Turn on Screen")
+            wakeLock.acquire(5000)
+        } else {
+            InputService.ctx?.onMouseInput(mask,x,y)
+        }
+    }
+
+    @Keep
+    fun rustSetClipText(name: String) {
+        clipboardManager.setPrimaryClip(ClipData.newPlainText("label", name))
+    }
+
+    @Keep
     fun rustGetByName(name: String): String {
         return when (name) {
-            "screen_size" -> "${SCREEN_INFO.width}:${SCREEN_INFO.height}"
+            "screen_size" -> {
+                JSONObject().apply {
+                    put("width",SCREEN_INFO.width)
+                    put("height",SCREEN_INFO.height)
+                    put("scale",SCREEN_INFO.scale)
+                }.toString()
+            }
             else -> ""
         }
     }
@@ -80,43 +112,30 @@ class MainService : Service() {
     @Keep
     fun rustSetByName(name: String, arg1: String, arg2: String) {
         when (name) {
-            "try_start_without_auth" -> {
+            "add_connection" -> {
                 try {
                     val jsonObject = JSONObject(arg1)
                     val id = jsonObject["id"] as Int
                     val username = jsonObject["name"] as String
                     val peerId = jsonObject["peer_id"] as String
-                    val type = if (jsonObject["is_file_transfer"] as Boolean) {
-                        translate("File Connection")
-                    } else {
-                        translate("Screen Connection")
-                    }
-                    loginRequestNotification(id, type, username, peerId)
-                } catch (e: JSONException) {
-                    e.printStackTrace()
-                }
-            }
-            "on_client_authorized" -> {
-                Log.d(logTag, "from rust:on_client_authorized")
-                try {
-                    val jsonObject = JSONObject(arg1)
-                    val id = jsonObject["id"] as Int
-                    val username = jsonObject["name"] as String
-                    val peerId = jsonObject["peer_id"] as String
+                    val authorized = jsonObject["authorized"] as Boolean
                     val isFileTransfer = jsonObject["is_file_transfer"] as Boolean
                     val type = if (isFileTransfer) {
                         translate("File Connection")
                     } else {
                         translate("Screen Connection")
                     }
-                    if (!isFileTransfer && !isStart) {
-                        startCapture()
+                    if (authorized) {
+                        if (!isFileTransfer && !isStart) {
+                            startCapture()
+                        }
+                        onClientAuthorizedNotification(id, type, username, peerId)
+                    } else {
+                        loginRequestNotification(id, type, username, peerId)
                     }
-                    onClientAuthorizedNotification(id, type, username, peerId)
                 } catch (e: JSONException) {
                     e.printStackTrace()
                 }
-
             }
             "stop_capture" -> {
                 Log.d(logTag, "from rust:stop_capture")
@@ -130,9 +149,25 @@ class MainService : Service() {
     private var serviceLooper: Looper? = null
     private var serviceHandler: Handler? = null
 
+    private val powerManager: PowerManager by lazy { applicationContext.getSystemService(Context.POWER_SERVICE) as PowerManager }
+    private val wakeLock: PowerManager.WakeLock by lazy { powerManager.newWakeLock(PowerManager.ACQUIRE_CAUSES_WAKEUP or PowerManager.SCREEN_BRIGHT_WAKE_LOCK or PowerManager.ON_AFTER_RELEASE, "rustdesk:wakelock")}
+    private val clipboardManager: ClipboardManager by lazy { applicationContext.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager }
+    private var timerTask: Timer? = null
+    // override fun   onPrimaryClipChanged() {
+    //     Log.d(logTag, "Clipboard===")
+    //     val clip : ClipData? = clipboardManager.getPrimaryClip();
+    //     if (clip != null && clip.getItemCount() > 0) {
+    //         val str : String = clip.getItemAt(0).coerceToText(this).toString();
+    //             Log.d(logTag, "Clipboard:$str")
+    // }
+    
     // jvm call rust
     private external fun init(ctx: Context)
-    private external fun startServer()
+
+    /// When app start on boot, app_dir will not be passed from flutter
+    /// so pass a app_dir here to rust server
+    private external fun startServer(app_dir: String)
+    private external fun startService()
     private external fun onVideoFrameUpdate(buf: ByteBuffer)
     private external fun onAudioFrameUpdate(buf: ByteBuffer)
     private external fun translateLocale(localeName: String, input: String): String
@@ -180,6 +215,7 @@ class MainService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        Log.d(logTag,"MainService onCreate")
         HandlerThread("Service", Process.THREAD_PRIORITY_BACKGROUND).apply {
             start()
             serviceLooper = looper
@@ -187,14 +223,16 @@ class MainService : Service() {
         }
         updateScreenInfo(resources.configuration.orientation)
         initNotification()
-        startServer()
+
+        // keep the config dir same with flutter
+        val prefs = applicationContext.getSharedPreferences(KEY_SHARED_PREFERENCES, FlutterActivity.MODE_PRIVATE)
+        val configPath = prefs.getString(KEY_APP_DIR_CONFIG_PATH, "") ?: ""
+        startServer(configPath)
+
+        createForegroundNotification()
     }
 
     override fun onDestroy() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            InputService.ctx?.disableSelf()
-        }
-        InputService.ctx = null
         checkMediaPermission()
         super.onDestroy()
     }
@@ -266,27 +304,43 @@ class MainService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        Log.d("whichService", "this service:${Thread.currentThread()}")
+        Log.d("whichService", "this service: ${Thread.currentThread()}")
         super.onStartCommand(intent, flags, startId)
-        if (intent?.action == INIT_SERVICE) {
-            Log.d(logTag, "service starting:${startId}:${Thread.currentThread()}")
+        if (intent?.action == ACT_INIT_MEDIA_PROJECTION_AND_SERVICE) {
             createForegroundNotification()
-            val mMediaProjectionManager =
+
+            if (intent.getBooleanExtra(EXT_INIT_FROM_BOOT, false)) {
+                startService()
+            }
+            Log.d(logTag, "service starting: ${startId}:${Thread.currentThread()}")
+            val mediaProjectionManager =
                 getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-            intent.getParcelableExtra<Intent>(EXTRA_MP_DATA)?.let {
+
+            intent.getParcelableExtra<Intent>(EXT_MEDIA_PROJECTION_RES_INTENT)?.let {
                 mediaProjection =
-                    mMediaProjectionManager.getMediaProjection(Activity.RESULT_OK, it)
+                    mediaProjectionManager.getMediaProjection(Activity.RESULT_OK, it)
                 checkMediaPermission()
                 init(this)
                 _isReady = true
+            } ?: let {
+                Log.d(logTag, "getParcelableExtra intent null, invoke requestMediaProjection")
+                requestMediaProjection()
             }
         }
-        return START_NOT_STICKY // don't use sticky (auto restart),the new service (from auto restart) will lose control
+        return START_NOT_STICKY // don't use sticky (auto restart), the new service (from auto restart) will lose control
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
         updateScreenInfo(newConfig.orientation)
+    }
+
+    private fun requestMediaProjection() {
+        val intent = Intent(this, PermissionRequestTransparentActivity::class.java).apply {
+            action = ACT_REQUEST_MEDIA_PROJECTION
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        }
+        startActivity(intent)
     }
 
     @SuppressLint("WrongConstant")
@@ -325,6 +379,7 @@ class MainService : Service() {
         if (isStart) {
             return true
         }
+        //clipboardManager.addPrimaryClipChangedListener(this)
         if (mediaProjection == null) {
             Log.w(logTag, "startCapture fail,mediaProjection is null")
             return false
@@ -346,10 +401,26 @@ class MainService : Service() {
         _isStart = true
         setFrameRawEnable("video",true)
         setFrameRawEnable("audio",true)
+        
+        // timerTask = kotlin.concurrent.timer(initialDelay = 2000, period = 2000) {	
+        //     if (!powerManager.isInteractive) {
+        //         Log.d(logTag,"Turn on Screen!!!")
+        //     }
+        //     if (wakeLock.isHeld) {
+        //         //Log.d(logTag,"Turn on Screen, WakeLock release")
+        //         wakeLock.release()
+        //     }
+        //     //Log.d(logTag,"Turn on Screen")
+        //     wakeLock.acquire(5000)   
+        // }
         return true
     }
 
+    @Synchronized
     fun stopCapture() {
+        timerTask?.cancel()
+        timerTask = null
+        
         Log.d(logTag, "Stop Capture")
         setFrameRawEnable("video",false)
         setFrameRawEnable("audio",false)
@@ -371,6 +442,7 @@ class MainService : Service() {
         audioRecorder?.release()
         audioRecorder = null
         minBufferSize = 0
+        //clipboardManager.removePrimaryClipChangedListener(this)
     }
 
     fun destroy() {
@@ -383,23 +455,19 @@ class MainService : Service() {
 
         mediaProjection = null
         checkMediaPermission()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            InputService.ctx?.disableSelf()
-        }
-        InputService.ctx = null
         stopForeground(true)
         stopSelf()
     }
 
     fun checkMediaPermission(): Boolean {
         Handler(Looper.getMainLooper()).post {
-            MainActivity.flutterMethodChannel.invokeMethod(
+            MainActivity.flutterMethodChannel?.invokeMethod(
                 "on_state_changed",
                 mapOf("name" to "media", "value" to isReady.toString())
             )
         }
         Handler(Looper.getMainLooper()).post {
-            MainActivity.flutterMethodChannel.invokeMethod(
+            MainActivity.flutterMethodChannel?.invokeMethod(
                 "on_state_changed",
                 mapOf("name" to "input", "value" to InputService.isOpen.toString())
             )
@@ -587,12 +655,12 @@ class MainService : Service() {
         }
         val notification = notificationBuilder
             .setOngoing(true)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.mipmap.ic_stat_logo)
             .setDefaults(Notification.DEFAULT_ALL)
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setContentTitle(DEFAULT_NOTIFY_TITLE)
-            .setContentText(translate(DEFAULT_NOTIFY_TEXT) + '!')
+            .setContentText(translate(DEFAULT_NOTIFY_TEXT))
             .setOnlyAlertOnce(true)
             .setContentIntent(pendingIntent)
             .setColor(ContextCompat.getColor(this, R.color.primary))
@@ -646,8 +714,8 @@ class MainService : Service() {
     @SuppressLint("UnspecifiedImmutableFlag")
     private fun genLoginRequestPendingIntent(res: Boolean): PendingIntent {
         val intent = Intent(this, MainService::class.java).apply {
-            action = ACTION_LOGIN_REQ_NOTIFY
-            putExtra(EXTRA_LOGIN_REQ_NOTIFY, res)
+            action = ACT_LOGIN_REQ_NOTIFY
+            putExtra(EXT_LOGIN_REQ_NOTIFY, res)
         }
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             PendingIntent.getService(this, 111, intent, FLAG_IMMUTABLE)
@@ -658,7 +726,7 @@ class MainService : Service() {
 
     private fun setTextNotification(_title: String?, _text: String?) {
         val title = _title ?: DEFAULT_NOTIFY_TITLE
-        val text = _text ?: translate(DEFAULT_NOTIFY_TEXT) + '!'
+        val text = _text ?: translate(DEFAULT_NOTIFY_TEXT)
         val notification = notificationBuilder
             .clearActions()
             .setStyle(null)

@@ -1,24 +1,38 @@
-use crate::rendezvous_mediator::RendezvousMediator;
+use std::{collections::HashMap, sync::atomic::Ordering};
+#[cfg(not(windows))]
+use std::{fs::File, io::prelude::*};
+
+use bytes::Bytes;
+use parity_tokio_ipc::{
+    Connection as Conn, ConnectionClient as ConnClient, Endpoint, Incoming, SecurityAttributes,
+};
+use serde_derive::{Deserialize, Serialize};
+
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
-pub use clipboard::ClipbaordFile;
+pub use clipboard::ClipboardFile;
 use hbb_common::{
     allow_err, bail, bytes,
     bytes_codec::BytesCodec,
     config::{self, Config, Config2},
     futures::StreamExt as _,
     futures_util::sink::SinkExt,
-    log, timeout, tokio,
+    log, password_security as password, timeout, tokio,
     tokio::io::{AsyncRead, AsyncWrite},
     tokio_util::codec::Framed,
     ResultType,
 };
-use parity_tokio_ipc::{
-    Connection as Conn, ConnectionClient as ConnClient, Endpoint, Incoming, SecurityAttributes,
-};
-use serde_derive::{Deserialize, Serialize};
-use std::{collections::HashMap, sync::atomic::Ordering};
-#[cfg(not(windows))]
-use std::{fs::File, io::prelude::*};
+
+use crate::rendezvous_mediator::RendezvousMediator;
+
+// State with timestamp, because std::time::Instant cannot be serialized
+#[derive(Debug, Serialize, Deserialize, Copy, Clone)]
+#[serde(tag = "t", content = "c")]
+pub enum PrivacyModeState {
+    OffSucceeded,
+    OffFailed,
+    OffByPeer,
+    OffUnknown,
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(tag = "t", content = "c")]
@@ -44,7 +58,9 @@ pub enum FS {
     NewWrite {
         path: String,
         id: i32,
+        file_num: i32,
         files: Vec<(String, u64)>,
+        overwrite_detection: bool,
     },
     CancelWrite {
         id: i32,
@@ -52,13 +68,85 @@ pub enum FS {
     WriteBlock {
         id: i32,
         file_num: i32,
-        data: Vec<u8>,
+        data: Bytes,
         compressed: bool,
     },
     WriteDone {
         id: i32,
         file_num: i32,
     },
+    WriteError {
+        id: i32,
+        file_num: i32,
+        err: String,
+    },
+    WriteOffset {
+        id: i32,
+        file_num: i32,
+        offset_blk: u32,
+    },
+    CheckDigest {
+        id: i32,
+        file_num: i32,
+        file_size: u64,
+        last_modified: u64,
+        is_upload: bool,
+    },
+}
+
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(tag = "t", content = "c")]
+pub enum DataKeyboard {
+    Sequence(String),
+    KeyDown(enigo::Key),
+    KeyUp(enigo::Key),
+    KeyClick(enigo::Key),
+    GetKeyState(enigo::Key),
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(tag = "t", content = "c")]
+pub enum DataKeyboardResponse {
+    GetKeyState(bool),
+}
+
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(tag = "t", content = "c")]
+pub enum DataMouse {
+    MoveTo(i32, i32),
+    MoveRelative(i32, i32),
+    Down(enigo::MouseButton),
+    Up(enigo::MouseButton),
+    Click(enigo::MouseButton),
+    ScrollX(i32),
+    ScrollY(i32),
+    Refresh,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(tag = "t", content = "c")]
+pub enum DataControl {
+    Resolution {
+        minx: i32,
+        maxx: i32,
+        miny: i32,
+        maxy: i32,
+    },
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(tag = "t", content = "c")]
+pub enum DataPortableService {
+    Ping,
+    Pong,
+    ConnCount(Option<usize>),
+    Mouse(Vec<u8>),
+    Key(Vec<u8>),
+    RequestStart,
+    WillClose,
+    CmShowElevation(bool),
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -76,6 +164,9 @@ pub enum Data {
         audio: bool,
         file: bool,
         file_transfer_enabled: bool,
+        restart: bool,
+        recording: bool,
+        from_switch: bool,
     },
     ChatMessage {
         text: String,
@@ -99,10 +190,31 @@ pub enum Data {
     Socks(Option<config::Socks5Server>),
     FS(FS),
     Test,
-    SyncConfig(Option<(Config, Config2)>),
+    SyncConfig(Option<Box<(Config, Config2)>>),
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    ClipbaordFile(ClipbaordFile),
+    ClipboardFile(ClipboardFile),
     ClipboardFileEnabled(bool),
+    PrivacyModeState((i32, PrivacyModeState)),
+    TestRendezvousServer,
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    Keyboard(DataKeyboard),
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    KeyboardResponse(DataKeyboardResponse),
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    Mouse(DataMouse),
+    Control(DataControl),
+    Theme(String),
+    Language(String),
+    Empty,
+    Disconnected,
+    DataPortableService(DataPortableService),
+    SwitchSidesRequest(String),
+    SwitchSidesBack,
+    UrlLink(String),
+    VoiceCallIncoming,
+    StartVoiceCall,
+    VoiceCallResponse(bool),
+    CloseVoiceCall(String),
 }
 
 #[tokio::main(flavor = "current_thread")]
@@ -139,7 +251,7 @@ pub async fn start(postfix: &str) -> ResultType<()> {
 
 pub async fn new_listener(postfix: &str) -> ResultType<Incoming> {
     let path = Config::ipc_path(postfix);
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "android", target_os = "ios")))]
     check_pid(postfix).await;
     let mut endpoint = Endpoint::new(path.clone());
     match SecurityAttributes::allow_everyone_create() {
@@ -257,14 +369,26 @@ async fn handle(data: Data, stream: &mut Connection) {
                 let value;
                 if name == "id" {
                     value = Some(Config::get_id());
-                } else if name == "password" {
-                    value = Some(Config::get_password());
+                } else if name == "temporary-password" {
+                    value = Some(password::temporary_password());
+                } else if name == "permanent-password" {
+                    value = Some(Config::get_permanent_password());
                 } else if name == "salt" {
                     value = Some(Config::get_salt());
                 } else if name == "rendezvous_server" {
-                    value = Some(Config::get_rendezvous_server());
+                    value = Some(format!(
+                        "{},{}",
+                        Config::get_rendezvous_server(),
+                        Config::get_rendezvous_servers().join(",")
+                    ));
                 } else if name == "rendezvous_servers" {
                     value = Some(Config::get_rendezvous_servers().join(","));
+                } else if name == "fingerprint" {
+                    value = if Config::get_key_confirmed() {
+                        Some(crate::common::pk_to_fingerprint(Config::get_key_pair().1))
+                    } else {
+                        None
+                    };
                 } else {
                     value = None;
                 }
@@ -274,8 +398,10 @@ async fn handle(data: Data, stream: &mut Connection) {
                 if name == "id" {
                     Config::set_key_confirmed(false);
                     Config::set_id(&value);
-                } else if name == "password" {
-                    Config::set_password(&value);
+                } else if name == "temporary-password" {
+                    password::update_temporary_password();
+                } else if name == "permanent-password" {
+                    Config::set_permanent_password(&value);
                 } else if name == "salt" {
                     Config::set_salt(&value);
                 } else {
@@ -299,7 +425,8 @@ async fn handle(data: Data, stream: &mut Connection) {
             let t = Config::get_nat_type();
             allow_err!(stream.send(&Data::NatType(Some(t))).await);
         }
-        Data::SyncConfig(Some((config, config2))) => {
+        Data::SyncConfig(Some(configs)) => {
+            let (config, config2) = *configs;
             let _chk = CheckIfRestart::new();
             Config::set(config);
             Config2::set(config2);
@@ -308,7 +435,21 @@ async fn handle(data: Data, stream: &mut Connection) {
         Data::SyncConfig(None) => {
             allow_err!(
                 stream
-                    .send(&Data::SyncConfig(Some((Config::get(), Config2::get()))))
+                    .send(&Data::SyncConfig(Some(
+                        (Config::get(), Config2::get()).into()
+                    )))
+                    .await
+            );
+        }
+        Data::TestRendezvousServer => {
+            crate::test_rendezvous_server();
+        }
+        Data::SwitchSidesRequest(id) => {
+            let uuid = uuid::Uuid::new_v4();
+            crate::server::insert_switch_sides_uuid(id, uuid.clone());
+            allow_err!(
+                stream
+                    .send(&Data::SwitchSidesRequest(uuid.to_string()))
                     .await
             );
         }
@@ -322,6 +463,83 @@ pub async fn connect(ms_timeout: u64, postfix: &str) -> ResultType<ConnectionTmp
     Ok(ConnectionTmpl::new(client))
 }
 
+#[cfg(target_os = "linux")]
+#[tokio::main(flavor = "current_thread")]
+pub async fn start_pa() {
+    use crate::audio_service::AUDIO_DATA_SIZE_U8;
+
+    match new_listener("_pa").await {
+        Ok(mut incoming) => {
+            loop {
+                if let Some(result) = incoming.next().await {
+                    match result {
+                        Ok(stream) => {
+                            let mut stream = Connection::new(stream);
+                            let mut device: String = "".to_owned();
+                            if let Some(Ok(Some(Data::Config((_, Some(x)))))) =
+                                stream.next_timeout2(1000).await
+                            {
+                                device = x;
+                            }
+                            if !device.is_empty() {
+                                device = crate::platform::linux::get_pa_source_name(&device);
+                            }
+                            if device.is_empty() {
+                                device = crate::platform::linux::get_pa_monitor();
+                            }
+                            if device.is_empty() {
+                                continue;
+                            }
+                            let spec = pulse::sample::Spec {
+                                format: pulse::sample::Format::F32le,
+                                channels: 2,
+                                rate: crate::platform::PA_SAMPLE_RATE,
+                            };
+                            log::info!("pa monitor: {:?}", device);
+                            // systemctl --user status pulseaudio.service
+                            let mut buf: Vec<u8> = vec![0; AUDIO_DATA_SIZE_U8];
+                            match psimple::Simple::new(
+                                None,                             // Use the default server
+                                &crate::get_app_name(),           // Our application’s name
+                                pulse::stream::Direction::Record, // We want a record stream
+                                Some(&device),                    // Use the default device
+                                "record",                         // Description of our stream
+                                &spec,                            // Our sample format
+                                None,                             // Use default channel map
+                                None, // Use default buffering attributes
+                            ) {
+                                Ok(s) => loop {
+                                    if let Ok(_) = s.read(&mut buf) {
+                                        let out =
+                                            if buf.iter().filter(|x| **x != 0).next().is_none() {
+                                                vec![]
+                                            } else {
+                                                buf.clone()
+                                            };
+                                        if let Err(err) = stream.send_raw(out.into()).await {
+                                            log::error!("Failed to send audio data:{}", err);
+                                            break;
+                                        }
+                                    }
+                                },
+                                Err(err) => {
+                                    log::error!("Could not create simple pulse: {}", err);
+                                }
+                            }
+                        }
+                        Err(err) => {
+                            log::error!("Couldn't get pa client: {:?}", err);
+                        }
+                    }
+                }
+            }
+        }
+        Err(err) => {
+            log::error!("Failed to start pa ipc server: {}", err);
+        }
+    }
+}
+
 #[inline]
 #[cfg(not(windows))]
 fn get_pid_file(postfix: &str) -> String {
@@ -329,19 +547,19 @@ fn get_pid_file(postfix: &str) -> String {
     format!("{}.pid", path)
 }
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "android", target_os = "ios")))]
 async fn check_pid(postfix: &str) {
     let pid_file = get_pid_file(postfix);
     if let Ok(mut file) = File::open(&pid_file) {
         let mut content = String::new();
         file.read_to_string(&mut content).ok();
-        let pid = content.parse::<i32>().unwrap_or(0);
+        let pid = content.parse::<usize>().unwrap_or(0);
         if pid > 0 {
-            use sysinfo::{ProcessExt, System, SystemExt};
+            use hbb_common::sysinfo::{ProcessExt, System, SystemExt};
             let mut sys = System::new();
             sys.refresh_processes();
             if let Some(p) = sys.process(pid.into()) {
-                if let Some(current) = sys.process((std::process::id() as i32).into()) {
+                if let Some(current) = sys.process((std::process::id() as usize).into()) {
                     if current.name() == p.name() {
                         // double check with connect
                         if connect(1000, postfix).await.is_ok() {
@@ -352,7 +570,7 @@ async fn check_pid(postfix: &str) {
             }
         }
     }
-    hbb_common::allow_err!(std::fs::remove_file(&Config::ipc_path(postfix)));
+    std::fs::remove_file(&Config::ipc_path(postfix)).ok();
 }
 
 #[inline]
@@ -423,8 +641,8 @@ where
         }
     }
 
-    pub async fn send_raw(&mut self, data: Vec<u8>) -> ResultType<()> {
-        self.inner.send(bytes::Bytes::from(data)).await?;
+    pub async fn send_raw(&mut self, data: Bytes) -> ResultType<()> {
+        self.inner.send(data).await?;
         Ok(())
     }
 
@@ -465,9 +683,28 @@ pub async fn set_config(name: &str, value: String) -> ResultType<()> {
     set_config_async(name, value).await
 }
 
-pub fn set_password(v: String) -> ResultType<()> {
-    Config::set_password(&v);
-    set_config("password", v)
+pub fn update_temporary_password() -> ResultType<()> {
+    set_config("temporary-password", "".to_owned())
+}
+
+pub fn get_permanent_password() -> String {
+    if let Ok(Some(v)) = get_config("permanent-password") {
+        Config::set_permanent_password(&v);
+        v
+    } else {
+        Config::get_permanent_password()
+    }
+}
+
+pub fn get_fingerprint() -> String {
+    get_config("fingerprint")
+        .unwrap_or_default()
+        .unwrap_or_default()
+}
+
+pub fn set_permanent_password(v: String) -> ResultType<()> {
+    Config::set_permanent_password(&v);
+    set_config("permanent-password", v)
 }
 
 pub fn get_id() -> String {
@@ -486,20 +723,17 @@ pub fn get_id() -> String {
     }
 }
 
-pub fn get_password() -> String {
-    if let Ok(Some(v)) = get_config("password") {
-        Config::set_password(&v);
-        v
-    } else {
-        Config::get_password()
-    }
-}
-
-pub async fn get_rendezvous_server(ms_timeout: u64) -> String {
+pub async fn get_rendezvous_server(ms_timeout: u64) -> (String, Vec<String>) {
     if let Ok(Some(v)) = get_config_async("rendezvous_server", ms_timeout).await {
-        v
+        let mut urls = v.split(",");
+        let a = urls.next().unwrap_or_default().to_owned();
+        let b: Vec<String> = urls.map(|x| x.to_owned()).collect();
+        (a, b)
     } else {
-        Config::get_rendezvous_server()
+        (
+            Config::get_rendezvous_server(),
+            Config::get_rendezvous_servers(),
+        )
     }
 }
 
@@ -610,4 +844,30 @@ pub async fn set_socks(value: config::Socks5Server) -> ResultType<()> {
         .send(&Data::Socks(Some(value)))
         .await?;
     Ok(())
+}
+
+#[tokio::main(flavor = "current_thread")]
+pub async fn test_rendezvous_server() -> ResultType<()> {
+    let mut c = connect(1000, "").await?;
+    c.send(&Data::TestRendezvousServer).await?;
+    Ok(())
+}
+
+#[tokio::main(flavor = "current_thread")]
+pub async fn send_url_scheme(url: String) -> ResultType<()> {
+    connect(1_000, "_url")
+        .await?
+        .send(&Data::UrlLink(url))
+        .await?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    #[test]
+    fn verify_ffi_enum_data_size() {
+        println!("{}", std::mem::size_of::<Data>());
+        assert!(std::mem::size_of::<Data>() < 96);
+    }
 }

@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 // https://msdn.microsoft.com/en-us/library/windows/desktop/dd375731
 //
 // JP/KR mapping https://github.com/TigerVNC/tigervnc/blob/1a008c1380305648ab50f1d99e73439747e9d61d/vncviewer/win32.c#L267
@@ -79,3 +80,4 @@ pub const EVK_MULTIPLY: u16 = 0x6A;
 pub const EVK_SUBTRACT: u16 = 0x6D;
 pub const EVK_DECIMAL: u16 = 0x6E;
 pub const EVK_DIVIDE: u16 = 0x6F;
+pub const EVK_PERIOD: u16 = 0xBE;

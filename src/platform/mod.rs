@@ -11,20 +11,20 @@ pub mod windows;
 #[cfg(target_os = "macos")]
 pub mod macos;
 
+#[cfg(target_os = "macos")]
+pub mod delegate;
+
 #[cfg(target_os = "linux")]
 pub mod linux;
 
-use hbb_common::{message_proto::CursorData, ResultType};
-#[cfg(not(target_os = "macos"))]
-const SERVICE_INTERVAL: u64 = 300;
+#[cfg(all(target_os = "linux", feature = "linux_headless"))]
+#[cfg(not(any(feature = "flatpak", feature = "appimage")))]
+pub mod linux_desktop_manager;
 
-pub fn get_license_key() -> String {
-    #[cfg(windows)]
-    if let Some(lic) = windows::get_license() {
-        return lic.key;
-    }
-    Default::default()
-}
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+use hbb_common::{message_proto::CursorData, ResultType};
+#[cfg(not(any(target_os = "macos", target_os = "android", target_os = "ios")))]
+const SERVICE_INTERVAL: u64 = 300;
 
 pub fn is_xfce() -> bool {
     #[cfg(target_os = "linux")]
@@ -35,6 +35,13 @@ pub fn is_xfce() -> bool {
     {
         return false;
     }
+}
+
+pub fn breakdown_callback() {
+    #[cfg(target_os = "linux")]
+    crate::input_service::clear_remapped_keycode();
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    crate::input_service::release_device_modifiers();
 }
 
 // Android
@@ -72,5 +79,14 @@ mod tests {
         for _ in 0..30 {
             assert!(!get_cursor_pos().is_none());
         }
+    }
+
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    #[test]
+    fn test_resolution() {
+        let name = r"\\.\DISPLAY1";
+        println!("current:{:?}", current_resolution(name));
+        println!("change:{:?}", change_resolution(name, 2880, 1800));
+        println!("resolutions:{:?}", resolutions(name));
     }
 }

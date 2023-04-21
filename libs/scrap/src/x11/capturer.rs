@@ -1,6 +1,6 @@
 use std::{io, ptr, slice};
 
-use libc;
+use hbb_common::libc;
 
 use super::ffi::*;
 use super::Display;
@@ -14,7 +14,7 @@ pub struct Capturer {
     size: usize,
     use_yuv: bool,
     yuv: Vec<u8>,
-    saved_raw_data: Vec<u128>, // for faster compare and copy
+    saved_raw_data: Vec<u8>, // for faster compare and copy
 }
 
 impl Capturer {
@@ -72,6 +72,10 @@ impl Capturer {
             saved_raw_data: Vec::new(),
         };
         Ok(c)
+    }
+
+    pub fn set_use_yuv(&mut self, use_yuv: bool) {
+        self.use_yuv = use_yuv;
     }
 
     pub fn display(&self) -> &Display {

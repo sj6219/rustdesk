@@ -1,6 +1,7 @@
 use std::{io, mem, ptr, slice};
 pub mod gdi;
 pub use gdi::CapturerGDI;
+pub mod mag;
 
 use winapi::{
     shared::{
@@ -49,7 +50,7 @@ pub struct Capturer {
     rotated: Vec<u8>,
     gdi_capturer: Option<CapturerGDI>,
     gdi_buffer: Vec<u8>,
-    saved_raw_data: Vec<u128>, // for faster compare and copy
+    saved_raw_data: Vec<u8>, // for faster compare and copy
 }
 
 impl Capturer {
@@ -57,6 +58,7 @@ impl Capturer {
         let mut device = ptr::null_mut();
         let mut context = ptr::null_mut();
         let mut duplication = ptr::null_mut();
+        #[allow(invalid_value)]
         let mut desc = unsafe { mem::MaybeUninit::uninit().assume_init() };
         let mut gdi_capturer = None;
 
@@ -155,6 +157,10 @@ impl Capturer {
         })
     }
 
+    pub fn set_use_yuv(&mut self, use_yuv: bool) {
+        self.use_yuv = use_yuv;
+    }
+
     pub fn is_gdi(&self) -> bool {
         self.gdi_capturer.is_some()
     }
@@ -171,6 +177,7 @@ impl Capturer {
 
     unsafe fn load_frame(&mut self, timeout: UINT) -> io::Result<(*const u8, i32)> {
         let mut frame = ptr::null_mut();
+        #[allow(invalid_value)]
         let mut info = mem::MaybeUninit::uninit().assume_init();
 
         wrap_hresult((*self.duplication.0).AcquireNextFrame(timeout, &mut info, &mut frame))?;
@@ -180,6 +187,7 @@ impl Capturer {
             return Err(std::io::ErrorKind::WouldBlock.into());
         }
 
+        #[allow(invalid_value)]
         let mut rect = mem::MaybeUninit::uninit().assume_init();
         if self.fastlane {
             wrap_hresult((*self.duplication.0).MapDesktopSurface(&mut rect))?;
@@ -199,6 +207,7 @@ impl Capturer {
         );
         let texture = ComPtr(texture);
 
+        #[allow(invalid_value)]
         let mut texture_desc = mem::MaybeUninit::uninit().assume_init();
         (*texture.0).GetDesc(&mut texture_desc);
 
@@ -257,7 +266,7 @@ impl Capturer {
                         _ => {
                             return Err(io::Error::new(
                                 io::ErrorKind::Other,
-                                "Unknown roration".to_string(),
+                                "Unknown rotation".to_string(),
                             ));
                         }
                     };
@@ -357,6 +366,7 @@ impl Displays {
         let mut all = Vec::new();
         let mut i: DWORD = 0;
         loop {
+            #[allow(invalid_value)]
             let mut d: DISPLAY_DEVICEW = unsafe { std::mem::MaybeUninit::uninit().assume_init() };
             d.cb = std::mem::size_of::<DISPLAY_DEVICEW>() as _;
             let ok = unsafe { EnumDisplayDevicesW(std::ptr::null(), i, &mut d as _, 0) };
@@ -377,6 +387,7 @@ impl Displays {
                 gdi: true,
             };
             disp.desc.DeviceName = d.DeviceName;
+            #[allow(invalid_value)]
             let mut m: DEVMODEW = unsafe { std::mem::MaybeUninit::uninit().assume_init() };
             m.dmSize = std::mem::size_of::<DEVMODEW>() as _;
             m.dmDriverExtra = 0;
@@ -436,6 +447,7 @@ impl Displays {
         // We get the display's details.
 
         let desc = unsafe {
+            #[allow(invalid_value)]
             let mut desc = mem::MaybeUninit::uninit().assume_init();
             (*output.0).GetDesc(&mut desc);
             desc

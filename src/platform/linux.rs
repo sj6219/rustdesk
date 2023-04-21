@@ -1,14 +1,24 @@
 use super::{CursorData, ResultType};
-use hbb_common::{allow_err, bail, log};
-use libc::{c_char, c_int, c_void};
-use std::io::prelude::*;
+use desktop::Desktop;
+pub use hbb_common::platform::linux::*;
+use hbb_common::{
+    allow_err, bail,
+    libc::{c_char, c_int, c_long, c_void},
+    log,
+    message_proto::Resolution,
+    regex::{Captures, Regex},
+};
 use std::{
     cell::RefCell,
+    path::{Path, PathBuf},
+    process::{Child, Command},
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc,
     },
+    time::{Duration, Instant},
 };
+
 type Xdo = *const c_void;
 
 pub const PA_SAMPLE_RATE: u32 = 48000;
@@ -51,8 +61,13 @@ pub struct xcb_xfixes_get_cursor_image {
     pub height: u16,
     pub xhot: u16,
     pub yhot: u16,
-    pub cursor_serial: libc::c_long,
-    pub pixels: *const libc::c_long,
+    pub cursor_serial: c_long,
+    pub pixels: *const c_long,
+}
+
+#[inline]
+fn sleep_millis(millis: u64) {
+    std::thread::sleep(Duration::from_millis(millis));
 }
 
 pub fn get_cursor_pos() -> Option<(i32, i32)> {
@@ -110,7 +125,8 @@ pub fn get_cursor_data(hcursor: u64) -> ResultType<CursorData> {
                         cd.id = (*img).cursor_serial as _;
                         let pixels =
                             std::slice::from_raw_parts((*img).pixels, (cd.width * cd.height) as _);
-                        cd.colors.resize(pixels.len() * 4, 0);
+                        // cd.colors.resize(pixels.len() * 4, 0);
+                        let mut cd_colors = vec![0_u8; pixels.len() * 4];
                         for y in 0..cd.height {
                             for x in 0..cd.width {
                                 let pos = (y * cd.width + x) as usize;
@@ -123,12 +139,13 @@ pub fn get_cursor_data(hcursor: u64) -> ResultType<CursorData> {
                                     continue;
                                 }
                                 let pos = pos * 4;
-                                cd.colors[pos] = r as _;
-                                cd.colors[pos + 1] = g as _;
-                                cd.colors[pos + 2] = b as _;
-                                cd.colors[pos + 3] = a as _;
+                                cd_colors[pos] = r as _;
+                                cd_colors[pos + 1] = g as _;
+                                cd_colors[pos + 2] = b as _;
+                                cd_colors[pos + 3] = a as _;
                             }
                         }
+                        cd.colors = cd_colors.into();
                         res = Some(cd);
                     }
                     if !img.is_null() {
@@ -144,11 +161,160 @@ pub fn get_cursor_data(hcursor: u64) -> ResultType<CursorData> {
     }
 }
 
+fn start_uinput_service() {
+    use crate::server::uinput::service;
+    std::thread::spawn(|| {
+        service::start_service_control();
+    });
+    std::thread::spawn(|| {
+        service::start_service_keyboard();
+    });
+    std::thread::spawn(|| {
+        service::start_service_mouse();
+    });
+}
+
+#[inline]
+fn try_start_server_(user: Option<(String, String)>) -> ResultType<Option<Child>> {
+    if user.is_some() {
+        run_as_user(vec!["--server"], user)
+    } else {
+        Ok(Some(crate::run_me(vec!["--server"])?))
+    }
+}
+
+#[inline]
+fn start_server(user: Option<(String, String)>, server: &mut Option<Child>) {
+    match try_start_server_(user) {
+        Ok(ps) => *server = ps,
+        Err(err) => {
+            log::error!("Failed to start server: {}", err);
+        }
+    }
+}
+
+fn stop_server(server: &mut Option<Child>) {
+    if let Some(mut ps) = server.take() {
+        allow_err!(ps.kill());
+        sleep_millis(30);
+        match ps.try_wait() {
+            Ok(Some(_status)) => {}
+            Ok(None) => {
+                let _res = ps.wait();
+            }
+            Err(e) => log::error!("error attempting to wait: {e}"),
+        }
+    }
+}
+
+fn set_x11_env(desktop: &Desktop) {
+    log::info!("DISPLAY: {}", desktop.display);
+    log::info!("XAUTHORITY: {}", desktop.xauth);
+    if !desktop.display.is_empty() {
+        std::env::set_var("DISPLAY", &desktop.display);
+    }
+    if !desktop.xauth.is_empty() {
+        std::env::set_var("XAUTHORITY", &desktop.xauth);
+    }
+}
+
+#[inline]
+fn stop_rustdesk_servers() {
+    let _ = run_cmds(&format!(
+        r##"ps -ef | grep -E 'rustdesk +--server' | awk '{{printf("kill -9 %d\n", $2)}}' | bash"##,
+    ));
+}
+
+#[inline]
+fn stop_subprocess() {
+    let _ = run_cmds(&format!(
+        r##"ps -ef | grep '/etc/rustdesk/xorg.conf' | grep -v grep | awk '{{printf("kill -9 %d\n", $2)}}' | bash"##,
+    ));
+    let _ = run_cmds(&format!(
+        r##"ps -ef | grep -E 'rustdesk +--cm-no-ui' | grep -v grep | awk '{{printf("kill -9 %d\n", $2)}}' | bash"##,
+    ));
+}
+
+fn should_start_server(
+    try_x11: bool,
+    uid: &mut String,
+    desktop: &Desktop,
+    cm0: &mut bool,
+    last_restart: &mut Instant,
+    server: &mut Option<Child>,
+) -> bool {
+    let cm = get_cm();
+    let mut start_new = false;
+    let mut should_kill = false;
+
+    if desktop.is_headless() {
+        if !uid.is_empty() {
+            // From having a monitor to not having a monitor.
+            *uid = "".to_owned();
+            should_kill = true;
+        }
+    } else if desktop.uid != *uid && !desktop.uid.is_empty() {
+        *uid = desktop.uid.clone();
+        if try_x11 {
+            set_x11_env(&desktop);
+        }
+        should_kill = true;
+    }
+
+    if !should_kill
+        && !cm
+        && ((*cm0 && last_restart.elapsed().as_secs() > 60)
+            || last_restart.elapsed().as_secs() > 3600)
+    {
+        // restart server if new connections all closed, or every one hour,
+        // as a workaround to resolve "SpotUdp" (dns resolve)
+        // and x server get displays failure issue
+        should_kill = true;
+        log::info!("restart server");
+    }
+
+    if should_kill {
+        if let Some(ps) = server.as_mut() {
+            allow_err!(ps.kill());
+            sleep_millis(30);
+            *last_restart = Instant::now();
+        }
+    }
+
+    if let Some(ps) = server.as_mut() {
+        match ps.try_wait() {
+            Ok(Some(_)) => {
+                *server = None;
+                start_new = true;
+            }
+            _ => {}
+        }
+    } else {
+        start_new = true;
+    }
+    *cm0 = cm;
+    start_new
+}
+
+// to-do: stop_server(&mut user_server); may not stop child correctly
+// stop_rustdesk_servers() is just a temp solution here.
+fn force_stop_server() {
+    stop_rustdesk_servers();
+    sleep_millis(super::SERVICE_INTERVAL);
+}
+
 pub fn start_os_service() {
+    stop_rustdesk_servers();
+    stop_subprocess();
+    start_uinput_service();
+
     let running = Arc::new(AtomicBool::new(true));
     let r = running.clone();
+    let mut desktop = Desktop::default();
+    let mut sid = "".to_owned();
     let mut uid = "".to_owned();
-    let mut server: Option<std::process::Child> = None;
+    let mut server: Option<Child> = None;
+    let mut user_server: Option<Child> = None;
     if let Err(err) = ctrlc::set_handler(move || {
         r.store(false, Ordering::SeqCst);
     }) {
@@ -156,110 +322,89 @@ pub fn start_os_service() {
     }
 
     let mut cm0 = false;
-    let mut last_restart = std::time::Instant::now();
+    let mut last_restart = Instant::now();
     while running.load(Ordering::SeqCst) {
-        let cm = get_cm();
-        let tmp = get_active_userid();
-        let mut start_new = false;
-        if tmp != uid && !tmp.is_empty() {
-            uid = tmp;
-            log::info!("uid of seat0: {}", uid);
-            let gdm = format!("/run/user/{}/gdm/Xauthority", uid);
-            let mut auth = get_env_tries("XAUTHORITY", &uid, 10);
-            if auth.is_empty() {
-                auth = if std::path::Path::new(&gdm).exists() {
-                    gdm
-                } else {
-                    let username = get_active_username();
-                    if username == "root" {
-                        format!("/{}/.Xauthority", username)
-                    } else {
-                        let tmp = format!("/home/{}/.Xauthority", username);
-                        if std::path::Path::new(&tmp).exists() {
-                            tmp
-                        } else {
-                            format!("/var/lib/{}/.Xauthority", username)
-                        }
-                    }
-                };
+        desktop.refresh();
+
+        // Duplicate logic here with should_start_server
+        // Login wayland will try to start a headless --server.
+        if desktop.username == "root" || !desktop.is_wayland() || desktop.is_login_wayland() {
+            // try kill subprocess "--server"
+            stop_server(&mut user_server);
+            // try start subprocess "--server"
+            if should_start_server(
+                true,
+                &mut uid,
+                &desktop,
+                &mut cm0,
+                &mut last_restart,
+                &mut server,
+            ) {
+                stop_subprocess();
+                force_stop_server();
+                start_server(None, &mut server);
             }
-            let mut d = get_env("DISPLAY", &uid);
-            if d.is_empty() {
-                d = get_display();
-            }
-            if d.is_empty() {
-                d = ":0".to_owned();
-            }
-            d = d.replace(&whoami::hostname(), "").replace("localhost", "");
-            log::info!("DISPLAY: {}", d);
-            log::info!("XAUTHORITY: {}", auth);
-            std::env::set_var("XAUTHORITY", auth);
-            std::env::set_var("DISPLAY", d);
-            if let Some(ps) = server.as_mut() {
-                allow_err!(ps.kill());
-                std::thread::sleep(std::time::Duration::from_millis(30));
-                last_restart = std::time::Instant::now();
-            }
-        } else if !cm
-            && ((cm0 && last_restart.elapsed().as_secs() > 60)
-                || last_restart.elapsed().as_secs() > 3600)
-        {
-            // restart server if new connections all closed, or every one hour,
-            // as a workaround to resolve "SpotUdp" (dns resolve)
-            // and x server get displays failure issue
-            if let Some(ps) = server.as_mut() {
-                allow_err!(ps.kill());
-                std::thread::sleep(std::time::Duration::from_millis(30));
-                last_restart = std::time::Instant::now();
-                log::info!("restart server");
-            }
-        }
-        if let Some(ps) = server.as_mut() {
-            match ps.try_wait() {
-                Ok(Some(_)) => {
-                    server = None;
-                    start_new = true;
-                }
-                _ => {}
+        } else if desktop.username != "" {
+            // try kill subprocess "--server"
+            stop_server(&mut server);
+
+            // try start subprocess "--server"
+            if should_start_server(
+                false,
+                &mut uid,
+                &desktop,
+                &mut cm0,
+                &mut last_restart,
+                &mut user_server,
+            ) {
+                stop_subprocess();
+                force_stop_server();
+                start_server(
+                    Some((desktop.uid.clone(), desktop.username.clone())),
+                    &mut user_server,
+                );
             }
         } else {
-            start_new = true;
+            force_stop_server();
+            stop_server(&mut user_server);
+            stop_server(&mut server);
         }
-        if start_new {
-            match crate::run_me(vec!["--server"]) {
-                Ok(ps) => server = Some(ps),
-                Err(err) => {
-                    log::error!("Failed to start server: {}", err);
-                }
-            }
+
+        let keeps_headless = sid.is_empty() && desktop.is_headless();
+        let keeps_session = sid == desktop.sid;
+        if keeps_headless || keeps_session {
+            // for fixing https://github.com/rustdesk/rustdesk/issues/3129 to avoid too much dbus calling,
+            sleep_millis(500);
+        } else {
+            sleep_millis(super::SERVICE_INTERVAL);
         }
-        cm0 = cm;
-        std::thread::sleep(std::time::Duration::from_millis(super::SERVICE_INTERVAL));
+        if !desktop.is_headless() {
+            sid = desktop.sid.clone();
+        }
     }
 
+    if let Some(ps) = user_server.take().as_mut() {
+        allow_err!(ps.kill());
+    }
     if let Some(ps) = server.take().as_mut() {
         allow_err!(ps.kill());
     }
     log::info!("Exit");
 }
 
-pub fn get_active_userid() -> String {
-    get_value_of_seat0(1)
+#[inline]
+pub fn get_active_user_id_name() -> (String, String) {
+    let vec_id_name = get_values_of_seat0(&[1, 2]);
+    (vec_id_name[0].clone(), vec_id_name[1].clone())
 }
 
-fn is_active(sid: &str) -> bool {
-    if let Ok(output) = std::process::Command::new("loginctl")
-        .args(vec!["show-session", "-p", "State", sid])
-        .output()
-    {
-        String::from_utf8_lossy(&output.stdout).contains("active")
-    } else {
-        false
-    }
+#[inline]
+pub fn get_active_userid() -> String {
+    get_values_of_seat0(&[1])[0].clone()
 }
 
 fn get_cm() -> bool {
-    if let Ok(output) = std::process::Command::new("ps").args(vec!["aux"]).output() {
+    if let Ok(output) = Command::new("ps").args(vec!["aux"]).output() {
         for line in String::from_utf8_lossy(&output.stdout).lines() {
             if line.contains(&format!(
                 "{} --cm",
@@ -274,237 +419,19 @@ fn get_cm() -> bool {
     false
 }
 
-fn get_display() -> String {
-    let user = get_active_username();
-    log::debug!("w {}", &user);
-    if let Ok(output) = std::process::Command::new("w").arg(&user).output() {
-        for line in String::from_utf8_lossy(&output.stdout).lines() {
-            log::debug!("  {}", line);
-            let mut iter = line.split_whitespace();
-            let b = iter.nth(2);
-            if let Some(b) = b {
-                if b.starts_with(":") {
-                    return b.to_owned();
-                }
-            }
-        }
-    }
-    // above not work for gdm user
-    log::debug!("ls -l /tmp/.X11-unix/");
-    let mut last = "".to_owned();
-    if let Ok(output) = std::process::Command::new("ls")
-        .args(vec!["-l", "/tmp/.X11-unix/"])
-        .output()
-    {
-        for line in String::from_utf8_lossy(&output.stdout).lines() {
-            log::debug!("  {}", line);
-            let mut iter = line.split_whitespace();
-            let user_field = iter.nth(2);
-            if let Some(x) = iter.last() {
-                if x.starts_with("X") {
-                    last = x.replace("X", ":").to_owned();
-                    if user_field == Some(&user) {
-                        return last;
-                    }
-                }
-            }
-        }
-    }
-    last
-}
-
-fn get_value_of_seat0(i: usize) -> String {
-    if let Ok(output) = std::process::Command::new("loginctl").output() {
-        for line in String::from_utf8_lossy(&output.stdout).lines() {
-            if line.contains("seat0") {
-                if let Some(sid) = line.split_whitespace().nth(0) {
-                    if is_active(sid) {
-                        if let Some(uid) = line.split_whitespace().nth(i) {
-                            return uid.to_owned();
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // some case, there is no seat0 https://github.com/rustdesk/rustdesk/issues/73
-    if let Ok(output) = std::process::Command::new("loginctl").output() {
-        for line in String::from_utf8_lossy(&output.stdout).lines() {
-            if let Some(sid) = line.split_whitespace().nth(0) {
-                let d = get_display_server_of_session(sid);
-                if is_active(sid) && d != "tty" {
-                    if let Some(uid) = line.split_whitespace().nth(i) {
-                        return uid.to_owned();
-                    }
-                }
-            }
-        }
-    }
-
-    return "".to_owned();
-}
-
-pub fn get_display_server() -> String {
-    let session = get_value_of_seat0(0);
-    get_display_server_of_session(&session)
-}
-
-fn get_display_server_of_session(session: &str) -> String {
-    if let Ok(output) = std::process::Command::new("loginctl")
-        .args(vec!["show-session", "-p", "Type", session])
-        .output()
-    // Check session type of the session
-    {
-        let display_server = String::from_utf8_lossy(&output.stdout)
-            .replace("Type=", "")
-            .trim_end()
-            .into();
-        if display_server == "tty" {
-            // If the type is tty...
-            if let Ok(output) = std::process::Command::new("loginctl")
-                .args(vec!["show-session", "-p", "TTY", session])
-                .output()
-            // Get the tty number
-            {
-                let tty: String = String::from_utf8_lossy(&output.stdout)
-                    .replace("TTY=", "")
-                    .trim_end()
-                    .into();
-                if let Ok(Some(xorg_results)) =
-                    run_cmds(format!("ps -e | grep \"{}.\\\\+Xorg\"", tty))
-                // And check if Xorg is running on that tty
-                {
-                    if xorg_results.trim_end().to_string() != "" {
-                        // If it is, manually return "x11", otherwise return tty
-                        "x11".to_owned()
-                    } else {
-                        display_server
-                    }
-                } else {
-                    // If any of these commands fail just fall back to the display server
-                    display_server
-                }
-            } else {
-                display_server
-            }
-        } else {
-            // If the session is not a tty, then just return the type as usual
-            display_server
-        }
-    } else {
-        "".to_owned()
-    }
-}
-
 pub fn is_login_wayland() -> bool {
     if let Ok(contents) = std::fs::read_to_string("/etc/gdm3/custom.conf") {
-        contents.contains("#WaylandEnable=false")
+        contents.contains("#WaylandEnable=false") || contents.contains("WaylandEnable=true")
     } else if let Ok(contents) = std::fs::read_to_string("/etc/gdm/custom.conf") {
-        contents.contains("#WaylandEnable=false")
+        contents.contains("#WaylandEnable=false") || contents.contains("WaylandEnable=true")
     } else {
         false
     }
 }
 
-pub fn fix_login_wayland() {
-    let mut file = "/etc/gdm3/custom.conf".to_owned();
-    if !std::path::Path::new(&file).exists() {
-        file = "/etc/gdm/custom.conf".to_owned();
-    }
-    match std::process::Command::new("pkexec")
-        .args(vec![
-            "sed",
-            "-i",
-            "s/#WaylandEnable=false/WaylandEnable=false/g",
-            &file,
-        ])
-        .output()
-    {
-        Ok(x) => {
-            let x = String::from_utf8_lossy(&x.stderr);
-            if !x.is_empty() {
-                log::error!("fix_login_wayland failed: {}", x);
-            }
-        }
-        Err(err) => {
-            log::error!("fix_login_wayland failed: {}", err);
-        }
-    }
-}
-
+#[inline]
 pub fn current_is_wayland() -> bool {
-    let dtype = get_display_server();
-    return "wayland" == dtype && unsafe { UNMODIFIED };
-}
-
-pub fn modify_default_login() -> String {
-    let dsession = std::env::var("DESKTOP_SESSION").unwrap();
-    let user_name = std::env::var("USERNAME").unwrap();
-    if let Ok(Some(x)) =
-        run_cmds("ls /usr/share/* | grep ${DESKTOP_SESSION}-xorg.desktop".to_owned())
-    {
-        if x.trim_end().to_string() != "" {
-            match std::process::Command::new("pkexec")
-                .args(vec![
-                    "sed",
-                    "-i",
-                    &format!("s/={0}$/={0}-xorg/g", &dsession),
-                    &format!("/var/lib/AccountsService/users/{}", &user_name),
-                ])
-                .output()
-            {
-                Ok(x) => {
-                    let x = String::from_utf8_lossy(&x.stderr);
-                    if !x.is_empty() {
-                        log::error!("modify_default_login failed: {}", x);
-                        return "Fix failed! Please re-login with X server manually".to_owned();
-                    } else {
-                        unsafe {
-                            UNMODIFIED = false;
-                        }
-                        return "".to_owned();
-                    }
-                }
-                Err(err) => {
-                    log::error!("modify_default_login failed: {}", err);
-                    return "Fix failed! Please re-login with X server manually".to_owned();
-                }
-            }
-        } else if let Ok(Some(z)) =
-            run_cmds("ls /usr/share/* | grep ${DESKTOP_SESSION:0:-8}.desktop".to_owned())
-        {
-            if z.trim_end().to_string() != "" {
-                match std::process::Command::new("pkexec")
-                    .args(vec![
-                        "sed",
-                        "-i",
-                        &format!("s/={}$/={}/g", &dsession, &dsession[..dsession.len() - 8]),
-                        &format!("/var/lib/AccountsService/users/{}", &user_name),
-                    ])
-                    .output()
-                {
-                    Ok(x) => {
-                        let x = String::from_utf8_lossy(&x.stderr);
-                        if !x.is_empty() {
-                            log::error!("modify_default_login failed: {}", x);
-                            return "Fix failed! Please re-login with X server manually".to_owned();
-                        } else {
-                            unsafe {
-                                UNMODIFIED = false;
-                            }
-                            return "".to_owned();
-                        }
-                    }
-                    Err(err) => {
-                        log::error!("modify_default_login failed: {}", err);
-                        return "Fix failed! Please re-login with X server manually".to_owned();
-                    }
-                }
-            }
-        }
-    }
-    return "Fix failed! Please re-login with X server manually".to_owned();
+    return is_desktop_wayland() && unsafe { UNMODIFIED };
 }
 
 // to-do: test the other display manager
@@ -517,10 +444,30 @@ fn _get_display_manager() -> String {
     "gdm3".to_owned()
 }
 
+#[inline]
 pub fn get_active_username() -> String {
-    get_value_of_seat0(2)
+    get_values_of_seat0(&[2])[0].clone()
 }
 
+pub fn get_active_user_home() -> Option<PathBuf> {
+    let username = get_active_username();
+    if !username.is_empty() {
+        let home = PathBuf::from(format!("/home/{}", username));
+        if home.exists() {
+            return Some(home);
+        }
+    }
+    None
+}
+
+pub fn get_env_var(k: &str) -> String {
+    match std::env::var(k) {
+        Ok(v) => v,
+        Err(_e) => "".to_owned(),
+    }
+}
+
+// Headless is enabled, always return true.
 pub fn is_prelogin() -> bool {
     let n = get_active_userid().len();
     n < 4 && n > 1
@@ -530,20 +477,33 @@ pub fn is_root() -> bool {
     crate::username() == "root"
 }
 
-pub fn run_as_user(arg: &str) -> ResultType<Option<std::process::Child>> {
-    let uid = get_active_userid();
+fn is_opensuse() -> bool {
+    if let Ok(res) = run_cmds("cat /etc/os-release | grep opensuse") {
+        if !res.is_empty() {
+            return true;
+        }
+    }
+    false
+}
+
+pub fn run_as_user(arg: Vec<&str>, user: Option<(String, String)>) -> ResultType<Option<Child>> {
+    let (uid, username) = match user {
+        Some(id_name) => id_name,
+        None => get_active_user_id_name(),
+    };
     let cmd = std::env::current_exe()?;
+    if uid.is_empty() {
+        bail!("No valid uid");
+    }
+    let xdg = &format!("XDG_RUNTIME_DIR=/run/user/{}", uid) as &str;
+    let mut args = vec![xdg, "-u", &username, cmd.to_str().unwrap_or("")];
+    args.append(&mut arg.clone());
     // -E required for opensuse
-    let task = std::process::Command::new("sudo")
-        .args(vec![
-            "-E",
-            &format!("XDG_RUNTIME_DIR=/run/user/{}", uid) as &str,
-            "-u",
-            &get_active_username(),
-            cmd.to_str().unwrap_or(""),
-            arg,
-        ])
-        .spawn()?;
+    if is_opensuse() {
+        args.insert(0, "-E");
+    }
+
+    let task = Command::new("sudo").args(args).spawn()?;
     Ok(Some(task))
 }
 
@@ -586,11 +546,26 @@ pub fn get_pa_sources() -> Vec<(String, String)> {
     out
 }
 
+pub fn get_default_pa_source() -> Option<(String, String)> {
+    use pulsectl::controllers::*;
+    match SourceController::create() {
+        Ok(mut handler) => {
+            if let Ok(dev) = handler.get_default_device() {
+                return Some((
+                    dev.name.unwrap_or("".to_owned()),
+                    dev.description.unwrap_or("".to_owned()),
+                ));
+            }
+        }
+        Err(err) => {
+            log::error!("Failed to get_pa_source: {:?}", err);
+        }
+    }
+    None
+}
+
 pub fn lock_screen() {
-    std::process::Command::new("xdg-screensaver")
-        .arg("lock")
-        .spawn()
-        .ok();
+    Command::new("xdg-screensaver").arg("lock").spawn().ok();
 }
 
 pub fn toggle_blank_screen(_v: bool) {
@@ -605,37 +580,31 @@ pub fn is_installed() -> bool {
     true
 }
 
-fn run_cmds(cmds: String) -> ResultType<Option<String>> {
-    let mut tmp = std::env::temp_dir();
-    tmp.push(format!("{}_{}", crate::get_app_name(), crate::get_time()));
-    let mut file = std::fs::File::create(&tmp)?;
-    file.write_all(cmds.as_bytes())?;
-    file.sync_all()?;
-    if let Ok(output) = std::process::Command::new("bash")
-        .arg(tmp.to_str().unwrap_or(""))
-        .output()
-    {
-        Ok(Some(String::from_utf8_lossy(&output.stdout).to_string()))
-    } else {
-        Ok(None)
-    }
-}
-
-fn get_env_tries(name: &str, uid: &str, n: usize) -> String {
+pub(super) fn get_env_tries(name: &str, uid: &str, process: &str, n: usize) -> String {
     for _ in 0..n {
-        let x = get_env(name, uid);
+        let x = get_env(name, uid, process);
         if !x.is_empty() {
             return x;
         }
-        std::thread::sleep(std::time::Duration::from_millis(300));
+        sleep_millis(300);
     }
     "".to_owned()
 }
 
-fn get_env(name: &str, uid: &str) -> String {
-    let cmd = format!("ps -u {} -o pid= | xargs -I__ cat /proc/__/environ 2>/dev/null | tr '\\0' '\\n' | grep '^{}=' | tail -1 | sed 's/{}=//g'", uid, name, name);
-    log::debug!("Run: {}", &cmd);
-    if let Ok(Some(x)) = run_cmds(cmd) {
+#[inline]
+fn get_env(name: &str, uid: &str, process: &str) -> String {
+    let cmd = format!("ps -u {} -f | grep '{}' | grep -v 'grep' | tail -1 | awk '{{print $2}}' | xargs -I__ cat /proc/__/environ 2>/dev/null | tr '\\0' '\\n' | grep '^{}=' | tail -1 | sed 's/{}=//g'", uid, process, name, name);
+    if let Ok(x) = run_cmds(&cmd) {
+        x.trim_end().to_string()
+    } else {
+        "".to_owned()
+    }
+}
+
+#[inline]
+fn get_env_from_pid(name: &str, pid: &str) -> String {
+    let cmd = format!("cat /proc/{}/environ 2>/dev/null | tr '\\0' '\\n' | grep '^{}=' | tail -1 | sed 's/{}=//g'", pid, name, name);
+    if let Ok(x) = run_cmds(&cmd) {
         x.trim_end().to_string()
     } else {
         "".to_owned()
@@ -649,4 +618,340 @@ extern "C" {
 
 pub fn quit_gui() {
     unsafe { gtk_main_quit() };
+}
+
+pub fn check_super_user_permission() -> ResultType<bool> {
+    let file = "/usr/share/rustdesk/files/polkit";
+    let arg;
+    if Path::new(file).is_file() {
+        arg = file;
+    } else {
+        arg = "echo";
+    }
+    let status = Command::new("pkexec").arg(arg).status()?;
+    Ok(status.success() && status.code() == Some(0))
+}
+
+type GtkSettingsPtr = *mut c_void;
+type GObjectPtr = *mut c_void;
+#[link(name = "gtk-3")]
+extern "C" {
+    // fn gtk_init(argc: *mut c_int, argv: *mut *mut c_char);
+    fn gtk_settings_get_default() -> GtkSettingsPtr;
+}
+
+#[link(name = "gobject-2.0")]
+extern "C" {
+    fn g_object_get(object: GObjectPtr, first_property_name: *const c_char, ...);
+}
+
+pub fn get_double_click_time() -> u32 {
+    // GtkSettings *settings = gtk_settings_get_default ();
+    // g_object_get (settings, "gtk-double-click-time", &double_click_time, NULL);
+    unsafe {
+        let mut double_click_time = 0u32;
+        let property = std::ffi::CString::new("gtk-double-click-time").unwrap();
+        let settings = gtk_settings_get_default();
+        g_object_get(
+            settings,
+            property.as_ptr(),
+            &mut double_click_time as *mut u32,
+            0 as *const c_void,
+        );
+        double_click_time
+    }
+}
+
+#[inline]
+fn get_width_height_from_captures<'t>(caps: &Captures<'t>) -> Option<(i32, i32)> {
+    match (caps.name("width"), caps.name("height")) {
+        (Some(width), Some(height)) => {
+            match (
+                width.as_str().parse::<i32>(),
+                height.as_str().parse::<i32>(),
+            ) {
+                (Ok(width), Ok(height)) => {
+                    return Some((width, height));
+                }
+                _ => {}
+            }
+        }
+        _ => {}
+    }
+    None
+}
+
+#[inline]
+fn get_xrandr_conn_pat(name: &str) -> String {
+    format!(
+        r"{}\s+connected.+?(?P<width>\d+)x(?P<height>\d+)\+(?P<x>\d+)\+(?P<y>\d+).*?\n",
+        name
+    )
+}
+
+pub fn resolutions(name: &str) -> Vec<Resolution> {
+    let resolutions_pat = r"(?P<resolutions>(\s*\d+x\d+\s+\d+.*\n)+)";
+    let connected_pat = get_xrandr_conn_pat(name);
+    let mut v = vec![];
+    if let Ok(re) = Regex::new(&format!("{}{}", connected_pat, resolutions_pat)) {
+        match run_cmds("xrandr --query | tr -s ' '") {
+            Ok(xrandr_output) => {
+                // There'are different kinds of xrandr output.
+                /*
+                1.
+                Screen 0: minimum 320 x 175, current 1920 x 1080, maximum 1920 x 1080
+                default connected 1920x1080+0+0 0mm x 0mm
+                 1920x1080 10.00*
+                 1280x720 25.00
+                 1680x1050 60.00
+                Virtual2 disconnected (normal left inverted right x axis y axis)
+                Virtual3 disconnected (normal left inverted right x axis y axis)
+
+                XWAYLAND0 connected primary 1920x984+0+0 (normal left inverted right x axis y axis) 0mm x 0mm
+                Virtual1 connected primary 1920x984+0+0 (normal left inverted right x axis y axis) 0mm x 0mm
+                HDMI-0 connected (normal left inverted right x axis y axis)
+
+                rdp0 connected primary 1920x1080+0+0 0mm x 0mm
+                    */
+                if let Some(caps) = re.captures(&xrandr_output) {
+                    if let Some(resolutions) = caps.name("resolutions") {
+                        let resolution_pat =
+                            r"\s*(?P<width>\d+)x(?P<height>\d+)\s+(?P<rates>(\d+\.\d+[* ]*)+)\s*\n";
+                        let resolution_re = Regex::new(&format!(r"{}", resolution_pat)).unwrap();
+                        for resolution_caps in resolution_re.captures_iter(resolutions.as_str()) {
+                            if let Some((width, height)) =
+                                get_width_height_from_captures(&resolution_caps)
+                            {
+                                let resolution = Resolution {
+                                    width,
+                                    height,
+                                    ..Default::default()
+                                };
+                                if !v.contains(&resolution) {
+                                    v.push(resolution);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Err(e) => log::error!("Failed to run xrandr query, {}", e),
+        }
+    }
+
+    v
+}
+
+pub fn current_resolution(name: &str) -> ResultType<Resolution> {
+    let xrandr_output = run_cmds("xrandr --query | tr -s ' '")?;
+    let re = Regex::new(&get_xrandr_conn_pat(name))?;
+    if let Some(caps) = re.captures(&xrandr_output) {
+        if let Some((width, height)) = get_width_height_from_captures(&caps) {
+            return Ok(Resolution {
+                width,
+                height,
+                ..Default::default()
+            });
+        }
+    }
+    bail!("Failed to find current resolution for {}", name);
+}
+
+pub fn change_resolution(name: &str, width: usize, height: usize) -> ResultType<()> {
+    Command::new("xrandr")
+        .args(vec![
+            "--output",
+            name,
+            "--mode",
+            &format!("{}x{}", width, height),
+        ])
+        .spawn()?;
+    Ok(())
+}
+
+mod desktop {
+    use super::*;
+
+    pub const XFCE4_PANEL: &str = "xfce4-panel";
+    pub const GNOME_SESSION_BINARY: &str = "gnome-session-binary";
+
+    #[derive(Debug, Clone, Default)]
+    pub struct Desktop {
+        pub sid: String,
+        pub username: String,
+        pub uid: String,
+        pub protocal: String,
+        pub display: String,
+        pub xauth: String,
+        pub is_rustdesk_subprocess: bool,
+    }
+
+    impl Desktop {
+        #[inline]
+        pub fn is_wayland(&self) -> bool {
+            self.protocal == DISPLAY_SERVER_WAYLAND
+        }
+
+        #[inline]
+        pub fn is_login_wayland(&self) -> bool {
+            super::is_gdm_user(&self.username) && self.protocal == DISPLAY_SERVER_WAYLAND
+        }
+
+        #[inline]
+        pub fn is_headless(&self) -> bool {
+            self.sid.is_empty() || self.is_rustdesk_subprocess
+        }
+
+        fn get_display(&mut self) {
+            self.display = get_env_tries("DISPLAY", &self.uid, GNOME_SESSION_BINARY, 10);
+            if self.display.is_empty() {
+                self.display = get_env_tries("DISPLAY", &self.uid, XFCE4_PANEL, 10);
+            }
+            if self.display.is_empty() {
+                self.display = Self::get_display_by_user(&self.username);
+            }
+            if self.display.is_empty() {
+                self.display = ":0".to_owned();
+            }
+            self.display = self
+                .display
+                .replace(&whoami::hostname(), "")
+                .replace("localhost", "");
+        }
+
+        fn get_xauth_from_xorg(&mut self) {
+            if let Ok(output) = run_cmds(&format!(
+                "ps -u {} -f | grep 'Xorg' | grep -v 'grep'",
+                &self.uid
+            )) {
+                for line in output.lines() {
+                    let mut auth_found = false;
+                    for v in line.split_whitespace() {
+                        if v == "-auth" {
+                            auth_found = true;
+                        } else if auth_found {
+                            if std::path::Path::new(v).is_absolute() {
+                                self.xauth = v.to_string();
+                            } else {
+                                if let Some(pid) = line.split_whitespace().nth(1) {
+                                    let home_dir = get_env_from_pid("HOME", pid);
+                                    if home_dir.is_empty() {
+                                        self.xauth = format!("/home/{}/{}", self.username, v);
+                                    } else {
+                                        self.xauth = format!("{}/{}", home_dir, v);
+                                    }
+                                } else {
+                                    // unreachable!
+                                }
+                            }
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+
+        fn get_xauth(&mut self) {
+            self.xauth = get_env_tries("XAUTHORITY", &self.uid, GNOME_SESSION_BINARY, 10);
+            if self.xauth.is_empty() {
+                get_env_tries("XAUTHORITY", &self.uid, XFCE4_PANEL, 10);
+            }
+            if self.xauth.is_empty() {
+                self.get_xauth_from_xorg();
+            }
+
+            let gdm = format!("/run/user/{}/gdm/Xauthority", self.uid);
+            if self.xauth.is_empty() {
+                self.xauth = if std::path::Path::new(&gdm).exists() {
+                    gdm
+                } else {
+                    let username = &self.username;
+                    if username == "root" {
+                        format!("/{}/.Xauthority", username)
+                    } else {
+                        let tmp = format!("/home/{}/.Xauthority", username);
+                        if std::path::Path::new(&tmp).exists() {
+                            tmp
+                        } else {
+                            format!("/var/lib/{}/.Xauthority", username)
+                        }
+                    }
+                };
+            }
+        }
+
+        fn get_display_by_user(user: &str) -> String {
+            // log::debug!("w {}", &user);
+            if let Ok(output) = std::process::Command::new("w").arg(&user).output() {
+                for line in String::from_utf8_lossy(&output.stdout).lines() {
+                    let mut iter = line.split_whitespace();
+                    let b = iter.nth(2);
+                    if let Some(b) = b {
+                        if b.starts_with(":") {
+                            return b.to_owned();
+                        }
+                    }
+                }
+            }
+            // above not work for gdm user
+            //log::debug!("ls -l /tmp/.X11-unix/");
+            let mut last = "".to_owned();
+            if let Ok(output) = std::process::Command::new("ls")
+                .args(vec!["-l", "/tmp/.X11-unix/"])
+                .output()
+            {
+                for line in String::from_utf8_lossy(&output.stdout).lines() {
+                    let mut iter = line.split_whitespace();
+                    let user_field = iter.nth(2);
+                    if let Some(x) = iter.last() {
+                        if x.starts_with("X") {
+                            last = x.replace("X", ":").to_owned();
+                            if user_field == Some(&user) {
+                                return last;
+                            }
+                        }
+                    }
+                }
+            }
+            last
+        }
+
+        fn set_is_subprocess(&mut self) {
+            self.is_rustdesk_subprocess = false;
+            let cmd = "ps -ef | grep 'rustdesk/xorg.conf' | grep -v grep | wc -l";
+            if let Ok(res) = run_cmds(cmd) {
+                if res.trim() != "0" {
+                    self.is_rustdesk_subprocess = true;
+                }
+            }
+        }
+
+        pub fn refresh(&mut self) {
+            if !self.sid.is_empty() && is_active(&self.sid) {
+                return;
+            }
+
+            let seat0_values = get_values_of_seat0(&[0, 1, 2]);
+            if seat0_values[0].is_empty() {
+                *self = Self::default();
+                self.is_rustdesk_subprocess = false;
+                return;
+            }
+
+            self.sid = seat0_values[0].clone();
+            self.uid = seat0_values[1].clone();
+            self.username = seat0_values[2].clone();
+            self.protocal = get_display_server_of_session(&self.sid).into();
+            if self.is_login_wayland() {
+                self.display = "".to_owned();
+                self.xauth = "".to_owned();
+                self.is_rustdesk_subprocess = false;
+                return;
+            }
+
+            self.get_display();
+            self.get_xauth();
+            self.set_is_subprocess();
+        }
+    }
 }

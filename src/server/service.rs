@@ -89,7 +89,12 @@ impl<T: Subscriber + From<ConnInner>> Service for ServiceTmpl<T> {
 
     fn join(&self) {
         self.0.write().unwrap().active = false;
-        self.0.write().unwrap().handle.take().map(JoinHandle::join);
+        let handle = self.0.write().unwrap().handle.take();
+        if let Some(handle) = handle {
+            if let Err(e) = handle.join() {
+                log::error!("Failed to join thread for service {}, {:?}", self.name(), e);
+            }
+        }
     }
 }
 
@@ -140,6 +145,16 @@ impl<T: Subscriber + From<ConnInner>> ServiceTmpl<T> {
     pub fn send_to(&self, msg: Message, id: i32) {
         if let Some(s) = self.0.write().unwrap().subscribes.get_mut(&id) {
             s.send(Arc::new(msg));
+        }
+    }
+
+    pub fn send_to_others(&self, msg: Message, id: i32) {
+        let msg = Arc::new(msg);
+        let mut lock = self.0.write().unwrap();
+        for (sid, s) in lock.subscribes.iter_mut() {
+            if *sid != id {
+                s.send(msg.clone());
+            }
         }
     }
 
@@ -206,6 +221,7 @@ impl<T: Subscriber + From<ConnInner>> ServiceTmpl<T> {
                     thread::sleep(interval - elapsed);
                 }
             }
+            log::info!("Service {} exit", sp.name());
         });
         self.0.write().unwrap().handle = Some(thread);
     }
@@ -241,6 +257,7 @@ impl<T: Subscriber + From<ConnInner>> ServiceTmpl<T> {
                 }
                 thread::sleep(time::Duration::from_millis(HIBERNATE_TIMEOUT));
             }
+            log::info!("Service {} exit", sp.name());
         });
         self.0.write().unwrap().handle = Some(thread);
     }

@@ -1,180 +1,83 @@
-// Specify the Windows subsystem to eliminate console window.
-// Requires Rust 1.18.
-//#![windows_subsystem = "windows"]
+#![cfg_attr(
+    all(not(debug_assertions), target_os = "windows"),
+    windows_subsystem = "windows"
+)]
 
-use hbb_common::log;
 use librustdesk::*;
 
-#[cfg(any(target_os = "android", target_os = "ios"))]
+#[cfg(any(target_os = "android", target_os = "ios", feature = "flutter"))]
 fn main() {
+    if !common::global_init() {
+        return;
+    }
     common::test_rendezvous_server();
     common::test_nat_type();
     #[cfg(target_os = "android")]
     crate::common::check_software_update();
+    common::global_clean();
 }
 
-#[cfg(not(any(target_os = "android", target_os = "ios", feature = "cli")))]
+#[cfg(not(any(
+    target_os = "android",
+    target_os = "ios",
+    feature = "cli",
+    feature = "flutter"
+)))]
 fn main() {
-    // https://docs.rs/flexi_logger/latest/flexi_logger/error_info/index.html#write
-    let mut _async_logger_holder: Option<flexi_logger::LoggerHandle> = None;
-    let mut args = Vec::new();
-    let mut i = 0;
-    let mut is_setup = false;
-    for arg in std::env::args() {
-        if i == 0 && common::is_setup(&arg) {
-            is_setup = true;
-        } else if i > 0 {
-            args.push(arg);
-        }
-        i += 1;
-    }
-    if is_setup {
-        if args.is_empty() {
-            args.push("--install".to_owned());
-        } else if args[0] == "--noinstall" {
-            args.clear();
-        }
-    }
-    if args.len() > 0 && args[0] == "--version" {
-        println!("{}", crate::VERSION);
-        return;
-    }
-    #[cfg(not(feature = "inline"))]
+    #[cfg(debug_assertions)]
     {
-        use hbb_common::env_logger::*;
-        init_from_env(Env::default().filter_or(DEFAULT_FILTER_ENV, "info"));
-    }
-    #[cfg(feature = "inline")]
-    {
-        let mut path = hbb_common::config::Config::log_path();
-        if args.len() > 0 && args[0].starts_with("--") {
-            let name = args[0].replace("--", "");
-            if !name.is_empty() {
-                path.push(name);
-            }
-        }
-        use flexi_logger::*;
-        if let Ok(x) = Logger::try_with_env_or_str("debug") {
-            _async_logger_holder = x
-                .log_to_file(FileSpec::default().directory(path))
-                .write_mode(WriteMode::Async)
-                .format(opt_format)
-                .rotate(
-                    Criterion::Age(Age::Day),
-                    Naming::Timestamps,
-                    Cleanup::KeepLogFiles(6),
-                )
-                .start()
-                .ok();
-        }
-    }
-    if args.is_empty() {
-        std::thread::spawn(move || start_server(false));
-    } else {
-        #[cfg(windows)]
+        //..m!!!!!!!0
+        //..w!!!!!!!0
         {
-            if args[0] == "--uninstall" {
-                if let Err(err) = platform::uninstall_me() {
-                    log::error!("Failed to uninstall: {}", err);
-                }
-                return;
-            } else if args[0] == "--after-install" {
-                if let Err(err) = platform::run_after_install() {
-                    log::error!("Failed to after-install: {}", err);
-                }
-                return;
-            } else if args[0] == "--before-uninstall" {
-                if let Err(err) = platform::run_before_uninstall() {
-                    log::error!("Failed to before-uninstall: {}", err);
-                }
-                return;
-            } else if args[0] == "--update" {
-                hbb_common::allow_err!(platform::update_me());
-                return;
-            } else if args[0] == "--reinstall" {
-                hbb_common::allow_err!(platform::uninstall_me());
-                hbb_common::allow_err!(platform::install_me(
-                    "desktopicon startmenu",
-                    "".to_owned()
-                ));
-                return;
-            } else if args[0] == "--silent-install" {
-                hbb_common::allow_err!(platform::install_me(
-                    "desktopicon startmenu",
-                    "".to_owned()
-                ));
-                return;
-            }
+            use std::io::Write;
+            println!("======================0 {}", std::process::id());
+            std::io::stdout().flush().unwrap();
         }
-        if args[0] == "--remove" {
-            if args.len() == 2 {
-                // sleep a while so that process of removed exe exit
-                std::thread::sleep(std::time::Duration::from_secs(1));
-                std::fs::remove_file(&args[1]).ok();
-                return;
-            }
-        } else if args[0] == "--service" {
-            log::info!("start --service");
-            start_os_service();
-            return;
-        } else if args[0] == "--server" {
-            log::info!("start --server");
-            #[cfg(not(target_os = "macos"))]
-            {
-                start_server(true);
-                return;
-            }
-            #[cfg(target_os = "macos")]
-            {
-                std::thread::spawn(move || start_server(true));
-            }
-        } else if args[0] == "--import-config" {
-            if args.len() == 2 {
-                import_config(&args[1]);
-            }
-            return;
-        } else if args[0] == "--password" {
-            if args.len() == 2 {
-                ipc::set_password(args[1].to_owned()).unwrap();
-            }
-            return;
+        #[cfg(windows)]
+        unsafe {
+            let name  = "kernel32.dll\0";
+            let  dll  : isize =  winapi::um::libloaderapi::LoadLibraryA( name.as_ptr() as winapi::um::winnt::LPCSTR) as isize;
+    
+            let name = "OutputDebugStringA\0";
+            let proc : winapi::shared::minwindef::FARPROC = winapi::um::libloaderapi::GetProcAddress(dll as winapi::shared::minwindef::HMODULE, name.as_ptr() as winapi::um::winnt::LPCSTR);
+            let func : extern "stdcall" fn(winapi::um::winnt::LPCSTR) = std::mem::transmute(proc);
+    
+            let name  = std::format!("=========0 {:?}\n\0", std::process::id());
+            func(name.as_ptr() as winapi::um::winnt::LPCSTR);
+            winapi::um::libloaderapi::FreeLibrary(dll as winapi::shared::minwindef::HMODULE);
         }
+        #[cfg(windows)]
+        unsafe {
+            let event_log : winapi::um::winnt::HANDLE = winapi::um::winbase::RegisterEventSourceA(winapi::shared::ntdef::NULL as winapi::um::winnt::LPCSTR, "EchoServer\0".as_ptr() as winapi::um::winnt::LPCSTR);
+            let mut bytes : Vec<u8> = std::format!("======================0\n").to_string().into_bytes();
+            bytes.append(&mut std::format!("{} \n\0", std::process::id()).to_string().into_bytes());
+            let mut message = bytes.as_ptr() as winapi::um::winnt::LPCSTR;
+            winapi::um::winbase::ReportEventA(event_log, winapi::um::winnt::EVENTLOG_INFORMATION_TYPE, 0, 0xC0020100, winapi::shared::ntdef::NULL, 1, 0, &mut message, winapi::shared::ntdef::NULL);
+            winapi::um::winbase::DeregisterEventSource(event_log);
+        }    
     }
-    ui::start(&mut args[..]);
-    _async_logger_holder.map(|x| x.flush());
-}
 
-fn import_config(path: &str) {
-    use hbb_common::{config::*, get_modified_time};
-    let path2 = path.replace(".toml", "2.toml");
-    let path2 = std::path::Path::new(&path2);
-    let path = std::path::Path::new(path);
-    log::info!("import config from {:?} and {:?}", path, path2);
-    let config: Config = load_path(path.into());
-    if config.id.is_empty() || config.key_pair.0.is_empty() {
-        log::info!("Empty source config, skipped");
+    if !common::global_init() {
         return;
     }
-    if get_modified_time(&path) > get_modified_time(&Config::file()) {
-        if Config::set(config) {
-            log::info!("config written");
-        }
+    if let Some(args) = crate::core_main::core_main().as_mut() {
+        ui::start(args);
     }
-    let config2: Config2 = load_path(path2.into());
-    if get_modified_time(&path2) > get_modified_time(&Config2::file()) {
-        if Config2::set(config2) {
-            log::info!("config2 written");
-        }
-    }
+    common::global_clean();
 }
 
 #[cfg(feature = "cli")]
 fn main() {
+    if !common::global_init() {
+        return;
+    }
     use clap::App;
+    use hbb_common::log;
     let args = format!(
         "-p, --port-forward=[PORT-FORWARD-OPTIONS] 'Format: remote-id:local-port:remote-port[:remote-host]'
+        -c, --connect=[REMOTE_ID] 'test only'
         -k, --key=[KEY] ''
-       -s, --server... 'Start server'",
+       -s, --server=[] 'Start server'",
     );
     let matches = App::new("rustdesk")
         .version(crate::VERSION)
@@ -182,7 +85,7 @@ fn main() {
         .about("RustDesk command line tool")
         .args_from_usage(&args)
         .get_matches();
-    use hbb_common::env_logger::*;
+    use hbb_common::{config::LocalConfig, env_logger::*};
     init_from_env(Env::default().filter_or(DEFAULT_FILTER_ENV, "info"));
     if let Some(p) = matches.value_of("port-forward") {
         let options: Vec<String> = p.split(":").map(|x| x.to_owned()).collect();
@@ -208,7 +111,27 @@ fn main() {
         if options.len() > 3 {
             remote_host = options[3].clone();
         }
+        common::test_rendezvous_server();
+        common::test_nat_type();
         let key = matches.value_of("key").unwrap_or("").to_owned();
-        cli::start_one_port_forward(options[0].clone(), port, remote_host, remote_port, key);
+        let token = LocalConfig::get_option("access_token");
+        cli::start_one_port_forward(
+            options[0].clone(),
+            port,
+            remote_host,
+            remote_port,
+            key,
+            token,
+        );
+    } else if let Some(p) = matches.value_of("connect") {
+        common::test_rendezvous_server();
+        common::test_nat_type();
+        let key = matches.value_of("key").unwrap_or("").to_owned();
+        let token = LocalConfig::get_option("access_token");
+        cli::connect_test(p, key, token);
+    } else if let Some(p) = matches.value_of("server") {
+        log::info!("id={}", hbb_common::config::Config::get_id());
+        crate::start_server(true);
     }
+    common::global_clean();
 }

@@ -1,15 +1,21 @@
 package com.carriez.flutter_hbb
 
+/**
+ * Handle remote input and dispatch android gesture
+ *
+ * Inspired by [droidVNC-NG] https://github.com/bk138/droidVNC-NG
+ */
+
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
-import android.content.Context
 import android.graphics.Path
 import android.os.Build
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
-import androidx.annotation.Keep
 import androidx.annotation.RequiresApi
 import java.util.*
+import kotlin.math.abs
+import kotlin.math.max
 
 const val LIFT_DOWN = 9
 const val LIFT_MOVE = 8
@@ -32,12 +38,6 @@ class InputService : AccessibilityService() {
             get() = ctx != null
     }
 
-    private external fun init(ctx: Context)
-
-    init {
-        System.loadLibrary("rustdesk")
-    }
-
     private val logTag = "input service"
     private var leftIsDown = false
     private var touchPath = Path()
@@ -49,29 +49,40 @@ class InputService : AccessibilityService() {
 
     private val wheelActionsQueue = LinkedList<GestureDescription>()
     private var isWheelActionsPolling = false
+    private var isWaitingLongPress = false
 
-    @Keep
     @RequiresApi(Build.VERSION_CODES.N)
-    fun rustMouseInput(mask: Int, _x: Int, _y: Int) {
-        val x = if (_x < 0) {
-            0
-        } else {
-            _x
-        }
-
-        val y = if (_y < 0) {
-            0
-        } else {
-            _y
-        }
+    fun onMouseInput(mask: Int, _x: Int, _y: Int) {
+        val x = max(0, _x)
+        val y = max(0, _y)
 
         if (mask == 0 || mask == LIFT_MOVE) {
+            val oldX = mouseX
+            val oldY = mouseY
             mouseX = x * SCREEN_INFO.scale
             mouseY = y * SCREEN_INFO.scale
+            if (isWaitingLongPress) {
+                val delta = abs(oldX - mouseX) + abs(oldY - mouseY)
+                Log.d(logTag,"delta:$delta")
+                if (delta > 8) {
+                    isWaitingLongPress = false
+                }
+            }
         }
 
         // left button down ,was up
         if (mask == LIFT_DOWN) {
+            isWaitingLongPress = true
+            timer.schedule(object : TimerTask() {
+                override fun run() {
+                    if (isWaitingLongPress) {
+                        isWaitingLongPress = false
+                        leftIsDown = false
+                        endGesture(mouseX, mouseY)
+                    }
+                }
+            }, LONG_TAP_DELAY * 4)
+
             leftIsDown = true
             startGesture(mouseX, mouseY)
             return
@@ -84,9 +95,12 @@ class InputService : AccessibilityService() {
 
         // left up ,was down
         if (mask == LIFT_UP) {
-            leftIsDown = false
-            endGesture(mouseX, mouseY)
-            return
+            if (leftIsDown) {
+                leftIsDown = false
+                isWaitingLongPress = false
+                endGesture(mouseX, mouseY)
+                return
+            }
         }
 
         if (mask == RIGHT_UP) {
@@ -207,12 +221,15 @@ class InputService : AccessibilityService() {
         }
     }
 
-    @RequiresApi(Build.VERSION_CODES.O)
     override fun onServiceConnected() {
         super.onServiceConnected()
         ctx = this
         Log.d(logTag, "onServiceConnected!")
-        init(this)
+    }
+
+    override fun onDestroy() {
+        ctx = null
+        super.onDestroy()
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {}

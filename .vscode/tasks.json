@@ -4,7 +4,7 @@
 		{
 			"label": "build",
 			"type" : "shell",
-			"command": "cargo build --target aarch64-apple-ios && cp target/aarch64-apple-ios/debug/liblibrustdesk.a target/aarch64-apple-ios/release/liblibrustdesk.a",
+			"command": "cargo build --features flutter --target aarch64-apple-ios --lib && cp target/aarch64-apple-ios/debug/liblibrustdesk.a target/aarch64-apple-ios/release/liblibrustdesk.a",
 			"options": {
 				"cwd": "${workspaceFolder}",
 			},

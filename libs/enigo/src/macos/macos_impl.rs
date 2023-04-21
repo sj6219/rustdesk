@@ -1,5 +1,4 @@
 use core_graphics;
-
 // TODO(dustin): use only the things i need
 
 use self::core_graphics::display::*;
@@ -41,6 +40,7 @@ const BUF_LEN: usize = 4;
 #[allow(improper_ctypes)]
 #[allow(non_snake_case)]
 #[link(name = "ApplicationServices", kind = "framework")]
+#[link(name = "Carbon", kind = "framework")]
 extern "C" {
     fn CFDataGetBytePtr(theData: CFDataRef) -> *const u8;
     fn TISCopyCurrentKeyboardInputSource() -> TISInputSourceRef;
@@ -69,7 +69,7 @@ extern "C" {
     ) -> Boolean;
 
     fn CGEventPost(tapLocation: CGEventTapLocation, event: *mut MyCGEvent);
-    // Actually return CFDataRef which is const here, but for coding convienence, return *mut c_void
+    // Actually return CFDataRef which is const here, but for coding convenience, return *mut c_void
     fn TISGetInputSourceProperty(source: TISInputSourceRef, property: *const c_void)
         -> *mut c_void;
     // not present in servo/core-graphics
@@ -164,6 +164,14 @@ impl Default for Enigo {
 }
 
 impl MouseControllable for Enigo {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_mut_any(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+
     fn mouse_move_to(&mut self, x: i32, y: i32) {
         let pressed = Self::pressed_buttons();
 
@@ -204,6 +212,7 @@ impl MouseControllable for Enigo {
     }
 
     fn mouse_down(&mut self, button: MouseButton) -> crate::ResultType {
+        //..m!!!!!!4.6
         let now = std::time::Instant::now();
         if let Some(t) = self.last_click_time {
             if t.elapsed().as_millis() as u32 <= self.double_click_interval {
@@ -218,7 +227,10 @@ impl MouseControllable for Enigo {
             MouseButton::Left => (CGMouseButton::Left, CGEventType::LeftMouseDown),
             MouseButton::Middle => (CGMouseButton::Center, CGEventType::OtherMouseDown),
             MouseButton::Right => (CGMouseButton::Right, CGEventType::RightMouseDown),
-            _ => unimplemented!(),
+            _ => {
+                log::info!("Unsupported button {:?}", button);
+                return Ok(());
+            },
         };
         let dest = CGPoint::new(current_x as f64, current_y as f64);
         if let Some(src) = self.event_source.as_ref() {
@@ -241,7 +253,10 @@ impl MouseControllable for Enigo {
             MouseButton::Left => (CGMouseButton::Left, CGEventType::LeftMouseUp),
             MouseButton::Middle => (CGMouseButton::Center, CGEventType::OtherMouseUp),
             MouseButton::Right => (CGMouseButton::Right, CGEventType::RightMouseUp),
-            _ => unimplemented!(),
+            _ => {
+                log::info!("Unsupported button {:?}", button);
+                return;
+            },
         };
         let dest = CGPoint::new(current_x as f64, current_y as f64);
         if let Some(src) = self.event_source.as_ref() {
@@ -320,6 +335,14 @@ impl MouseControllable for Enigo {
 // com/questions/1918841/how-to-convert-ascii-character-to-cgkeycode
 
 impl KeyboardControllable for Enigo {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_mut_any(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+    
     fn key_sequence(&mut self, sequence: &str) {
         // NOTE(dustin): This is a fix for issue https://github.com/enigo-rs/enigo/issues/68
         // TODO(dustin): This could be improved by aggregating 20 bytes worth of graphemes at a time
@@ -338,7 +361,7 @@ impl KeyboardControllable for Enigo {
 
     fn key_click(&mut self, key: Key) {
         let keycode = self.key_to_keycode(key);
-        if keycode == 0 {
+        if keycode == u16::MAX {
             return;
         }
 
@@ -355,10 +378,11 @@ impl KeyboardControllable for Enigo {
 
     fn key_down(&mut self, key: Key) -> crate::ResultType {
         let code = self.key_to_keycode(key);
-        if code == 0 {
+        if code == u16::MAX {
             return Err("".into()); 
         }
         if let Some(src) = self.event_source.as_ref() {
+            //..m!!!!!!2.6
             if let Ok(event) =
                 CGEvent::new_keyboard_event(src.clone(), code, true)
             {
@@ -489,37 +513,17 @@ impl Enigo {
             Key::Layout(c) => self.map_key_board(c),
 
             Key::Super | Key::Command | Key::Windows | Key::Meta => kVK_Command,
-            _ => 0,
+            _ => u16::MAX,
         }
     }
 
     #[inline]
     fn map_key_board(&mut self, ch: char) -> CGKeyCode {
-        let mut code = 0;
-        unsafe {
-            let (keyboard, layout) = get_layout();
-            if !keyboard.is_null() && !layout.is_null() {
-                let name_ref = TISGetInputSourceProperty(keyboard, kTISPropertyInputSourceID);
-                if !name_ref.is_null() {
-                    let name = get_string(name_ref as _);
-                    if let Some(name) = name {
-                        if let Some(m) = self.char_to_vkey_map.get(&name) {
-                            code = *m.get(&ch).unwrap_or(&0);
-                        } else {
-                            let m = get_map(&name, layout);
-                            code = *m.get(&ch).unwrap_or(&0);
-                            self.char_to_vkey_map.insert(name.clone(), m);
-                        }
-                    }
-                }
-            }
-            if !keyboard.is_null() {
-                CFRelease(keyboard);
-            }
-        }
-        if code > 0 {
-            return code;
-        }
+        return self.map_key_board_en(ch);
+    }
+
+    #[inline]
+    fn map_key_board_en(&mut self, ch: char) -> CGKeyCode {
         match ch {
             'a' => kVK_ANSI_A,
             'b' => kVK_ANSI_B,
@@ -568,8 +572,65 @@ impl Enigo {
             '.' => kVK_ANSI_Period,
             '/' => kVK_ANSI_Slash,
             '`' => kVK_ANSI_Grave,
-            _ => 0,
+            _ => u16::MAX,
         }
+    }
+
+    #[inline]
+    fn mouse_scroll_impl(&mut self, length: i32, is_track_pad: bool, is_horizontal: bool) {
+        let mut scroll_direction = -1; // 1 left -1 right;
+        let mut length = length;
+
+        if length < 0 {
+            length *= -1;
+            scroll_direction *= -1;
+        }
+
+        // fix scroll distance for track pad
+        if is_track_pad {
+            length *= 3;
+        }
+
+        if let Some(src) = self.event_source.as_ref() {
+            for _ in 0..length {
+                unsafe {
+                    let units = if is_track_pad {
+                        ScrollUnit::Pixel
+                    } else {
+                        ScrollUnit::Line
+                    };
+                    let mouse_ev = if is_horizontal {
+                        CGEventCreateScrollWheelEvent(
+                            &src,
+                            units,
+                            2, // CGWheelCount 1 = y 2 = xy 3 = xyz
+                            0,
+                            scroll_direction,
+                        )
+                    } else {
+                        CGEventCreateScrollWheelEvent(
+                            &src,
+                            units,
+                            1, // CGWheelCount 1 = y 2 = xy 3 = xyz
+                            scroll_direction,
+                        )
+                    };
+
+                    CGEventPost(CGEventTapLocation::HID, mouse_ev);
+                    CFRelease(mouse_ev as *const std::ffi::c_void);
+                }
+            }
+        }
+    }
+
+    /// handle scroll vertically
+    pub fn mouse_scroll_y(&mut self, length: i32, is_track_pad: bool) {
+        self.mouse_scroll_impl(length, is_track_pad, false)
+    }
+
+    /// handle scroll horizontally
+    pub fn mouse_scroll_x(&mut self, length: i32, is_track_pad: bool) {
+        self.mouse_scroll_impl(length, is_track_pad, true)
     }
 }
 

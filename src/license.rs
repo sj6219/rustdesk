@@ -1,3 +1,4 @@
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use hbb_common::{bail, sodiumoxide::crypto::sign, ResultType};
 use serde_derive::{Deserialize, Serialize};
 
@@ -18,7 +19,7 @@ fn get_license_from_string_(s: &str) -> ResultType<License> {
         12, 46, 129, 83, 17, 84, 193, 119, 197, 130, 103,
     ];
     let pk = sign::PublicKey(*PK);
-    let data = base64::decode_config(tmp, base64::URL_SAFE_NO_PAD)?;
+    let data = URL_SAFE_NO_PAD.decode(tmp)?;
     if let Ok(lic) = serde_json::from_slice::<License>(&data) {
         return Ok(lic);
     }
@@ -36,6 +37,11 @@ pub fn get_license_from_string(s: &str) -> ResultType<License> {
         s
     };
     if s.contains("host=") {
+        let s = if s.contains("#") {
+            &s[0..s.find("#").unwrap_or(s.len())]
+        } else {
+            s
+        };
         let strs: Vec<&str> = s.split("host=").collect();
         if strs.len() == 2 {
             let strs2: Vec<&str> = strs[1].split(",key=").collect();

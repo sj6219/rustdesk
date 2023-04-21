@@ -1,9 +1,8 @@
-use winapi;
-
 use self::winapi::ctypes::c_int;
-use self::winapi::shared::{minwindef::*, windef::*};
+use self::winapi::shared::{basetsd::ULONG_PTR, minwindef::*, windef::*};
 use self::winapi::um::winbase::*;
 use self::winapi::um::winuser::*;
+use winapi;
 
 use crate::win::keycodes::*;
 use crate::{Key, KeyboardControllable, MouseButton, MouseControllable};
@@ -18,25 +17,33 @@ extern "system" {
 pub struct Enigo;
 static mut LAYOUT: HKL = std::ptr::null_mut();
 
+/// The dwExtraInfo value in keyboard and mouse structure that used in SendInput()
+pub const ENIGO_INPUT_EXTRA_VALUE: ULONG_PTR = 100;
+
 fn mouse_event(flags: u32, data: u32, dx: i32, dy: i32) -> DWORD {
-    let mut input = INPUT {
-        type_: INPUT_MOUSE,
-        u: unsafe {
-            transmute(MOUSEINPUT {
-                dx,
-                dy,
-                mouseData: data,
-                dwFlags: flags,
-                time: 0,
-                dwExtraInfo: 0,
-            })
-        },
-    };
+    //..w!!!!!!4.4
+    let mut input: INPUT = unsafe { std::mem::MaybeUninit::zeroed().assume_init() };
+    input.type_ = INPUT_MOUSE;
+    unsafe {
+        let dst_ptr = (&mut input.u as *mut _) as *mut u8;
+        let m = MOUSEINPUT {
+            dx,
+            dy,
+            mouseData: data,
+            dwFlags: flags,
+            time: 0,
+            dwExtraInfo: ENIGO_INPUT_EXTRA_VALUE,
+        };
+        let src_ptr = (&m as *const _) as *const u8;
+        std::ptr::copy_nonoverlapping(src_ptr, dst_ptr, size_of::<MOUSEINPUT>());
+    }
     unsafe { SendInput(1, &mut input as LPINPUT, size_of::<INPUT>() as c_int) }
 }
 
-fn keybd_event(flags: u32, vk: u16, scan: u16) -> DWORD {
+fn keybd_event(mut flags: u32, mut vk: u16, scan: u16) -> DWORD {
     let mut scan = scan;
+    //..w!!!!!!2.4
+
     unsafe {
         // https://github.com/rustdesk/rustdesk/issues/366
         if scan == 0 {
@@ -45,22 +52,39 @@ fn keybd_event(flags: u32, vk: u16, scan: u16) -> DWORD {
                     GetWindowThreadProcessId(GetForegroundWindow(), std::ptr::null_mut());
                 LAYOUT = GetKeyboardLayout(current_window_thread_id);
             }
+            if (LAYOUT as u16 == 0x0412) && (vk == winapi::um::winuser::VK_RMENU as u16) { 
+                vk = winapi::um::winuser::VK_HANGUL as u16;
+            }
             scan = MapVirtualKeyExW(vk as _, 0, LAYOUT) as _;
         }
     }
-    let mut input = INPUT {
+
+    if flags & KEYEVENTF_UNICODE == 0 {
+        if scan >> 8 == 0xE0 || scan >> 8 == 0xE1 {
+            flags |= winapi::um::winuser::KEYEVENTF_EXTENDEDKEY;
+        }
+    }
+    let mut union: INPUT_u = unsafe { std::mem::zeroed() };
+    unsafe {
+        *union.ki_mut() = KEYBDINPUT {
+            wVk: vk,
+            wScan: scan,
+            dwFlags: flags,
+            time: 0,
+            dwExtraInfo: ENIGO_INPUT_EXTRA_VALUE,
+        };
+    }
+    let mut inputs = [INPUT {
         type_: INPUT_KEYBOARD,
-        u: unsafe {
-            transmute_copy(&KEYBDINPUT {
-                wVk: vk,
-                wScan: scan,
-                dwFlags: flags,
-                time: 0,
-                dwExtraInfo: 0,
-            })
-        },
-    };
-    unsafe { SendInput(1, &mut input as LPINPUT, size_of::<INPUT>() as c_int) }
+        u: union,
+    }; 1];
+    unsafe {
+        SendInput(
+            inputs.len() as UINT,
+            inputs.as_mut_ptr(),
+            size_of::<INPUT>() as c_int,
+        )
+    }
 }
 
 fn get_error() -> String {
@@ -99,6 +123,14 @@ fn get_error() -> String {
 }
 
 impl MouseControllable for Enigo {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_mut_any(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+
     fn mouse_move_to(&mut self, x: i32, y: i32) {
         mouse_event(
             MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK,
@@ -120,9 +152,18 @@ impl MouseControllable for Enigo {
                 MouseButton::Left => MOUSEEVENTF_LEFTDOWN,
                 MouseButton::Middle => MOUSEEVENTF_MIDDLEDOWN,
                 MouseButton::Right => MOUSEEVENTF_RIGHTDOWN,
-                _ => unimplemented!(),
+                MouseButton::Back => MOUSEEVENTF_XDOWN,
+                MouseButton::Forward => MOUSEEVENTF_XDOWN,
+                _ => {
+                    log::info!("Unsupported button {:?}", button);
+                    return Ok(());
+                }
             },
-            0,
+            match button {
+                MouseButton::Back => XBUTTON1 as _,
+                MouseButton::Forward => XBUTTON2 as _,
+                _ => 0,
+            },
             0,
             0,
         );
@@ -141,9 +182,18 @@ impl MouseControllable for Enigo {
                 MouseButton::Left => MOUSEEVENTF_LEFTUP,
                 MouseButton::Middle => MOUSEEVENTF_MIDDLEUP,
                 MouseButton::Right => MOUSEEVENTF_RIGHTUP,
-                _ => unimplemented!(),
+                MouseButton::Back => MOUSEEVENTF_XUP,
+                MouseButton::Forward => MOUSEEVENTF_XUP,
+                _ => {
+                    log::info!("Unsupported button {:?}", button);
+                    return;
+                }
             },
-            0,
+            match button {
+                MouseButton::Back => XBUTTON1 as _,
+                MouseButton::Forward => XBUTTON2 as _,
+                _ => 0,
+            },
             0,
             0,
         );
@@ -164,6 +214,14 @@ impl MouseControllable for Enigo {
 }
 
 impl KeyboardControllable for Enigo {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_mut_any(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+
     fn key_sequence(&mut self, sequence: &str) {
         let mut buffer = [0; 2];
 
@@ -195,15 +253,51 @@ impl KeyboardControllable for Enigo {
     }
 
     fn key_down(&mut self, key: Key) -> crate::ResultType {
-        let code = self.key_to_keycode(key);
-        if code == 0 || code == 65535 {
-            return Err("".into()); 
-        }
-        let res = keybd_event(0, code, 0);
-        if res == 0 {
-            let err = get_error();
-            if !err.is_empty() {
-                return Err(err.into());
+        match &key {
+            Key::Layout(c) => {
+                // to-do: dup code
+                // https://github.com/rustdesk/rustdesk/blob/1bc0dd791ed8344997024dc46626bd2ca7df73d2/src/server/input_service.rs#L1348
+                let code = self.get_layoutdependent_keycode(*c);
+                if code as u16 != 0xFFFF {
+                    let vk = code & 0x00FF;
+                    let flag = code >> 8;
+                    let modifiers = [Key::Shift, Key::Control, Key::Alt];
+                    let mod_len = modifiers.len();
+                    for pos in 0..mod_len {
+                        if flag & (0x0001 << pos) != 0 {
+                            self.key_down(modifiers[pos])?;
+                        }
+                    }
+
+                    let res = keybd_event(0, vk, 0);
+                    let err = if res == 0 { get_error() } else { "".to_owned() };
+
+                    for pos in 0..mod_len {
+                        let rpos = mod_len - 1 - pos;
+                        if flag & (0x0001 << rpos) != 0 {
+                            self.key_up(modifiers[pos]);
+                        }
+                    }
+
+                    if !err.is_empty() {
+                        return Err(err.into());
+                    }
+                } else {
+                    return Err(format!("Failed to get keycode of {}", c).into());
+                }
+            }
+            _ => {
+                let code = self.key_to_keycode(key);
+                if code == 0 || code == 65535 {
+                    return Err("".into());
+                }
+                let res = keybd_event(0, code, 0);
+                if res == 0 {
+                    let err = get_error();
+                    if !err.is_empty() {
+                        return Err(err.into());
+                    }
+                }
             }
         }
         Ok(())
@@ -224,7 +318,8 @@ impl KeyboardControllable for Enigo {
 }
 
 impl Enigo {
-    /// Gets the (width, height) of the main display in screen coordinates (pixels).
+    /// Gets the (width, height) of the main display in screen coordinates
+    /// (pixels).
     ///
     /// # Example
     ///
@@ -270,9 +365,6 @@ impl Enigo {
     }
 
     fn key_to_keycode(&self, key: Key) -> u16 {
-        unsafe {
-            LAYOUT = std::ptr::null_mut();
-        }
         // do not use the codes from crate winapi they're
         // wrongly typed with i32 instead of i16 use the
         // ones provided by win/keycodes.rs that are prefixed
@@ -358,30 +450,24 @@ impl Enigo {
             Key::RightAlt => EVK_RMENU,
 
             Key::Raw(raw_keycode) => raw_keycode,
-            Key::Layout(c) => self.get_layoutdependent_keycode(c.to_string()),
             Key::Super | Key::Command | Key::Windows | Key::Meta => EVK_LWIN,
+            Key::Layout(..) => {
+                // unreachable
+                0
+            }
         }
     }
 
-    fn get_layoutdependent_keycode(&self, string: String) -> u16 {
-        // get the first char from the string ignore the rest
-        // ensure its not a multybyte char
-        if let Some(chr) = string.chars().nth(0) {
-            // NOTE VkKeyScanW uses the current keyboard LAYOUT
-            // to specify a LAYOUT use VkKeyScanExW and GetKeyboardLayout
-            // or load one with LoadKeyboardLayoutW
-            let current_window_thread_id =
-                unsafe { GetWindowThreadProcessId(GetForegroundWindow(), std::ptr::null_mut()) };
-            unsafe { LAYOUT = GetKeyboardLayout(current_window_thread_id) };
-            let keycode_and_shiftstate = unsafe { VkKeyScanExW(chr as _, LAYOUT) };
-            if keycode_and_shiftstate == (EVK_DECIMAL as i16) && chr == '.' {
-                // a workaround of italian keyboard shift + '.' issue
-                unsafe { VkKeyScanW(chr as _) as _ }
-            } else {
-                keycode_and_shiftstate as _
-            }
-        } else {
-            0
+    fn get_layoutdependent_keycode(&self, chr: char) -> u16 {
+        unsafe {
+            LAYOUT = std::ptr::null_mut();
         }
+        // NOTE VkKeyScanW uses the current keyboard LAYOUT
+        // to specify a LAYOUT use VkKeyScanExW and GetKeyboardLayout
+        // or load one with LoadKeyboardLayoutW
+        let current_window_thread_id =
+            unsafe { GetWindowThreadProcessId(GetForegroundWindow(), std::ptr::null_mut()) };
+        unsafe { LAYOUT = GetKeyboardLayout(current_window_thread_id) };
+        unsafe { VkKeyScanExW(chr as _, LAYOUT) as _ }
     }
 }
