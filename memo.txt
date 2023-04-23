@@ -77,14 +77,8 @@ flutter/ios/Runnder.xcworkspace/View/Navigators/Project:Runnder/targets:Runner/S
 pushd flutter && flutter pub get && popd
 ~/.cargo/bin/flutter_rust_bridge_codegen --rust-input ./src/flutter_ffi.rs --dart-output ./flutter/lib/generated_bridge.dart
 cargo build --features flutter --target aarch64-apple-ios --lib --release
-pushd flutter; flutter build ipa --release --obfuscate --split-debug-info=./split-debug-info --no-codesign; popd
+pushd flutter; flutter build ios --release; popd
 xcode/Window/Devices and Simulators/INSTALLED APPS
-
-flutter/ios/Pods/Target Support Files/Pods-Runner/Pods-Runner-frameworks.sh
-  if [ -L "${source}" ]; then
-    echo "Symlinked..."
-    source="$(readlink -f "${source}")"
-  fi
 
 xcrun simctl list
 open -a Simulator --args -CurrentDeviceUDID 8FEC868E-2D4D-4254-AD25-86C764630DD5
