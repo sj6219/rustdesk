@@ -36,12 +36,11 @@ pub struct Location {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConfigItem {
     pub key: String,
-    pub value: String,
     pub default: String,
     pub description: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     pub shared: Vec<ConfigItem>,
     pub peer: Vec<ConfigItem>,
