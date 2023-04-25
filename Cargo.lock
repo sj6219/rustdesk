@@ -2084,6 +2084,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3f9eec918d3f24069decb9af1554cad7c880e2da24a9afd88aca000531ab82c1"
 
 [[package]]
+name = "fon"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ad46a0e6c9bc688823a742aa969b5c08fdc56c2a436ee00d5c6fbcb5982c55c4"
+dependencies = [
+ "libm",
+]
+
+[[package]]
 name = "foreign-types"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2776,6 +2785,7 @@ dependencies = [
  "confy",
  "directories-next",
  "dirs-next",
+ "dlopen",
  "env_logger 0.10.0",
  "filetime",
  "flexi_logger",
@@ -3291,6 +3301,12 @@ dependencies = [
  "cfg-if 1.0.0",
  "winapi 0.3.9",
 ]
+
+[[package]]
+name = "libm"
+version = "0.2.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "348108ab3fba42ec82ff6e9564fc4ca0247bdccdc68dd8af9764bbc79c3c8ffb"
 
 [[package]]
 name = "libpulse-binding"
@@ -4839,7 +4855,7 @@ dependencies = [
 [[package]]
 name = "rdev"
 version = "0.5.0-2"
-source = "git+https://github.com/fufesou/rdev#aeea78dec3e731dd616da09668bbbd835a773d6c"
+source = "git+https://github.com/fufesou/rdev#f43a42fbedf1234a4bc132581790d63c9a2c8f92"
 dependencies = [
  "cocoa",
  "core-foundation 0.9.3",
@@ -5118,12 +5134,12 @@ dependencies = [
  "dbus-crossroads",
  "default-net",
  "dispatch",
- "dlopen",
  "enigo",
  "errno",
  "evdev",
  "flutter_rust_bridge",
  "flutter_rust_bridge_codegen",
+ "fon",
  "fruitbasket",
  "hbb_common",
  "hex",
@@ -5163,7 +5179,6 @@ dependencies = [
  "sha2",
  "shared_memory",
  "shutdown_hooks",
- "simple_rc",
  "sys-locale",
  "system_shutdown",
  "tao",
@@ -5570,17 +5585,6 @@ name = "simd-adler32"
 version = "0.3.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "238abfbb77c1915110ad968465608b68e869e0772622c9656714e73e5a1a522f"
-
-[[package]]
-name = "simple_rc"
-version = "0.1.0"
-dependencies = [
- "confy",
- "hbb_common",
- "serde 1.0.159",
- "serde_derive",
- "walkdir",
-]
 
 [[package]]
 name = "siphasher"
@@ -6451,7 +6455,6 @@ version = "0.1.0"
 dependencies = [
  "hbb_common",
  "lazy_static",
- "libloading",
 ]
 
 [[package]]

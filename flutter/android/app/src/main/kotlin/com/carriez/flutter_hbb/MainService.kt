@@ -416,6 +416,7 @@ class MainService : Service() /* , ClipboardManager.OnPrimaryClipChangedListener
         return true
     }
 
+    @Synchronized
     fun stopCapture() {
         timerTask?.cancel()
         timerTask = null
