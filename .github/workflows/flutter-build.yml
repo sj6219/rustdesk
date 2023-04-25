@@ -370,6 +370,92 @@ jobs:
   generate-bridge-linux:
     uses: ./.github/workflows/bridge.yml
 
+  build-rustdesk-ios:
+    needs: [generate-bridge-linux]
+    name: build rustdesk ios ipa ${{ matrix.job.target }} (${{ matrix.job.os }}) [${{ matrix.job.extra-build-features }}]
+    runs-on: ${{ matrix.job.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        job:
+          - {
+              arch: aarch64,
+              target: aarch64-apple-ios,
+              os: macos-latest,
+              extra-build-features: "",
+            }
+    steps:
+      - name: Install dependencies
+        run: |
+          brew install nasm yasm
+      - name: Checkout source code
+        uses: actions/checkout@v3
+      - name: Install flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: "stable"
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+
+      - name: Clone deps
+        shell: bash
+        run: |
+          pushd /opt
+          sudo git clone https://github.com/Kingtous/rustdesk_thirdparty_lib.git --depth=1
+
+      - name: Restore bridge files
+        uses: actions/download-artifact@master
+        with:
+          name: bridge-artifact
+          path: ./
+
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: ${{ matrix.job.target }}
+          override: true
+          profile: minimal # minimal component installation (ie, no documentation)
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: rustdesk-lib-cache
+          key: ${{ matrix.job.target }}-${{ matrix.job.extra-build-features }}
+
+      - name: Disable rust bridge build
+        shell: bash
+        run: |
+          sed -i build.rs.bak "s/gen_flutter_rust_bridge();/\/\//g" build.rs
+
+      - name: Build rustdesk lib
+        env:
+          VCPKG_ROOT: /opt/rustdesk_thirdparty_lib/vcpkg
+        run: |
+          rustup target add ${{ matrix.job.target }} 
+          cargo build --features flutter --release --target aarch64-apple-ios --lib
+
+      - name: Build rustdesk
+        shell: bash
+        run: |
+          pushd flutter
+          flutter build ipa --release --obfuscate --split-debug-info=./split-debug-info --no-codesign
+      
+      # - name: Upload Artifacts
+      #   # if: env.ANDROID_SIGNING_KEY != null && env.UPLOAD_ARTIFACT == 'true'
+      #   uses: actions/upload-artifact@master
+      #   with:
+      #     name: rustdesk-${{ env.VERSION }}-${{ matrix.job.arch }}.apk
+      #     path: flutter/build/ios/ipa/*.ipa
+
+      # - name: Publish ipa package
+      #   # if: env.ANDROID_SIGNING_KEY != null && env.UPLOAD_ARTIFACT == 'true'
+      #   uses: softprops/action-gh-release@v1
+      #   with:
+      #     prerelease: true
+      #     tag_name: ${{ env.TAG_NAME }}
+      #     files: |
+      #       flutter/build/ios/ipa/*.ipa
+    
+
   build-rustdesk-android:
     needs: [generate-bridge-linux]
     name: build rustdesk android apk ${{ matrix.job.target }} (${{ matrix.job.os }}) [${{ matrix.job.extra-build-features }}]
@@ -546,18 +632,21 @@ jobs:
               target: x86_64-unknown-linux-gnu,
               os: ubuntu-20.04,
               extra-build-features: "",
+              enable-headless: true
             }
           - {
               arch: x86_64,
               target: x86_64-unknown-linux-gnu,
               os: ubuntu-20.04,
               extra-build-features: "flatpak",
+              enable-headless: false
             }
           - {
               arch: x86_64,
               target: x86_64-unknown-linux-gnu,
               os: ubuntu-20.04,
               extra-build-features: "appimage",
+              enable-headless: false
             }
           # - { target: x86_64-unknown-linux-musl   , os: ubuntu-20.04, use-cross: true }
     steps:
@@ -681,7 +770,11 @@ jobs:
               x86_64)
                 # no need mock on x86_64
                 export VCPKG_ROOT=/opt/artifacts/vcpkg
-                cargo build --lib --features hwcodec,flutter,flutter_texture_render,linux_headless,${{ matrix.job.extra-build-features }} --release
+                export DEFAULT_FEAT=""
+                if ${{ matrix.job.enable-headless }}; then
+                  export DEFAULT_FEAT=linux_headless
+                fi
+                cargo build --lib --features hwcodec,flutter,flutter_texture_render,${{ matrix.job.extra-build-features }},$DEFAULT_FEAT --release
                 ;;
             esac
 
@@ -706,6 +799,7 @@ jobs:
               os: ubuntu-20.04, # just for naming package, not running host
               use-cross: true,
               extra-build-features: "",
+              enable-headless: true
             }
           - {
               arch: aarch64,
@@ -713,6 +807,7 @@ jobs:
               os: ubuntu-20.04, # just for naming package, not running host
               use-cross: true,
               extra-build-features: "appimage",
+              enable-headless: false
             }
           # - { arch: aarch64, target: aarch64-unknown-linux-gnu   , os: ubuntu-20.04, use-cross: true, extra-build-features: "flatpak" }
           # - {
@@ -839,7 +934,11 @@ jobs:
             # start build
             pushd /workspace
             export VCPKG_ROOT=/opt/artifacts/vcpkg
-            cargo build --lib --features flutter,${{ matrix.job.extra-build-features }} --release
+            export DEFAULT_FEAT=""
+            if ${{ matrix.job.enable-headless }}; then
+              export DEFAULT_FEAT=linux_headless
+            fi
+            cargo build --lib --features flutter,${{ matrix.job.extra-build-features }},$DEFAULT_FEAT --release
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@master
@@ -863,6 +962,7 @@ jobs:
               os: ubuntu-latest,
               use-cross: true,
               extra-build-features: "",
+              enable-headless: true
             }
           # - { arch: armv7, target: armv7-unknown-linux-gnueabihf , os: ubuntu-20.04, use-cross: true, extra-build-features: "appimage" }
           # - { target: arm-unknown-linux-musleabihf, os: ubuntu-20.04, use-cross: true }
@@ -968,7 +1068,11 @@ jobs:
             python3 ./res/inline-sciter.py
             export VCPKG_ROOT=/opt/artifacts/vcpkg
             export ARCH=armhf
-            cargo build --features inline --release --bins
+            export DEFAULT_FEAT=""
+            if ${{ matrix.job.enable-headless }}; then
+              export DEFAULT_FEAT=linux_headless
+            fi
+            cargo build --features inline,${{ matrix.job.extra-build-features }},$DEFAULT_FEAT --release --bins
             # package
             mkdir -p ./Release
             mv ./target/release/rustdesk ./Release/rustdesk
@@ -980,7 +1084,7 @@ jobs:
         run: |
           for name in rustdesk*??.deb; do
               # use cp to duplicate deb files to fit other packages.
-              cp "$name" "${name%%.deb}--${{ matrix.job.arch }}-sciter.deb"
+              cp "$name" "${name%%.deb}-${{ matrix.job.arch }}-sciter.deb"
           done
 
       - name: Publish debian package
@@ -1103,11 +1207,11 @@ jobs:
             # edit to corresponding arch
             case ${{ matrix.job.arch }} in
               aarch64)
-                sed -i "s/Architecture: amd64/Architecture: arm64/g" ./build.py
+                export ARCH=arm64
                 sed -i "s/x64\/release/arm64\/release/g" ./build.py
               ;;
               armv7)
-                sed -i "s/Architecture: amd64/Architecture: arm/g" ./build.py
+                export ARCH=armhf
                 sed -i "s/x64\/release/arm\/release/g" ./build.py
               ;;
             esac
@@ -1429,6 +1533,9 @@ jobs:
             python
             ttf-arphic-uming
             libappindicator-gtk3
+            pam
+            gst-plugins-base
+            gst-plugin-pipewire
           scripts: |
             cd res && HBB=`pwd`/.. FLUTTER=1 makepkg -f
 

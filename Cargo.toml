@@ -19,7 +19,6 @@ path = "src/naming.rs"
 inline = []
 hbbs = []
 cli = []
-with_rc = ["simple_rc"]
 flutter_texture_render = []
 appimage = []
 flatpak = []
@@ -30,7 +29,9 @@ flutter = ["flutter_rust_bridge"]
 default = ["use_dasp"]
 hwcodec = ["scrap/hwcodec"]
 mediacodec = ["scrap/mediacodec"]
-linux_headless = ["pam", "users"]
+linux_headless = ["pam" ]
+virtual_display_driver = ["virtual_display"]
+plugin_framework = []
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -64,17 +65,18 @@ flutter_rust_bridge = { version = "1.61.1", optional = true }
 errno = "0.3"
 rdev = { git = "https://github.com/fufesou/rdev" }
 url = { version = "2.1", features = ["serde"] }
-dlopen = "0.1"
 crossbeam-queue = "0.3"
 hex = "0.4"
 reqwest = { version = "0.11", features = ["blocking", "json", "rustls-tls"], default-features=false }
 chrono = "0.4"
 cidr-utils = "0.5"
+libloading = "0.7"
+fon = "0.6"
 
 libc = "0.2"
 
 [target.'cfg(not(any(target_os = "android", target_os = "linux")))'.dependencies]
-cpal = "0.14"
+cpal = "0.15"
 ringbuf = "0.3"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
@@ -95,7 +97,7 @@ winit = "0.26"
 winapi = { version = "0.3", features = ["winuser", "wincrypt"] }
 winreg = "0.10"
 windows-service = "0.4"
-virtual_display = { path = "libs/virtual_display" }
+virtual_display = { path = "libs/virtual_display", optional = true }
 impersonate_system = { git = "https://github.com/21pages/impersonate-system" }
 shared_memory = "0.12"
 shutdown_hooks = "0.1"
@@ -126,7 +128,7 @@ evdev = { git="https://github.com/fufesou/evdev" }
 dbus = "0.9"
 dbus-crossroads = "0.5"
 pam = { git="https://github.com/fufesou/pam", optional = true }
-users = { version = "0.11.0", optional = true }
+users = { version = "0.11.0" }
 
 [target.'cfg(target_os = "android")'.dependencies]
 android_logger = "0.11"
@@ -136,8 +138,8 @@ jni = "0.19"
 flutter_rust_bridge = "1.61.1"
 
 [workspace]
-members = ["libs/scrap", "libs/hbb_common", "libs/enigo", "libs/clipboard", "libs/virtual_display", "libs/virtual_display/dylib", "libs/simple_rc", "libs/portable"]
-exclude = ["vdi/host"]
+members = ["libs/scrap", "libs/hbb_common", "libs/enigo", "libs/clipboard", "libs/virtual_display", "libs/virtual_display/dylib", "libs/portable"]
+exclude = ["vdi/host", "examples/custom_plugin"]
 
 [package.metadata.winres]
 LegalCopyright = "Copyright © 2022 Purslane, Inc."
@@ -151,7 +153,6 @@ winapi = { version = "0.3", features = [ "winnt" ] }
 [build-dependencies]
 cc = "1.0"
 hbb_common = { path = "libs/hbb_common" }
-simple_rc = { path = "libs/simple_rc", optional = true }
 flutter_rust_bridge_codegen = "1.61.1"
 os-version = "0.2"
 
@@ -162,7 +163,6 @@ hound = "3.5"
 name = "RustDesk"
 identifier = "com.carriez.rustdesk"
 icon = ["res/32x32.png", "res/128x128.png", "res/128x128@2x.png"]
-deb_depends = ["libgtk-3-0", "libxcb-randr0", "libxdo3", "libxfixes3", "libxcb-shape0", "libxcb-xfixes0", "libasound2", "libsystemd0", "curl", "libvdpau1", "libva2"]
 osx_minimum_system_version = "10.14"
 
 #https://github.com/johnthagen/min-sized-rust
@@ -173,10 +173,6 @@ panic = 'abort'
 strip = true
 #opt-level = 'z' # only have smaller size after strip
 rpath = true
-
-[profile.debug-android]
-inherits = "dev"
-codegen-units = 1 # for flutter android debug build
 
 [patch.crates-io]
 ring = { git = "https://github.com/sj6219/ring", branch = "0.16.20_alpha" }

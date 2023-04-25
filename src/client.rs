@@ -3,7 +3,10 @@ use std::{
     net::SocketAddr,
     ops::Deref,
     str::FromStr,
-    sync::{mpsc, Arc, Mutex, RwLock},
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        mpsc, Arc, Mutex, RwLock,
+    },
 };
 
 pub use async_trait::async_trait;
@@ -21,6 +24,7 @@ use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 pub use file_trait::FileManager;
+#[cfg(not(feature = "flutter"))]
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 use hbb_common::tokio::sync::mpsc::UnboundedSender;
 use hbb_common::{
@@ -49,16 +53,13 @@ use scrap::{
     ImageFormat,
 };
 
-use crate::{
-    common::{self, is_keyboard_mode_supported},
-    server::video_service::{SCRAP_X11_REF_URL, SCRAP_X11_REQUIRED},
-};
+use crate::common::{self, is_keyboard_mode_supported};
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
-use crate::{
-    common::{check_clipboard, ClipboardContext, CLIPBOARD_INTERVAL},
-    ui_session_interface::SessionPermissionConfig,
-};
+use crate::common::{check_clipboard, ClipboardContext, CLIPBOARD_INTERVAL};
+#[cfg(not(feature = "flutter"))]
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+use crate::ui_session_interface::SessionPermissionConfig;
 
 pub use super::lang::*;
 
@@ -69,6 +70,31 @@ pub mod io_loop;
 pub const MILLI1: Duration = Duration::from_millis(1);
 pub const SEC30: Duration = Duration::from_secs(30);
 pub const VIDEO_QUEUE_SIZE: usize = 120;
+
+#[cfg(all(target_os = "linux", feature = "linux_headless"))]
+#[cfg(not(any(feature = "flatpak", feature = "appimage")))]
+pub const LOGIN_MSG_DESKTOP_NOT_INITED: &str = "Desktop env is not inited";
+pub const LOGIN_MSG_DESKTOP_SESSION_NOT_READY: &str = "Desktop session not ready";
+pub const LOGIN_MSG_DESKTOP_XSESSION_FAILED: &str = "Desktop xsession failed";
+pub const LOGIN_MSG_DESKTOP_SESSION_ANOTHER_USER: &str = "Desktop session another user login";
+pub const LOGIN_MSG_DESKTOP_XORG_NOT_FOUND: &str = "Desktop xorg not found";
+// ls /usr/share/xsessions/
+pub const LOGIN_MSG_DESKTOP_NO_DESKTOP: &str = "Desktop none";
+pub const LOGIN_MSG_DESKTOP_SESSION_NOT_READY_PASSWORD_EMPTY: &str =
+    "Desktop session not ready, password empty";
+pub const LOGIN_MSG_DESKTOP_SESSION_NOT_READY_PASSWORD_WRONG: &str =
+    "Desktop session not ready, password wrong";
+pub const LOGIN_MSG_PASSWORD_EMPTY: &str = "Empty Password";
+pub const LOGIN_MSG_PASSWORD_WRONG: &str = "Wrong Password";
+pub const LOGIN_MSG_NO_PASSWORD_ACCESS: &str = "No Password Access";
+pub const LOGIN_MSG_OFFLINE: &str = "Offline";
+#[cfg(target_os = "linux")]
+pub const SCRAP_UBUNTU_HIGHER_REQUIRED: &str = "Wayland requires Ubuntu 21.04 or higher version.";
+#[cfg(target_os = "linux")]
+pub const SCRAP_OTHER_VERSION_OR_X11_REQUIRED: &str =
+    "Wayland requires higher version of linux distro. Please try X11 desktop or change your OS.";
+pub const SCRAP_X11_REQUIRED: &str = "x11 expected";
+pub const SCRAP_X11_REF_URL: &str = "https://rustdesk.com/docs/en/manual/linux/#x11-required";
 
 /// Client of the remote desktop.
 pub struct Client;
@@ -89,6 +115,12 @@ lazy_static::lazy_static! {
     static ref ENIGO: Arc<Mutex<enigo::Enigo>> = Arc::new(Mutex::new(enigo::Enigo::new()));
     static ref OLD_CLIPBOARD_TEXT: Arc<Mutex<String>> = Default::default();
     static ref TEXT_CLIPBOARD_STATE: Arc<Mutex<TextClipboardState>> = Arc::new(Mutex::new(TextClipboardState::new()));
+}
+
+#[inline]
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+pub fn get_old_clipboard_text() -> &'static Arc<Mutex<String>> {
+    &OLD_CLIPBOARD_TEXT
 }
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -133,6 +165,7 @@ impl OboePlayer {
         }
     }
 
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
     fn is_null(&self) -> bool {
         self.raw.is_null()
     }
@@ -168,7 +201,7 @@ impl Client {
         token: &str,
         conn_type: ConnType,
         interface: impl Interface,
-    ) -> ResultType<(Stream, bool)> {
+    ) -> ResultType<(Stream, bool, Option<Vec<u8>>)> {
         match Self::_start(peer, key, token, conn_type, interface).await {
             Err(err) => {
                 let err_str = err.to_string();
@@ -189,7 +222,7 @@ impl Client {
         token: &str,
         conn_type: ConnType,
         interface: impl Interface,
-    ) -> ResultType<(Stream, bool)> {
+    ) -> ResultType<(Stream, bool, Option<Vec<u8>>)> {
         // to-do: remember the port for each peer, so that we can retry easier
         if hbb_common::is_ip_str(peer) {
             return Ok((
@@ -199,6 +232,7 @@ impl Client {
                 )
                 .await?,
                 true,
+                None,
             ));
         }
         // Allow connect to {domain}:{port}
@@ -206,6 +240,7 @@ impl Client {
             return Ok((
                 socket_client::connect_tcp(peer, RENDEZVOUS_TIMEOUT).await?,
                 true,
+                None,
             ));
         }
         let (mut rendezvous_server, servers, contained) = crate::get_rendezvous_server(1_000).await;
@@ -301,7 +336,7 @@ impl Client {
                                 my_addr.is_ipv4(),
                             )
                             .await?;
-                            Self::secure_connection(
+                            let pk = Self::secure_connection(
                                 peer,
                                 signed_id_pk,
                                 key,
@@ -310,7 +345,7 @@ impl Client {
                                 interface,
                             )
                             .await?;
-                            return Ok((conn, false));
+                            return Ok((conn, false, pk));
                         }
                         _ => {
                             log::error!("Unexpected protobuf msg received: {:?}", msg_in);
@@ -371,7 +406,7 @@ impl Client {
         token: &str,
         conn_type: ConnType,
         interface: impl Interface,
-    ) -> ResultType<(Stream, bool)> {
+    ) -> ResultType<(Stream, bool, Option<Vec<u8>>)> {
         let direct_failures = PeerConfig::load(peer_id).direct_failures;
         let mut connect_timeout = 0;
         const MIN: u64 = 1000;
@@ -441,8 +476,9 @@ impl Client {
         }
         let mut conn = conn?;
         log::info!("{:?} used to establish connection", start.elapsed());
-        Self::secure_connection(peer_id, signed_id_pk, key, &mut conn, direct, interface).await?;
-        Ok((conn, direct))
+        let pk = Self::secure_connection(peer_id, signed_id_pk, key, &mut conn, direct, interface)
+            .await?;
+        Ok((conn, direct, pk))
     }
 
     /// Establish secure connection with the server.
@@ -453,17 +489,19 @@ impl Client {
         conn: &mut Stream,
         direct: bool,
         interface: impl Interface,
-    ) -> ResultType<()> {
+    ) -> ResultType<Option<Vec<u8>>> {
         let rs_pk = get_rs_pk(if key.is_empty() {
             hbb_common::config::RS_PUB_KEY
         } else {
             key
         });
         let mut sign_pk = None;
+        let mut option_pk = None;
         if !signed_id_pk.is_empty() && rs_pk.is_some() {
             if let Ok((id, pk)) = decode_id_pk(&signed_id_pk, &rs_pk.unwrap()) {
                 if id == peer_id {
                     sign_pk = Some(sign::PublicKey(pk));
+                    option_pk = Some(pk.to_vec());
                 }
             }
             if sign_pk.is_none() {
@@ -475,7 +513,7 @@ impl Client {
             None => {
                 // send an empty message out in case server is setting up secure and waiting for first message
                 conn.send(&Message::new()).await?;
-                return Ok(());
+                return Ok(option_pk);
             }
         };
         match timeout(READ_TIMEOUT, conn.next()).await? {
@@ -528,7 +566,7 @@ impl Client {
                 bail!("Reset by the peer");
             }
         }
-        Ok(())
+        Ok(option_pk)
     }
 
     /// Request a relay connection to the server.
@@ -631,8 +669,13 @@ impl Client {
         TEXT_CLIPBOARD_STATE.lock().unwrap().running = false;
     }
 
+    // `try_start_clipboard` is called by all session when connection is established. (When handling peer info).
+    // This function only create one thread with a loop, the loop is shared by all sessions.
+    // After all sessions are end, the loop exists.
+    //
+    // If clipboard update is detected, the text will be sent to all sessions by `send_text_clipboard_msg`.
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    fn try_start_clipboard(_conf_tx: Option<(SessionPermissionConfig, UnboundedSender<Data>)>) {
+    fn try_start_clipboard(_ctx: Option<ClientClipboardContext>) {
         let mut clipboard_lock = TEXT_CLIPBOARD_STATE.lock().unwrap();
         if clipboard_lock.running {
             return;
@@ -659,9 +702,9 @@ impl Client {
                             #[cfg(feature = "flutter")]
                             crate::flutter::send_text_clipboard_msg(msg);
                             #[cfg(not(feature = "flutter"))]
-                            if let Some((cfg, tx)) = &_conf_tx {
-                                if cfg.is_text_clipboard_required() {
-                                    let _ = tx.send(Data::Message(msg));
+                            if let Some(ctx) = &_ctx {
+                                if ctx.cfg.is_text_clipboard_required() {
+                                    let _ = ctx.tx.send(Data::Message(msg));
                                 }
                             }
                         }
@@ -675,6 +718,7 @@ impl Client {
         }
     }
 
+    #[inline]
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     fn get_current_text_clipboard_msg() -> Option<Message> {
         let txt = &*OLD_CLIPBOARD_TEXT.lock().unwrap();
@@ -710,6 +754,7 @@ pub struct AudioHandler {
     #[cfg(not(any(target_os = "android", target_os = "linux")))]
     audio_stream: Option<Box<dyn StreamTrait>>,
     channels: u16,
+    device_channel: u16,
     #[cfg(not(any(target_os = "android", target_os = "linux")))]
     ready: Arc<std::sync::Mutex<bool>>,
 }
@@ -782,14 +827,33 @@ impl AudioHandler {
         let sample_format = config.sample_format();
         log::info!("Default output format: {:?}", config);
         log::info!("Remote input format: {:?}", format0);
-        let mut config: StreamConfig = config.into();
-        config.channels = format0.channels as _;
-        match sample_format {
-            cpal::SampleFormat::F32 => self.build_output_stream::<f32>(&config, &device)?,
-            cpal::SampleFormat::I16 => self.build_output_stream::<i16>(&config, &device)?,
-            cpal::SampleFormat::U16 => self.build_output_stream::<u16>(&config, &device)?,
-        }
+        let config: StreamConfig = config.into();
         self.sample_rate = (format0.sample_rate, config.sample_rate.0);
+        let mut build_output_stream = |config: StreamConfig| match sample_format {
+            cpal::SampleFormat::I8 => self.build_output_stream::<i8>(&config, &device),
+            cpal::SampleFormat::I16 => self.build_output_stream::<i16>(&config, &device),
+            cpal::SampleFormat::I32 => self.build_output_stream::<i32>(&config, &device),
+            cpal::SampleFormat::I64 => self.build_output_stream::<i64>(&config, &device),
+            cpal::SampleFormat::U8 => self.build_output_stream::<u8>(&config, &device),
+            cpal::SampleFormat::U16 => self.build_output_stream::<u16>(&config, &device),
+            cpal::SampleFormat::U32 => self.build_output_stream::<u32>(&config, &device),
+            cpal::SampleFormat::U64 => self.build_output_stream::<u64>(&config, &device),
+            cpal::SampleFormat::F32 => self.build_output_stream::<f32>(&config, &device),
+            cpal::SampleFormat::F64 => self.build_output_stream::<f64>(&config, &device),
+            f => bail!("unsupported audio format: {:?}", f),
+        };
+        if config.channels > format0.channels as _ {
+            let no_rechannel_config = StreamConfig {
+                channels: format0.channels as _,
+                ..config.clone()
+            };
+            if let Err(_) = build_output_stream(no_rechannel_config) {
+                build_output_stream(config)?;
+            }
+        } else {
+            build_output_stream(config)?;
+        }
+
         Ok(())
     }
 
@@ -833,20 +897,25 @@ impl AudioHandler {
                     let sample_rate0 = self.sample_rate.0;
                     let sample_rate = self.sample_rate.1;
                     let audio_buffer = self.audio_buffer.0.clone();
+                    let mut buffer = buffer[0..n].to_owned();
                     if sample_rate != sample_rate0 {
-                        let buffer = crate::resample_channels(
+                        buffer = crate::audio_resample(
                             &buffer[0..n],
                             sample_rate0,
                             sample_rate,
                             channels,
                         );
-                        audio_buffer.lock().unwrap().push_slice_overwrite(&buffer);
-                    } else {
-                        audio_buffer
-                            .lock()
-                            .unwrap()
-                            .push_slice_overwrite(&buffer[0..n]);
                     }
+                    if self.channels != self.device_channel {
+                        buffer = crate::audio_rechannel(
+                            buffer,
+                            sample_rate,
+                            sample_rate,
+                            self.channels,
+                            self.device_channel,
+                        );
+                    }
+                    audio_buffer.lock().unwrap().push_slice_overwrite(&buffer);
                 }
                 #[cfg(target_os = "android")]
                 {
@@ -864,17 +933,19 @@ impl AudioHandler {
 
     /// Build audio output stream for current device.
     #[cfg(not(any(target_os = "android", target_os = "linux")))]
-    fn build_output_stream<T: cpal::Sample>(
+    fn build_output_stream<T: cpal::Sample + cpal::SizedSample + cpal::FromSample<f32>>(
         &mut self,
         config: &StreamConfig,
         device: &Device,
     ) -> ResultType<()> {
+        self.device_channel = config.channels;
         let err_fn = move |err| {
             // too many errors, will improve later
             log::trace!("an error occurred on stream: {}", err);
         };
         let audio_buffer = self.audio_buffer.0.clone();
         let ready = self.ready.clone();
+        let timeout = None;
         let stream = device.build_output_stream(
             config,
             move |data: &mut [T], _: &_| {
@@ -892,12 +963,13 @@ impl AudioHandler {
                 let mut input = elems.into_iter();
                 for sample in data.iter_mut() {
                     *sample = match input.next() {
-                        Some(x) => T::from(&x),
-                        _ => T::from(&0.),
+                        Some(x) => T::from_sample(x),
+                        _ => T::from_sample(0.),
                     };
                 }
             },
             err_fn,
+            timeout,
         )?;
         stream.play()?;
         self.audio_stream = Some(Box::new(stream));
@@ -1291,10 +1363,11 @@ impl LoginConfigHandler {
                 config.custom_image_quality[0]
             };
             msg.custom_image_quality = quality << 8;
+            #[cfg(feature = "flutter")]
+            if let Some(custom_fps) = self.options.get("custom-fps") {
+                msg.custom_fps = custom_fps.parse().unwrap_or(30);
+            }
             n += 1;
-        }
-        if let Some(custom_fps) = self.options.get("custom-fps") {
-            msg.custom_fps = custom_fps.parse().unwrap_or(30);
         }
         let view_only = self.get_toggle_option("view-only");
         if view_only {
@@ -1680,7 +1753,12 @@ pub type MediaSender = mpsc::Sender<MediaData>;
 /// * `video_callback` - The callback for video frame. Being called when a video frame is ready.
 pub fn start_video_audio_threads<F>(
     video_callback: F,
-) -> (MediaSender, MediaSender, Arc<ArrayQueue<VideoFrame>>)
+) -> (
+    MediaSender,
+    MediaSender,
+    Arc<ArrayQueue<VideoFrame>>,
+    Arc<AtomicUsize>,
+)
 where
     F: 'static + FnMut(&mut Vec<u8>) + Send,
 {
@@ -1688,21 +1766,48 @@ where
     let video_queue = Arc::new(ArrayQueue::<VideoFrame>::new(VIDEO_QUEUE_SIZE));
     let video_queue_cloned = video_queue.clone();
     let mut video_callback = video_callback;
+    let mut duration = std::time::Duration::ZERO;
+    let mut count = 0;
+    let fps = Arc::new(AtomicUsize::new(0));
+    let decode_fps = fps.clone();
+    let mut skip_beginning = 0;
 
     std::thread::spawn(move || {
         let mut video_handler = VideoHandler::new();
         loop {
             if let Ok(data) = video_receiver.recv() {
                 match data {
-                    MediaData::VideoFrame(vf) => {
-                        if let Ok(true) = video_handler.handle_frame(*vf) {
+                    MediaData::VideoFrame(_) | MediaData::VideoQueue => {
+                        let vf = if let MediaData::VideoFrame(vf) = data {
+                            *vf
+                        } else {
+                            if let Some(vf) = video_queue.pop() {
+                                vf
+                            } else {
+                                continue;
+                            }
+                        };
+                        let start = std::time::Instant::now();
+                        if let Ok(true) = video_handler.handle_frame(vf) {
                             video_callback(&mut video_handler.rgb);
-                        }
-                    }
-                    MediaData::VideoQueue => {
-                        if let Some(vf) = video_queue.pop() {
-                            if let Ok(true) = video_handler.handle_frame(vf) {
-                                video_callback(&mut video_handler.rgb);
+                            // fps calculation
+                            // The first frame will be very slow
+                            if skip_beginning < 5 {
+                                skip_beginning += 1;
+                                continue;
+                            }
+                            duration += start.elapsed();
+                            count += 1;
+                            if count % 10 == 0 {
+                                fps.store(
+                                    (count * 1000 / duration.as_millis()) as usize,
+                                    Ordering::Relaxed,
+                                );
+                            }
+                            // Clear to get real-time fps
+                            if count > 300 {
+                                count = 0;
+                                duration = Duration::ZERO;
                             }
                         }
                     }
@@ -1721,7 +1826,7 @@ where
         log::info!("Video decoder loop exits");
     });
     let audio_sender = start_audio_thread();
-    return (video_sender, audio_sender, video_queue_cloned);
+    return (video_sender, audio_sender, video_queue_cloned, decode_fps);
 }
 
 /// Start an audio thread
@@ -1915,49 +2020,49 @@ struct LoginErrorMsgBox {
 lazy_static::lazy_static! {
     static ref LOGIN_ERROR_MAP: Arc<HashMap<&'static str, LoginErrorMsgBox>> = {
         use hbb_common::config::LINK_HEADLESS_LINUX_SUPPORT;
-        let map = HashMap::from([(crate::server::LOGIN_MSG_DESKTOP_SESSION_NOT_READY, LoginErrorMsgBox{
+        let map = HashMap::from([(LOGIN_MSG_DESKTOP_SESSION_NOT_READY, LoginErrorMsgBox{
             msgtype: "session-login",
             title: "",
             text: "",
             link: "",
             try_again: true,
-        }), (crate::server::LOGIN_MSG_DESKTOP_XSESSION_FAILED, LoginErrorMsgBox{
+        }), (LOGIN_MSG_DESKTOP_XSESSION_FAILED, LoginErrorMsgBox{
             msgtype: "session-re-login",
             title: "",
             text: "",
             link: "",
             try_again: true,
-        }), (crate::server::LOGIN_MSG_DESKTOP_SESSION_ANOTHER_USER, LoginErrorMsgBox{
+        }), (LOGIN_MSG_DESKTOP_SESSION_ANOTHER_USER, LoginErrorMsgBox{
             msgtype: "info-nocancel",
             title: "another_user_login_title_tip",
             text: "another_user_login_text_tip",
             link: "",
             try_again: false,
-        }), (crate::server::LOGIN_MSG_DESKTOP_XORG_NOT_FOUND, LoginErrorMsgBox{
+        }), (LOGIN_MSG_DESKTOP_XORG_NOT_FOUND, LoginErrorMsgBox{
             msgtype: "info-nocancel",
             title: "xorg_not_found_title_tip",
             text: "xorg_not_found_text_tip",
             link: LINK_HEADLESS_LINUX_SUPPORT,
             try_again: true,
-        }), (crate::server::LOGIN_MSG_DESKTOP_NO_DESKTOP, LoginErrorMsgBox{
+        }), (LOGIN_MSG_DESKTOP_NO_DESKTOP, LoginErrorMsgBox{
             msgtype: "info-nocancel",
             title: "no_desktop_title_tip",
             text: "no_desktop_text_tip",
             link: LINK_HEADLESS_LINUX_SUPPORT,
             try_again: true,
-        }), (crate::server::LOGIN_MSG_DESKTOP_SESSION_NOT_READY_PASSWORD_EMPTY, LoginErrorMsgBox{
+        }), (LOGIN_MSG_DESKTOP_SESSION_NOT_READY_PASSWORD_EMPTY, LoginErrorMsgBox{
             msgtype: "session-login-password",
             title: "",
             text: "",
             link: "",
             try_again: true,
-        }), (crate::server::LOGIN_MSG_DESKTOP_SESSION_NOT_READY_PASSWORD_WRONG, LoginErrorMsgBox{
+        }), (LOGIN_MSG_DESKTOP_SESSION_NOT_READY_PASSWORD_WRONG, LoginErrorMsgBox{
             msgtype: "session-login-re-password",
             title: "",
             text: "",
             link: "",
             try_again: true,
-        }), (crate::server::LOGIN_MSG_NO_PASSWORD_ACCESS, LoginErrorMsgBox{
+        }), (LOGIN_MSG_NO_PASSWORD_ACCESS, LoginErrorMsgBox{
             msgtype: "wait-remote-accept-nook",
             title: "Prompt",
             text: "Please wait for the remote side to accept your session request...",
@@ -1975,11 +2080,11 @@ pub fn handle_login_error(
     err: &str,
     interface: &impl Interface,
 ) -> bool {
-    if err == crate::server::LOGIN_MSG_PASSWORD_EMPTY {
+    if err == LOGIN_MSG_PASSWORD_EMPTY {
         lc.write().unwrap().password = Default::default();
         interface.msgbox("input-password", "Password Required", "", "");
         true
-    } else if err == crate::server::LOGIN_MSG_PASSWORD_WRONG {
+    } else if err == LOGIN_MSG_PASSWORD_WRONG {
         lc.write().unwrap().password = Default::default();
         interface.msgbox("re-input-password", err, "Do you want to enter again?", "");
         true
@@ -2390,4 +2495,15 @@ fn decode_id_pk(signed: &[u8], key: &sign::PublicKey) -> ResultType<(String, [u8
     } else {
         bail!("Wrong public length");
     }
+}
+
+#[cfg(feature = "flutter")]
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+pub(crate) struct ClientClipboardContext;
+
+#[cfg(not(feature = "flutter"))]
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+pub(crate) struct ClientClipboardContext {
+    pub cfg: SessionPermissionConfig,
+    pub tx: UnboundedSender<Data>,
 }

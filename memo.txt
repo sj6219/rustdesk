@@ -39,10 +39,12 @@ target/release/bundle/osx/RustDesk.app/Contents/Info.plist
 python3 res/inline-sciter.py
 cargo build --release --features inline
 cp target/release/rustdesk ../Documents/RustDesk.app/Contents/MacOS/rustdesk 
-codesign -s "Developer ID Application" --force --options runtime  ../Documents/RustDesk.app/Contents/MacOS/*
-codesign -s "Developer ID Application" --force --options runtime  ../Documents/RustDesk.app
+codesign --force --options runtime -s "Developer ID Application" --deep --strict ../Documents/RustDesk.app -vvv
 rm -r /Applications/RustDesk.app
 cp -r ../Documents/RustDesk.app /Applications/RustDesk.app
+
+create-dmg --icon "RustDesk.app" 200 190 --hide-extension "RustDesk.app" --window-size 800 400 --app-drop-link 600 185 rustdesk-1.2.0-aarch64-macos-sciter.dmg ../Documents/RustDesk.app
+codesign --force --options runtime -s "Developer ID Application" --deep --strict rustdesk-1.2.0-aarch64-macos-sciter.dmg -vvv
 
 csrutil disable
 file target\release\rustdesk
@@ -71,13 +73,15 @@ sudo apt install build-essential
 sudo apt install gcc-multilib
 
 #ios
-flutter/ios/Runnder.xcworkspace/View/Navigators/Project/targets:Runner/Signing & Capability/Teams
-cargo build --target aarch64-apple-ios --features flutter --release
+flutter/ios/Runnder.xcworkspace/View/Navigators/Project:Runnder/targets:Runner/Signing & Capability/Teams
+pushd flutter && flutter pub get && popd
+~/.cargo/bin/flutter_rust_bridge_codegen --rust-input ./src/flutter_ffi.rs --dart-output ./flutter/lib/generated_bridge.dart
+cargo build --features flutter --target aarch64-apple-ios --lib --release
 pushd flutter; flutter build ios --release; popd
 xcode/Window/Devices and Simulators/INSTALLED APPS
 
 xcrun simctl list
-open -a Simulator --args -CurrentDeviceUDID 5D1C39DD-708B-41D3-B89A-3F0D9B8E42BF
+open -a Simulator --args -CurrentDeviceUDID 8FEC868E-2D4D-4254-AD25-86C764630DD5
 
 # rustdesk
 cd C:\Users\sjpark\Documents\rustdesk

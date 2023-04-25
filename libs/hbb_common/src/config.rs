@@ -322,6 +322,16 @@ fn patch(path: PathBuf) -> PathBuf {
                         .trim()
                         .to_owned();
                     if user != "root" {
+                        let cmd = format!("getent passwd '{}' | awk -F':' '{{print $6}}'", user);
+                        if let Ok(output) = std::process::Command::new(cmd).output() {
+                            let home_dir = String::from_utf8_lossy(&output.stdout)
+                                .to_string()
+                                .trim()
+                                .to_owned();
+                            if !home_dir.is_empty() {
+                                return home_dir.into();
+                            }
+                        }
                         return format!("/home/{user}").into();
                     }
                 }
@@ -1375,7 +1385,7 @@ impl UserDefaultConfig {
             "image_quality" => self.get_string(key, "balanced", vec!["best", "low", "custom"]),
             "codec-preference" => self.get_string(key, "auto", vec!["vp8", "vp9", "h264", "h265"]),
             "custom_image_quality" => self.get_double_string(key, 50.0, 10.0, 100.0),
-            "custom-fps" => self.get_double_string(key, 30.0, 10.0, 120.0),
+            "custom-fps" => self.get_double_string(key, 30.0, 5.0, 120.0),
             _ => self
                 .options
                 .get(key)
