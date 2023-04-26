@@ -4,7 +4,7 @@
 		{
 			"label": "build",
 			"type" : "shell",
-			"command": "cargo build --features flutter,hwcodec,flutter_texture_render --lib ; cp target/debug/librustdesk.dll flutter/build/windows/runner/Release/librustdesk.dll",
+			"command": "cargo build --features virtual_display_driver,flutter,hwcodec,flutter_texture_render --lib",
 			//"command": "cargo build",
 			"options": {
 				"cwd": "${workspaceFolder}",
