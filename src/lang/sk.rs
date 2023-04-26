@@ -136,7 +136,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("ID does not exist", "ID neexistuje"),
         ("Failed to connect to rendezvous server", "Nepodarilo sa pripojiť k zoznamovaciemu serveru"),
         ("Please try later", "Vyskúšajte neskôr"),
-        ("Remote desktop is offline", "Vzdialená plocha je pripojená"),
+        ("Remote desktop is offline", "Vzdialená plocha nie je pripojená"),
         ("Key mismatch", "Kľúče sa nezhodujú"),
         ("Timeout", "Čas pre nadviazanie pripojenia vypršal"),
         ("Failed to connect to relay server", "Nepodarilo sa pripojiť k prepojovaciemu serveru"),
@@ -491,5 +491,12 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("xorg_not_found_text_tip", ""),
         ("no_desktop_title_tip", ""),
         ("no_desktop_text_tip", ""),
+        ("No need to elevate", ""),
+        ("System Sound", ""),
+        ("Default", ""),
+        ("New RDP", ""),
+        ("Fingerprint", ""),
+        ("Copy Fingerprint", ""),
+        ("no fingerprints", ""),
     ].iter().cloned().collect();
 }

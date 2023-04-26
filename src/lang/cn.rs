@@ -491,5 +491,12 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("xorg_not_found_text_tip", "请安装 Xorg"),
         ("no_desktop_title_tip", "desktop 未安装"),
         ("no_desktop_text_tip", "请安装 desktop"),
+        ("No need to elevate", ""),
+        ("System Sound", ""),
+        ("Default", ""),
+        ("New RDP", ""),
+        ("Fingerprint", "指纹"),
+        ("Copy Fingerprint", "复制指纹"),
+        ("no fingerprints", "没有指纹"),
     ].iter().cloned().collect();
 }
