@@ -4,7 +4,7 @@
 		{
 			"label": "build",
 			"type" : "shell",
-			"command": "cargo build --features flutter --lib &&  cp target/debug/liblibrustdesk.dylib flutter/build/macos/Build/Products/Release/RustDesk.app/Contents/Frameworks/liblibrustdesk.dylib",
+			"command": "cargo build --features flutter,flutter_texture_render --lib &&  cp target/debug/liblibrustdesk.dylib target/release/liblibrustdesk.dylib",
 			//"command": "cargo build --features inline && cp target/debug/rustdesk ../Documents/RustDesk.app/Contents/MacOS/rustdesk ",
 			"options": {
 				"cwd": "${workspaceFolder}",
