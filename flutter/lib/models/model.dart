@@ -1633,6 +1633,7 @@ class FFI {
             }
             final rgba = platformFFI.getRgba(id, sz);
             if (rgba != null) {
+              //debugPrint('garbage collection required');
               imageModel.onRgba(rgba);
             }
           }
