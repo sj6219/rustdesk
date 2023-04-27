@@ -9,6 +9,7 @@
             "type": "android-debug", // https://github.com/nisargjhaveri/vscode-android-debug
             "request": "attach",
             "target": "select",
+            "target": "last-selected",
             "pid": "${command:pickAndroidProcess}",
             "mode": "native", // Change to `java` or `native` to attach only Java or Native debugger.
             "packageName": "com.carriez.flutter_hbb", // Package name for your app.
