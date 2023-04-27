@@ -1,4 +1,8 @@
+import 'dart:convert';
 import 'dart:collection';
+import 'package:flutter/foundation.dart';
+
+import './common.dart';
 
 const String kValueTrue = '1';
 const String kValueFalse = '0';
@@ -57,13 +61,13 @@ class UiCheckbox extends UiType {
 
 class Location {
   // location key:
-  //  host|main|settings|display|others
+  //  host|main|settings|plugin
   //  client|remote|toolbar|display
   HashMap<String, UiType> ui;
 
   Location(this.ui);
   Location.fromJson(Map<String, dynamic> json) : ui = HashMap() {
-    json.forEach((key, value) {
+    (json['ui'] as Map<String, dynamic>).forEach((key, value) {
       var ui = UiType.create(value);
       if (ui != null) {
         this.ui[ui.key] = ui;
@@ -74,14 +78,12 @@ class Location {
 
 class ConfigItem {
   String key;
-  String value;
   String description;
   String defaultValue;
 
-  ConfigItem(this.key, this.value, this.defaultValue, this.description);
+  ConfigItem(this.key, this.defaultValue, this.description);
   ConfigItem.fromJson(Map<String, dynamic> json)
       : key = json['key'] ?? '',
-        value = json['value'] ?? '',
         description = json['description'] ?? '',
         defaultValue = json['default'] ?? '';
 
@@ -92,12 +94,12 @@ class ConfigItem {
 }
 
 class Config {
-  List<ConfigItem> local;
+  List<ConfigItem> shared;
   List<ConfigItem> peer;
 
-  Config(this.local, this.peer);
+  Config(this.shared, this.peer);
   Config.fromJson(Map<String, dynamic> json)
-      : local = (json['local'] as List<dynamic>)
+      : shared = (json['shared'] as List<dynamic>)
             .map((e) => ConfigItem.fromJson(e))
             .toList(),
         peer = (json['peer'] as List<dynamic>)
@@ -144,23 +146,35 @@ class Desc {
         published = json['published'] ?? '',
         released = json['released'] ?? '',
         github = json['github'] ?? '',
-        location = Location(HashMap<String, UiType>.from(json['location'])),
-        config = Config(
-            (json['config'] as List<dynamic>)
-                .map((e) => ConfigItem.fromJson(e))
-                .toList(),
-            (json['config'] as List<dynamic>)
-                .map((e) => ConfigItem.fromJson(e))
-                .toList());
+        location = Location.fromJson(json['location']),
+        config = Config.fromJson(json['config']);
 }
 
-final mapPluginDesc = <String, Desc>{};
+class DescModel with ChangeNotifier {
+  final data = <PluginId, Desc>{};
 
-void updateDesc(Map<String, dynamic> desc) {
-  Desc d = Desc.fromJson(desc);
-  mapPluginDesc[d.id] = d;
+  DescModel._();
+
+  void _updateDesc(Map<String, dynamic> desc) {
+    try {
+      Desc d = Desc.fromJson(json.decode(desc['desc']));
+      data[d.id] = d;
+      notifyListeners();
+    } catch (e) {
+      debugPrint('DescModel json.decode fail(): $e');
+    }
+  }
+
+  Desc? _getDesc(String id) {
+    return data[id];
+  }
+
+  Map<PluginId, Desc> get all => data;
+
+  static final DescModel _instance = DescModel._();
+  static DescModel get instance => _instance;
 }
 
-Desc? getDesc(String id) {
-  return mapPluginDesc[id];
-}
+void updateDesc(Map<String, dynamic> desc) =>
+    DescModel.instance._updateDesc(desc);
+Desc? getDesc(String id) => DescModel.instance._getDesc(id);

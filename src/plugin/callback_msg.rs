@@ -60,14 +60,14 @@ struct MsgToConfig {
 /// id:      The id of this plugin.
 /// content: The content.
 /// len:     The length of the content.
-pub fn callback_msg(
+pub fn cb_msg(
     peer: *const c_char,
     target: *const c_char,
     id: *const c_char,
     content: *const c_void,
     len: usize,
 ) {
-    macro_rules! callback_msg_field {
+    macro_rules! cb_msg_field {
         ($field: ident) => {
             let $field = match cstr_to_string($field) {
                 Err(e) => {
@@ -78,9 +78,9 @@ pub fn callback_msg(
             };
         };
     }
-    callback_msg_field!(peer);
-    callback_msg_field!(target);
-    callback_msg_field!(id);
+    cb_msg_field!(peer);
+    cb_msg_field!(target);
+    cb_msg_field!(id);
 
     match &target as _ {
         MSG_TO_PEER_TARGET => {
@@ -110,8 +110,8 @@ pub fn callback_msg(
                 // No need to merge the msgs. Handling the msg one by one is ok.
                 if let Ok(msg) = serde_json::from_str::<MsgToConfig>(s) {
                     match &msg.r#type as _ {
-                        config::CONFIG_TYPE_LOCAL => {
-                            match config::LocalConfig::set(&msg.id, &msg.key, &msg.value) {
+                        config::CONFIG_TYPE_SHARED => {
+                            match config::SharedConfig::set(&msg.id, &msg.key, &msg.value) {
                                 Ok(_) => {
                                     if let Some(ui) = &msg.ui {
                                         // No need to set the peer id for location config.
