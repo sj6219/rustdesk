@@ -51,6 +51,36 @@ pub enum ImageFormat {
     ARGB,
 }
 
+pub struct ImageRgb {
+    pub raw: Vec<u8>,
+    pub w: usize,
+    pub h: usize,
+    fmt: ImageFormat,
+    stride: usize,
+}
+
+impl ImageRgb {
+    pub fn new(fmt: ImageFormat, stride: usize) -> Self {
+        Self {
+            raw: Vec::new(),
+            w: 0,
+            h: 0,
+            fmt,
+            stride,
+        }
+    }
+
+    #[inline]
+    pub fn fmt(&self) -> ImageFormat {
+        self.fmt
+    }
+
+    #[inline]
+    pub fn stride(&self) -> usize {
+        self.stride
+    }
+}
+
 #[inline]
 pub fn would_block_if_equal(old: &mut Vec<u8>, b: &[u8]) -> std::io::Result<()> {
     // does this really help?
@@ -64,6 +94,9 @@ pub fn would_block_if_equal(old: &mut Vec<u8>, b: &[u8]) -> std::io::Result<()> 
 
 pub trait TraitCapturer {
     fn set_use_yuv(&mut self, use_yuv: bool);
+
+    // We doesn't support
+    #[cfg(not(any(target_os = "ios")))]
     fn frame<'a>(&'a mut self, timeout: std::time::Duration) -> std::io::Result<Frame<'a>>;
 
     #[cfg(windows)]

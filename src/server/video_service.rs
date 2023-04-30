@@ -46,12 +46,6 @@ use std::{
     time::{self, Duration, Instant},
 };
 
-pub const SCRAP_UBUNTU_HIGHER_REQUIRED: &str = "Wayland requires Ubuntu 21.04 or higher version.";
-pub const SCRAP_OTHER_VERSION_OR_X11_REQUIRED: &str =
-    "Wayland requires higher version of linux distro. Please try X11 desktop or change your OS.";
-pub const SCRAP_X11_REQUIRED: &str = "x11 expected";
-pub const SCRAP_X11_REF_URL: &str = "https://rustdesk.com/docs/en/manual/linux/#x11-required";
-
 pub const NAME: &'static str = "video";
 
 lazy_static::lazy_static! {
@@ -280,7 +274,7 @@ fn create_capturer(
 fn ensure_close_virtual_device() -> ResultType<()> {
     let num_displays = Display::all()?.len();
     if num_displays > 1 {
-        virtual_display_manager::plug_out_headless();
+        let _res = virtual_display_manager::plug_out_headless();
     }
     Ok(())
 }
@@ -933,7 +927,9 @@ fn try_get_displays() -> ResultType<Vec<Display>> {
         }
     } else if displays.len() > 1 {
         // If more than one displays exists, close RustDeskVirtualDisplay
-        let _res = virtual_display_manager::plug_in_headless();
+        if virtual_display_manager::plug_out_headless() {
+            displays = Display::all()?;
+        }
     }
     Ok(displays)
 }

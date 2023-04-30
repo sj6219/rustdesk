@@ -48,10 +48,9 @@ mod license;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 mod port_forward;
 
+#[cfg(all(feature = "flutter", feature = "plugin_framework"))]
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
-pub mod api;
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
-pub mod plugins;
+pub mod plugin;
 
 mod tray;
 
@@ -63,9 +62,6 @@ mod hbbs_http;
 
 #[cfg(windows)]
 pub mod clipboard_file;
-
-#[cfg(all(windows, feature = "with_rc"))]
-pub mod rc;
 
 #[cfg(windows)]
 pub mod privacy_win_mag;

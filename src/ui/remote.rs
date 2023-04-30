@@ -144,6 +144,8 @@ impl InvokeUiSession for SciterHandler {
         self.call("setConnectionType", &make_args!(is_secured, direct));
     }
 
+    fn set_fingerprint(&self, _fingerprint: String) {}
+
     fn job_error(&self, id: i32, err: String, file_num: i32) {
         self.call("jobError", &make_args!(id, err, file_num));
     }
@@ -221,12 +223,12 @@ impl InvokeUiSession for SciterHandler {
         self.call("adaptSize", &make_args!());
     }
 
-    fn on_rgba(&self, data: &mut Vec<u8>) {
+    fn on_rgba(&self, rgba: &mut scrap::ImageRgb) {
         VIDEO
             .lock()
             .unwrap()
             .as_mut()
-            .map(|v| v.render_frame(data).ok());
+            .map(|v| v.render_frame(&rgba.raw).ok());
     }
 
     fn set_peer_info(&self, pi: &PeerInfo) {
