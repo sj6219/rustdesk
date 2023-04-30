@@ -1023,6 +1023,7 @@ impl Connection {
                 let mut s = s.write().unwrap();
                 #[cfg(not(any(target_os = "android", target_os = "ios")))]
                 try_start_record_cursor_pos();
+                //..a::::::4+.1
                 s.add_connection(self.inner.clone(), &noperms);
             }
         }
@@ -1216,7 +1217,6 @@ impl Connection {
 
     async fn on_message(&mut self, msg: Message) -> bool {
         if let Some(message::Union::LoginRequest(lr)) = msg.union {
-            //..m::::::4
             //..a::::::4.1
             self.handle_login_request_without_validation(&lr).await;
             if self.authorized {
