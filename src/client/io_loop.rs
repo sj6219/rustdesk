@@ -125,8 +125,10 @@ impl<T: InvokeUiSession> Remote<T> {
             Ok((mut peer, direct, pk)) => {
                 self.handler.set_connection_type(peer.is_secured(), direct); // flutter -> connection_ready
                 self.handler.set_connection_info(direct, false);
-                self.handler
-                    .set_fingerprint(crate::common::pk_to_fingerprint(pk.unwrap_or_default()));
+                if conn_type == ConnType::DEFAULT_CONN {
+                    self.handler
+                        .set_fingerprint(crate::common::pk_to_fingerprint(pk.unwrap_or_default()));
+                }
 
                 // just build for now
                 #[cfg(not(windows))]
@@ -898,6 +900,7 @@ impl<T: InvokeUiSession> Remote<T> {
     async fn handle_msg_from_peer(&mut self, data: &[u8], peer: &mut Stream) -> bool {
         if let Ok(msg_in) = Message::parse_from_bytes(&data) {
             match msg_in.union {
+                //..w::::::5+.1
                 Some(message::Union::VideoFrame(vf)) => {
                     if !self.first_frame {
                         self.first_frame = true;
@@ -913,6 +916,7 @@ impl<T: InvokeUiSession> Remote<T> {
                             ..Default::default()
                         })
                     };
+                    //..w::::::5+.2
                     if Self::contains_key_frame(&vf) {
                         while let Some(_) = self.video_queue.pop() {}
                         self.video_sender
@@ -964,6 +968,14 @@ impl<T: InvokeUiSession> Remote<T> {
                                     }
                                 });
                             }
+
+                            // on connection established client
+                            #[cfg(all(feature = "flutter", feature = "plugin_framework"))]
+                            #[cfg(not(any(target_os = "android", target_os = "ios")))]
+                            crate::plugin::handle_listen_event(
+                                crate::plugin::EVENT_ON_CONN_CLIENT.to_owned(),
+                                self.handler.id.clone(),
+                            )
                         }
 
                         if self.handler.is_file_transfer() {
@@ -1304,12 +1316,16 @@ impl<T: InvokeUiSession> Remote<T> {
                     #[cfg(all(feature = "flutter", feature = "plugin_framework"))]
                     #[cfg(not(any(target_os = "android", target_os = "ios")))]
                     Some(misc::Union::PluginRequest(p)) => {
-                        allow_err!(crate::plugin::handle_server_event(&p.id, &self.handler.id, &p.content));
+                        allow_err!(crate::plugin::handle_server_event(
+                            &p.id,
+                            &self.handler.id,
+                            &p.content
+                        ));
                         // to-do: show message box on UI when error occurs?
                     }
                     #[cfg(all(feature = "flutter", feature = "plugin_framework"))]
                     #[cfg(not(any(target_os = "android", target_os = "ios")))]
-                    Some(misc::Union::PluginResponse(p)) => {
+                    Some(misc::Union::PluginFailure(p)) => {
                         let name = if p.name.is_empty() {
                             "plugin".to_string()
                         } else {

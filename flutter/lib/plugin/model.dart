@@ -23,7 +23,16 @@ class PluginModel with ChangeNotifier {
   final Map<String, String> opts = {};
 
   void add(UiType ui) {
-    uiList.add(ui);
+    bool found = false;
+    for (int i = 0; i < uiList.length; i++) {
+      if (uiList[i].key == ui.key) {
+        uiList[i] = ui;
+        found = true;
+      }
+    }
+    if (!found) {
+      uiList.add(ui);
+    }
     notifyListeners();
   }
 
@@ -51,6 +60,11 @@ class LocationModel with ChangeNotifier {
     notifyListeners();
   }
 
+  void remove(PluginId id) {
+    pluginModels.remove(id);
+    notifyListeners();
+  }
+
   bool get isEmpty => pluginModels.isEmpty;
 }
 
@@ -68,7 +82,7 @@ PluginModel? getPluginModel(String location, PluginId id) =>
 
 void clearPlugin(PluginId pluginId) {
   for (var element in _locationModels.values) {
-    element.pluginModels.remove(pluginId);
+    element.remove(pluginId);
   }
 }
 
