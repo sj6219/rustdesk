@@ -147,7 +147,7 @@ pub struct FlutterHandler {
     renderer: Arc<RwLock<VideoRenderer>>,
     peer_info: Arc<RwLock<PeerInfo>>,
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    hooks: Arc<RwLock<HashMap<String, crate::api::SessionHook>>>,
+    hooks: Arc<RwLock<HashMap<String, SessionHook>>>,
 }
 
 #[cfg(not(feature = "flutter_texture_render"))]
@@ -160,7 +160,7 @@ pub struct FlutterHandler {
     pub rgba_valid: Arc<AtomicBool>,
     peer_info: Arc<RwLock<PeerInfo>>,
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    hooks: Arc<RwLock<HashMap<String, crate::api::SessionHook>>>,
+    hooks: Arc<RwLock<HashMap<String, SessionHook>>>,
 }
 
 #[cfg(feature = "flutter_texture_render")]
@@ -179,8 +179,8 @@ pub type FlutterRgbaRendererPluginOnRgba = unsafe extern "C" fn(
 struct VideoRenderer {
     // TextureRgba pointer in flutter native.
     ptr: usize,
-    width: i32,
-    height: i32,
+    width: usize,
+    height: usize,
     on_rgba_func: Option<Symbol<'static, FlutterRgbaRendererPluginOnRgba>>,
 }
 
@@ -217,24 +217,30 @@ impl Default for VideoRenderer {
 #[cfg(feature = "flutter_texture_render")]
 impl VideoRenderer {
     #[inline]
-    pub fn set_size(&mut self, width: i32, height: i32) {
+    pub fn set_size(&mut self, width: usize, height: usize) {
         self.width = width;
         self.height = height;
     }
 
-    pub fn on_rgba(&self, rgba: &Vec<u8>) {
-        if self.ptr == usize::default() || self.width == 0 || self.height == 0 {
+    pub fn on_rgba(&self, rgba: &mut scrap::ImageRgb) {
+        if self.ptr == usize::default() {
             return;
         }
+
+        // It is also Ok to skip this check.
+        if self.width != rgba.w || self.height != rgba.h {
+            return;
+        }
+
         if let Some(func) = &self.on_rgba_func {
             unsafe {
                 func(
                     self.ptr as _,
-                    rgba.as_ptr() as _,
-                    rgba.len() as _,
-                    self.width as _,
-                    self.height as _,
-                    crate::DST_STRIDE_RGBA as _,
+                    rgba.raw.as_ptr() as _,
+                    rgba.raw.len() as _,
+                    rgba.w as _,
+                    rgba.h as _,
+                    rgba.stride() as _,
                 )
             };
         }
@@ -286,7 +292,7 @@ impl FlutterHandler {
     }
 
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    pub(crate) fn add_session_hook(&self, key: String, hook: crate::api::SessionHook) -> bool {
+    pub(crate) fn add_session_hook(&self, key: String, hook: SessionHook) -> bool {
         let mut hooks = self.hooks.write().unwrap();
         if hooks.contains_key(&key) {
             // Already has the hook with this key.
@@ -315,7 +321,7 @@ impl FlutterHandler {
 
     #[inline]
     #[cfg(feature = "flutter_texture_render")]
-    pub fn set_size(&mut self, width: i32, height: i32) {
+    pub fn set_size(&mut self, width: usize, height: usize) {
         *self.notify_rendered.write().unwrap() = false;
         self.renderer.write().unwrap().set_size(width, height);
     }
@@ -492,7 +498,16 @@ impl InvokeUiSession for FlutterHandler {
 
     #[inline]
     #[cfg(not(feature = "flutter_texture_render"))]
-    fn on_rgba(&self, data: &mut Vec<u8>) {
+    fn on_rgba(&self, rgba: &mut scrap::ImageRgb) {
+        // Give a chance for plugins or etc to hook a rgba data.
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        for (key, hook) in self.hooks.read().unwrap().iter() {
+            match hook {
+                SessionHook::OnSessionRgba(cb) => {
+                    cb(key.to_owned(), rgba);
+                },
+            }
+        }
         // If the current rgba is not fetched by flutter, i.e., is valid.
         // We give up sending a new event to flutter.
         if self.rgba_valid.load(Ordering::Relaxed) {
@@ -500,7 +515,7 @@ impl InvokeUiSession for FlutterHandler {
         }
         self.rgba_valid.store(true, Ordering::Relaxed);
         // Return the rgba buffer to the video handler for reusing allocated rgba buffer.
-        std::mem::swap::<Vec<u8>>(data, &mut *self.rgba.write().unwrap());
+        std::mem::swap::<Vec<u8>>(&mut rgba.raw, &mut *self.rgba.write().unwrap());
         if let Some(stream) = &*self.event_stream.read().unwrap() {
             stream.add(EventToUI::Rgba);
         }
@@ -508,8 +523,8 @@ impl InvokeUiSession for FlutterHandler {
 
     #[inline]
     #[cfg(feature = "flutter_texture_render")]
-    fn on_rgba(&self, data: &mut Vec<u8>) {
-        self.renderer.read().unwrap().on_rgba(data);
+    fn on_rgba(&self, rgba: &mut scrap::ImageRgb) {
+        self.renderer.read().unwrap().on_rgba(rgba);
         if *self.notify_rendered.read().unwrap() {
             return;
         }
@@ -1047,5 +1062,10 @@ pub fn stop_global_event_stream(app_type: String) {
 }
 
 #[no_mangle]
-unsafe extern "C" fn get_rgba() {
+unsafe extern "C" fn get_rgba() {}
+
+/// Hooks for session.
+#[derive(Clone)]
+pub enum SessionHook {
+    OnSessionRgba(fn(String, &mut scrap::ImageRgb)),
 }

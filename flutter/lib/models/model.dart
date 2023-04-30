@@ -1608,11 +1608,15 @@ class FFI {
           if (message.field0 == "close") {
             break;
           }
+
+          Map<String, dynamic>? event;
           try {
-            Map<String, dynamic> event = json.decode(message.field0);
-            await cb(event);
+            event = json.decode(message.field0);
           } catch (e) {
             debugPrint('json.decode fail1(): $e, ${message.field0}');
+          }
+          if (event != null) {
+            await cb(event);
           }
         } else if (message is EventToUI_Rgba) {
           if (useTextureRender) {
@@ -1633,6 +1637,7 @@ class FFI {
             }
             final rgba = platformFFI.getRgba(id, sz);
             if (rgba != null) {
+              //.. debugPrint('garbage collection required');
               imageModel.onRgba(rgba);
             }
           }
