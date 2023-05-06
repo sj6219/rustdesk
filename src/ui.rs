@@ -99,7 +99,7 @@ pub fn start(args: &mut [String]) {
             .to_owned();
         args[1] = id;
     }
-    if args.is_empty() {
+    if args.is_empty() || args[0] == "" {
         let children: Children = Default::default();
         std::thread::spawn(move || check_zombie(children));
         crate::common::check_software_update();
