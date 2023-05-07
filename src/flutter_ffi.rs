@@ -539,7 +539,7 @@ pub fn session_change_resolution(id: String, width: i32, height: i32) {
     }
 }
 
-pub fn session_set_size(_id: String, _width: i32, _height: i32) {
+pub fn session_set_size(_id: String, _width: usize, _height: usize) {
     #[cfg(feature = "flutter_texture_render")]
     if let Some(session) = SESSIONS.write().unwrap().get_mut(&_id) {
         session.set_size(_width, _height);
@@ -1402,6 +1402,13 @@ pub fn plugin_event(_id: String, _peer: String, _event: Vec<u8>) {
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
         allow_err!(crate::plugin::handle_ui_event(&_id, &_peer, &_event));
+    }
+}
+
+pub fn plugin_register_event_stream(id: String, event2ui: StreamSink<EventToUI>) {
+    #[cfg(feature = "plugin_framework")]
+    {
+        crate::plugin::native_handlers::session::session_register_event_stream(id, event2ui);
     }
 }
 

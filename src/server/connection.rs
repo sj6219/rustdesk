@@ -65,6 +65,43 @@ lazy_static::lazy_static! {
 pub static CLICK_TIME: AtomicI64 = AtomicI64::new(0);
 pub static MOUSE_MOVE_TIME: AtomicI64 = AtomicI64::new(0);
 
+#[cfg(all(feature = "flutter", feature = "plugin_framework"))]
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+lazy_static::lazy_static! {
+    static ref PLUGIN_BLOCK_INPUT_TXS: Arc<Mutex<HashMap<String, std_mpsc::Sender<MessageInput>>>> = Default::default();
+    static ref PLUGIN_BLOCK_INPUT_TX_RX: (Arc<Mutex<std_mpsc::Sender<bool>>>, Arc<Mutex<std_mpsc::Receiver<bool>>>) = {
+        let (tx, rx) = std_mpsc::channel();
+        (Arc::new(Mutex::new(tx)), Arc::new(Mutex::new(rx)))
+    };
+}
+
+// Block input is required for some special cases, such as privacy mode.
+#[cfg(all(feature = "flutter", feature = "plugin_framework"))]
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+pub fn plugin_block_input(peer: &str, block: bool) -> bool {
+    if let Some(tx) = PLUGIN_BLOCK_INPUT_TXS.lock().unwrap().get(peer) {
+        let _ = tx.send(if block {
+            MessageInput::BlockOnPlugin(peer.to_string())
+        } else {
+            MessageInput::BlockOffPlugin(peer.to_string())
+        });
+        match PLUGIN_BLOCK_INPUT_TX_RX
+            .1
+            .lock()
+            .unwrap()
+            .recv_timeout(std::time::Duration::from_millis(3_000))
+        {
+            Ok(b) => b == block,
+            Err(..) => {
+                log::error!("plugin_block_input timeout");
+                false
+            }
+        }
+    } else {
+        false
+    }
+}
+
 #[derive(Clone, Default)]
 pub struct ConnInner {
     id: i32,
@@ -79,6 +116,12 @@ enum MessageInput {
     Key((KeyEvent, bool)),
     BlockOn,
     BlockOff,
+    #[cfg(all(feature = "flutter", feature = "plugin_framework"))]
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    BlockOnPlugin(String),
+    #[cfg(all(feature = "flutter", feature = "plugin_framework"))]
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    BlockOffPlugin(String),
 }
 
 #[derive(Clone, Debug)]
@@ -165,18 +208,23 @@ impl Subscriber for ConnInner {
 
     #[inline]
     fn send(&mut self, msg: Arc<Message>) {
-        match &msg.union {
-            Some(message::Union::VideoFrame(_)) => {
-                self.tx_video.as_mut().map(|tx| {
-                    allow_err!(tx.send((Instant::now(), msg)));
-                });
-            }
-            _ => {
-                self.tx.as_mut().map(|tx| {
-                    allow_err!(tx.send((Instant::now(), msg)));
-                });
-            }
-        }
+        // Send SwitchDisplay on the same channel as VideoFrame to avoid send order problems.
+        let tx_by_video = match &msg.union {
+            Some(message::Union::VideoFrame(_)) => true,
+            Some(message::Union::Misc(misc)) => match &misc.union {
+                Some(misc::Union::SwitchDisplay(_)) => true,
+                _ => false,
+            },
+            _ => false,
+        };
+        let tx = if tx_by_video {
+            self.tx_video.as_mut()
+        } else {
+            self.tx.as_mut()
+        };
+        tx.map(|tx| {
+            allow_err!(tx.send((Instant::now(), msg)));
+        });
     }
 }
 
@@ -563,6 +611,12 @@ impl Connection {
         } else if video_privacy_conn_id == 0 {
             let _ = privacy_mode::turn_off_privacy(0);
         }
+        #[cfg(all(feature = "flutter", feature = "plugin_framework"))]
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        crate::plugin::handle_listen_event(
+            crate::plugin::EVENT_ON_CONN_CLOSE_SERVER.to_owned(),
+            conn.lr.my_id.clone(),
+        );
         video_service::notify_video_frame_fetched(id, None);
         scrap::codec::Encoder::update(id, scrap::codec::EncodingUpdate::Remove);
         video_service::VIDEO_QOS.lock().unwrap().reset();
@@ -637,6 +691,30 @@ impl Connection {
                                 back_notification::BlockInputState::BlkOffFailed,
                             );
                         }
+                    }
+                    #[cfg(all(feature = "flutter", feature = "plugin_framework"))]
+                    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+                    MessageInput::BlockOnPlugin(_peer) => {
+                        if crate::platform::block_input(true) {
+                            block_input_mode = true;
+                        }
+                        let _r = PLUGIN_BLOCK_INPUT_TX_RX
+                            .0
+                            .lock()
+                            .unwrap()
+                            .send(block_input_mode);
+                    }
+                    #[cfg(all(feature = "flutter", feature = "plugin_framework"))]
+                    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+                    MessageInput::BlockOffPlugin(_peer) => {
+                        if crate::platform::block_input(false) {
+                            block_input_mode = false;
+                        }
+                        let _r = PLUGIN_BLOCK_INPUT_TX_RX
+                            .0
+                            .lock()
+                            .unwrap()
+                            .send(block_input_mode);
                     }
                 },
                 Err(err) => {
@@ -938,6 +1016,12 @@ impl Connection {
             }
         }
         self.authorized = true;
+        #[cfg(all(feature = "flutter", feature = "plugin_framework"))]
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        PLUGIN_BLOCK_INPUT_TXS
+            .lock()
+            .unwrap()
+            .insert(self.lr.my_id.clone(), self.tx_input.clone());
 
         pi.username = username;
         pi.sas_enabled = sas_enabled;
@@ -1011,7 +1095,8 @@ impl Connection {
                 }
                 let mut s = s.write().unwrap();
                 #[cfg(not(any(target_os = "android", target_os = "ios")))]
-                try_start_record_cursor_pos();
+                let _h = try_start_record_cursor_pos();
+                //..a::::::4+.1
                 s.add_connection(self.inner.clone(), &noperms);
             }
         }
@@ -1205,7 +1290,6 @@ impl Connection {
 
     async fn on_message(&mut self, msg: Message) -> bool {
         if let Some(message::Union::LoginRequest(lr)) = msg.union {
-            //..m::::::4
             //..a::::::4.1
             self.handle_login_request_without_validation(&lr).await;
             if self.authorized {
@@ -1833,11 +1917,9 @@ impl Connection {
                     #[cfg(all(feature = "flutter", feature = "plugin_framework"))]
                     #[cfg(not(any(target_os = "android", target_os = "ios")))]
                     Some(misc::Union::PluginRequest(p)) => {
-                        if let Some(msg) =
-                            crate::plugin::handle_client_event(&p.id, &self.lr.my_id, &p.content)
-                        {
-                            self.send(msg).await;
-                        }
+                        let msg =
+                            crate::plugin::handle_client_event(&p.id, &self.lr.my_id, &p.content);
+                        self.send(msg).await;
                     }
                     _ => {}
                 },

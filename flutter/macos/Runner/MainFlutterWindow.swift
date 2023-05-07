@@ -4,7 +4,7 @@ import FlutterMacOS
 import desktop_multi_window
 // import bitsdojo_window_macos
 
-import desktop_drop
+// Disable desktop_drop for now: import desktop_drop
 import device_info_plus_macos
 import flutter_custom_cursor
 import package_info_plus_macos
@@ -22,7 +22,7 @@ import texture_rgba_renderer
 class MainFlutterWindow: NSWindow {
     override func awakeFromNib() {
         if (!rustdesk_core_main()){
-            print("Rustdesk core returns false, exiting without launching Flutter app")
+            print("Rustdesk core returns false, exiting without launching Flutter app.")
             NSApplication.shared.terminate(self)
         }
         let flutterViewController = FlutterViewController.init()
@@ -39,7 +39,7 @@ class MainFlutterWindow: NSWindow {
             // Register the plugin which you want access from other isolate.
             // DesktopLifecyclePlugin.register(with: controller.registrar(forPlugin: "DesktopLifecyclePlugin"))
             self.setMethodHandler(registrar: controller.registrar(forPlugin: "RustDeskPlugin"))
-            DesktopDropPlugin.register(with: controller.registrar(forPlugin: "DesktopDropPlugin"))
+            // Disable desktop_drop for now: DesktopDropPlugin.register(with: controller.registrar(forPlugin: "DesktopDropPlugin"))
             DeviceInfoPlusMacosPlugin.register(with: controller.registrar(forPlugin: "DeviceInfoPlusMacosPlugin"))
             FlutterCustomCursorPlugin.register(with: controller.registrar(forPlugin: "FlutterCustomCursorPlugin"))
             FLTPackageInfoPlusPlugin.register(with: controller.registrar(forPlugin: "FLTPackageInfoPlusPlugin"))
