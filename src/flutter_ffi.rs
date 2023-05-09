@@ -751,6 +751,25 @@ pub fn main_load_recent_peers() {
     }
 }
 
+pub fn main_load_recent_peers_sync() -> SyncReturn<String> {
+    if !config::APP_DIR.read().unwrap().is_empty() {
+        let peers: Vec<HashMap<&str, String>> = PeerConfig::peers()
+            .drain(..)
+            .map(|(id, _, p)| peer_to_map(id, p))
+            .collect();
+
+        let data = HashMap::from([
+            ("name", "load_recent_peers".to_owned()),
+            (
+                "peers",
+                serde_json::ser::to_string(&peers).unwrap_or("".to_owned()),
+            ),
+        ]);
+        return SyncReturn(serde_json::ser::to_string(&data).unwrap_or("".to_owned()));
+    }
+    SyncReturn("".to_string())
+}
+
 pub fn main_load_fav_peers() {
     if !config::APP_DIR.read().unwrap().is_empty() {
         let favs = get_fav();
@@ -1402,6 +1421,13 @@ pub fn plugin_event(_id: String, _peer: String, _event: Vec<u8>) {
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
         allow_err!(crate::plugin::handle_ui_event(&_id, &_peer, &_event));
+    }
+}
+
+pub fn plugin_register_event_stream(id: String, event2ui: StreamSink<EventToUI>) {
+    #[cfg(feature = "plugin_framework")]
+    {
+        crate::plugin::native_handlers::session::session_register_event_stream(id, event2ui);
     }
 }
 

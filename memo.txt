@@ -1,6 +1,6 @@
 #windows
 python3 res/inline-sciter.py
-cargo build --release --features inline,with_rc --target=aarch64-pc-windows-msvc
+cargo build --release --features inline --target=aarch64-pc-windows-msvc
 
 pushd ./libs/portable
 pip3 install -r requirements.txt
@@ -10,6 +10,7 @@ popd
 Push-Location flutter ; flutter pub get ; Pop-Location
 ~/.cargo/bin/flutter_rust_bridge_codegen --rust-input ./src/flutter_ffi.rs --dart-output ./flutter/lib/generated_bridge.dart
 rm -r .\flutter\build\windows\runner\Release\RustDeskIddDriver
+./build.py --portable --hwcodec --flutter --feature IddDriver
 
 %comspec% /k "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsamd64_arm64.bat" 
 rustup update
