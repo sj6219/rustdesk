@@ -1,6 +1,6 @@
 #windows
 python3 res/inline-sciter.py
-cargo build --release --features inline,with_rc --target=aarch64-pc-windows-msvc
+cargo build --release --features inline --target=aarch64-pc-windows-msvc
 
 pushd ./libs/portable
 pip3 install -r requirements.txt
