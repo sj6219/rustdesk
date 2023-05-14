@@ -291,6 +291,7 @@ mod cpal_impl {
             sample_rate: config.sample_rate(),
             buffer_size: BufferSize::Default,
         };
+        //..w:::::++4.4
         let stream = device.build_input_stream(
             &stream_config,
             move |data: &[T], _: &InputCallbackInfo| {
@@ -299,6 +300,7 @@ mod cpal_impl {
                 lock.extend(buffer);
                 while lock.len() >= rechannel_len {
                     let frame: Vec<f32> = lock.drain(0..rechannel_len).collect();
+                    //..w::::::++4.5
                     send(
                         frame,
                         sample_rate_0,
@@ -387,6 +389,7 @@ fn send_f32(data: &[f32], encoder: &mut Encoder, sp: &GenericService) {
     match encoder.encode_vec_float(data, data.len() * 6) {
         Ok(data) => {
             let mut msg_out = Message::new();
+            //..w::::::++4.6
             msg_out.set_audio_frame(AudioFrame {
                 data: data.into(),
                 ..Default::default()

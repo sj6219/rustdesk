@@ -1214,7 +1214,7 @@ pub async fn io_loop<T: InvokeUiSession>(handler: Session<T>) {
     let (video_sender, audio_sender, video_queue, decode_fps) =
         start_video_audio_threads(move |data: &mut scrap::ImageRgb| {
             frame_count_cl.fetch_add(1, Ordering::Relaxed);
-            //..m::::::5+.4
+            //..m::::::+5.4
             ui_handler.on_rgba(data);
         });
 
