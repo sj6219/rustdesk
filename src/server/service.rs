@@ -69,7 +69,7 @@ impl<T: Subscriber + From<ConnInner>> Service for ServiceTmpl<T> {
     }
 
     fn on_subscribe(&self, sub: ConnInner) {
-        //..a::::::4+.2
+        //..a::::::+4.2
         let mut lock = self.0.write().unwrap();
         if lock.subscribes.get(&sub.id()).is_some() {
             return;
@@ -204,6 +204,7 @@ impl<T: Subscriber + From<ConnInner>> ServiceTmpl<T> {
             while sp.active() {
                 let now = time::Instant::now();
                 if sp.has_subscribes() {
+                    //..w::::::++4.3
                     if let Err(err) = callback(sp.clone(), &mut state) {
                         log::error!("Error of {} service: {}", sp.name(), err);
                         thread::sleep(time::Duration::from_millis(MAX_ERROR_TIMEOUT));
@@ -237,7 +238,7 @@ impl<T: Subscriber + From<ConnInner>> ServiceTmpl<T> {
             let mut error_timeout = HIBERNATE_TIMEOUT;
             while sp.active() {
                 if sp.has_subscribes() {
-                    //..a::::::4+.3
+                    //..a::::::+4.3
                     log::debug!("Enter {} service inner loop", sp.name());
                     let tm = time::Instant::now();
                     if let Err(err) = callback(sp.clone()) {
