@@ -173,13 +173,13 @@ pub fn call_main_service_set_clip_text(name: &str) -> JniResult<()> {
         JVM.read().unwrap().as_ref(),
         MAIN_SERVICE_CTX.read().unwrap().as_ref(),
     ) {
-        let env = jvm.attach_current_thread_as_daemon()?;
+        let mut env = jvm.attach_current_thread_as_daemon()?;
         let name = env.new_string(name)?;
         env.call_method(
             ctx,
             "rustSetClipText",
             "(Ljava/lang/String;)V",
-            &[JValue::Object(name.into())],
+            &[JValue::Object(&JObject::from(name))],
         )?;
         return Ok(());
     } else {
