@@ -88,11 +88,11 @@ impl<T: InvokeUiSession> Session<T> {
     }
 
     pub fn is_port_forward(&self) -> bool {
-        self.lc
+        let conn_type = self.lc
             .read()
             .unwrap()
-            .conn_type
-            .eq(&ConnType::PORT_FORWARD)
+            .conn_type;
+        conn_type == ConnType::PORT_FORWARD || conn_type == ConnType::RDP
     }
 
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -1214,7 +1214,7 @@ pub async fn io_loop<T: InvokeUiSession>(handler: Session<T>) {
     let (video_sender, audio_sender, video_queue, decode_fps) =
         start_video_audio_threads(move |data: &mut scrap::ImageRgb| {
             frame_count_cl.fetch_add(1, Ordering::Relaxed);
-            //..m::::::5+.4
+            //..m::::::+5.4
             ui_handler.on_rgba(data);
         });
 

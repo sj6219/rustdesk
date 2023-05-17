@@ -9,10 +9,10 @@ use hbb_common::{
     regex::{Captures, Regex},
 };
 use std::{
-    string::String,
     cell::RefCell,
     path::{Path, PathBuf},
     process::{Child, Command},
+    string::String,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc,
@@ -453,9 +453,7 @@ pub fn get_active_username() -> String {
 
 pub fn get_user_home_by_name(username: &str) -> Option<PathBuf> {
     return match get_user_by_name(username) {
-        None => {
-            None
-        }
+        None => None,
         Some(user) => {
             let home = user.home_dir();
             if Path::is_dir(home) {
@@ -464,7 +462,7 @@ pub fn get_user_home_by_name(username: &str) -> Option<PathBuf> {
                 None
             }
         }
-    }
+    };
 }
 
 pub fn get_active_user_home() -> Option<PathBuf> {
@@ -603,7 +601,11 @@ pub fn block_input(_v: bool) -> bool {
 }
 
 pub fn is_installed() -> bool {
-    true
+    if let Ok(p) = std::env::current_exe() {
+        p.to_str().unwrap_or_default().starts_with("/usr")
+    } else {
+        false
+    }
 }
 
 pub(super) fn get_env_tries(name: &str, uid: &str, process: &str, n: usize) -> String {
@@ -646,6 +648,10 @@ pub fn quit_gui() {
     unsafe { gtk_main_quit() };
 }
 
+pub fn exec_privileged(args: &[&str]) -> ResultType<Child> {
+    Ok(Command::new("pkexec").args(args).spawn()?)
+}
+
 pub fn check_super_user_permission() -> ResultType<bool> {
     let file = "/usr/share/rustdesk/files/polkit";
     let arg;
@@ -654,8 +660,43 @@ pub fn check_super_user_permission() -> ResultType<bool> {
     } else {
         arg = "echo";
     }
-    let status = Command::new("pkexec").arg(arg).status()?;
+    let status = exec_privileged(&[arg])?.wait()?;
     Ok(status.success() && status.code() == Some(0))
+}
+
+pub fn elevate(args: Vec<&str>) -> ResultType<bool> {
+    let cmd = std::env::current_exe()?;
+    match cmd.to_str() {
+        Some(cmd) => {
+            let mut args_with_exe = vec![cmd];
+            args_with_exe.append(&mut args.clone());
+            // -E required for opensuse
+            if is_opensuse() {
+                args_with_exe.insert(0, "-E");
+            }
+            let res = match exec_privileged(&args_with_exe)?.wait() {
+                Ok(status) => {
+                    if status.success() {
+                        true
+                    } else {
+                        log::error!(
+                            "Failed to wait install process, process status: {:?}",
+                            status
+                        );
+                        false
+                    }
+                }
+                Err(e) => {
+                    log::error!("Failed to wait install process, error: {}", e);
+                    false
+                }
+            };
+            Ok(res)
+        }
+        None => {
+            hbb_common::bail!("Failed to get current exe as str");
+        }
+    }
 }
 
 type GtkSettingsPtr = *mut c_void;
@@ -831,12 +872,7 @@ mod desktop {
         }
 
         fn get_display(&mut self) {
-            let display_envs = vec![
-                GNOME_SESSION_BINARY,
-                XFCE4_PANEL,
-                SDDM_GREETER,
-                PLASMA_X11,
-            ];
+            let display_envs = vec![GNOME_SESSION_BINARY, XFCE4_PANEL, SDDM_GREETER, PLASMA_X11];
             for diplay_env in display_envs {
                 self.display = get_env_tries("DISPLAY", &self.uid, diplay_env, 10);
                 if !self.display.is_empty() {
@@ -869,8 +905,8 @@ mod desktop {
                             auth_found = true;
                         } else if auth_found {
                             if std::path::Path::new(v).is_absolute()
-                                && std::path::Path::new(v).exists() {
-
+                                && std::path::Path::new(v).exists()
+                            {
                                 self.xauth = v.to_string();
                             } else {
                                 if let Some(pid) = line.split_whitespace().nth(1) {
@@ -899,12 +935,7 @@ mod desktop {
 
         fn get_xauth(&mut self) {
             // try by direct access to window manager process by name
-            let display_envs = vec![
-                GNOME_SESSION_BINARY,
-                XFCE4_PANEL,
-                SDDM_GREETER,
-                PLASMA_X11,
-            ];
+            let display_envs = vec![GNOME_SESSION_BINARY, XFCE4_PANEL, SDDM_GREETER, PLASMA_X11];
             for diplay_env in display_envs {
                 self.xauth = get_env_tries("XAUTHORITY", &self.uid, diplay_env, 10);
                 if !self.xauth.is_empty() {
@@ -924,7 +955,7 @@ mod desktop {
                     gdm
                 } else {
                     let username = &self.username;
-                    match get_user_home_by_name(username)  {
+                    match get_user_home_by_name(username) {
                         None => {
                             if username == "root" {
                                 format!("/{}/.Xauthority", username)
@@ -938,7 +969,10 @@ mod desktop {
                             }
                         }
                         Some(home) => {
-                            format!("{}/.Xauthority", home.as_path().to_string_lossy().to_string())
+                            format!(
+                                "{}/.Xauthority",
+                                home.as_path().to_string_lossy().to_string()
+                            )
                         }
                     }
                 };
