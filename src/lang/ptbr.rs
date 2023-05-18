@@ -500,6 +500,11 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("no fingerprints", "sem Impressões Digitais"),
         ("Select a peer", "Selecione um parceiro"),
         ("Select peers", "Selecione parceiros"),
-        ("Plugins", "Plugins")
+        ("Plugins", "Plugins"),
+        ("Uninstall", "Desinstalar"),
+        ("Update", "Atualizar"),
+        ("Enable", "Habilitar"),
+        ("Disable", "Desabilitar"),
+        ("Options", "Opções"),
     ].iter().cloned().collect();
 }
