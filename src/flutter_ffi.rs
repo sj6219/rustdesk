@@ -1100,8 +1100,8 @@ pub fn session_send_note(id: String, note: String) {
 
 pub fn session_alternative_codecs(id: String) -> String {
     if let Some(session) = SESSIONS.read().unwrap().get(&id) {
-        let (vp8, h264, h265) = session.alternative_codecs();
-        let msg = HashMap::from([("vp8", vp8), ("h264", h264), ("h265", h265)]);
+        let (vp8, av1, h264, h265) = session.alternative_codecs();
+        let msg = HashMap::from([("vp8", vp8), ("av1", av1), ("h264", h264), ("h265", h265)]);
         serde_json::ser::to_string(&msg).unwrap_or("".to_owned())
     } else {
         String::new()
@@ -1597,8 +1597,8 @@ pub fn plugin_install(_id: String, _b: bool) {
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
         if _b {
-            if let Err(e) = crate::plugin::install_plugin(&id) {
-                log::error!("Failed to install plugin '{}': {}", id, e);
+            if let Err(e) = crate::plugin::install_plugin(&_id) {
+                log::error!("Failed to install plugin '{}': {}", _id, e);
             }
         } else {
             crate::plugin::uninstall_plugin(&_id, true);

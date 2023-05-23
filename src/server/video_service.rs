@@ -35,6 +35,7 @@ use hbb_common::{
 #[cfg(not(windows))]
 use scrap::Capturer;
 use scrap::{
+    aom::AomEncoderConfig,
     codec::{Encoder, EncoderCfg, HwEncoderConfig},
     record::{Recorder, RecorderContext},
     vpxcodec::{VpxEncoderConfig, VpxVideoCodecId},
@@ -539,16 +540,19 @@ fn run(sp: GenericService) -> ResultType<()> {
             EncoderCfg::VPX(VpxEncoderConfig {
                 width: c.width as _,
                 height: c.height as _,
-                timebase: [1, 1000], // Output timestamp precision
                 bitrate,
                 codec: if name == scrap::CodecName::VP8 {
                     VpxVideoCodecId::VP8
                 } else {
                     VpxVideoCodecId::VP9
                 },
-                num_threads: (num_cpus::get() / 2) as _,
             })
         }
+        scrap::CodecName::AV1 => EncoderCfg::AOM(AomEncoderConfig {
+            width: c.width as _,
+            height: c.height as _,
+            bitrate: bitrate as _,
+        }),
     };
 
     let mut encoder;
@@ -674,16 +678,6 @@ fn run(sp: GenericService) -> ResultType<()> {
                 let time = now - start;
                 let ms = (time.as_secs() * 1000 + time.subsec_millis() as u64) as i64;
                 match frame {
-                    scrap::Frame::VP8(data) => {
-                        let send_conn_ids =
-                            handle_one_frame_encoded(VpxVideoCodecId::VP8, &sp, data, ms)?;
-                        frame_controller.set_send(now, send_conn_ids);
-                    }
-                    scrap::Frame::VP9(data) => {
-                        let send_conn_ids =
-                            handle_one_frame_encoded(VpxVideoCodecId::VP9, &sp, data, ms)?;
-                        frame_controller.set_send(now, send_conn_ids);
-                    }
                     scrap::Frame::RAW(data) => {
                         if data.len() != 0 {
                             let send_conn_ids =
@@ -731,8 +725,14 @@ fn run(sp: GenericService) -> ResultType<()> {
                     would_block_count += 1;
                     if !scrap::is_x11() {
                         if would_block_count >= 100 {
-                            super::wayland::release_resource();
-                            bail!("Wayland capturer none 100 times, try restart capture");
+                            // to-do: Unknown reason for WouldBlock 100 times (seconds = 100 * 1 / fps)
+                            // https://github.com/rustdesk/rustdesk/blob/63e6b2f8ab51743e77a151e2b7ff18816f5fa2fb/libs/scrap/src/common/wayland.rs#L81
+                            //
+                            // Do not reset the capturer for now, as it will cause the prompt to show every few minutes.
+                            // https://github.com/rustdesk/rustdesk/issues/4276
+                            //
+                            // super::wayland::release_resource();
+                            // bail!("Wayland capturer none 100 times, try restart capture");
                         }
                     }
                 }
@@ -867,31 +867,6 @@ fn handle_one_frame(
             .map(|r| r.write_message(&msg));
         send_conn_ids = sp.send_video_frame(msg);
     }
-    Ok(send_conn_ids)
-}
-
-#[inline]
-#[cfg(any(target_os = "android", target_os = "ios"))]
-pub fn handle_one_frame_encoded(
-    codec: VpxVideoCodecId,
-    sp: &GenericService,
-    frame: &[u8],
-    ms: i64,
-) -> ResultType<HashSet<i32>> {
-    sp.snapshot(|sps| {
-        // so that new sub and old sub share the same encoder after switch
-        if sps.has_subscribes() {
-            bail!("SWITCH");
-        }
-        Ok(())
-    })?;
-    let vpx_frame = EncodedVideoFrame {
-        data: frame.to_vec().into(),
-        key: true,
-        pts: ms,
-        ..Default::default()
-    };
-    let send_conn_ids = sp.send_video_frame(scrap::VpxEncoder::create_msg(codec, vec![vpx_frame]));
     Ok(send_conn_ids)
 }
 
