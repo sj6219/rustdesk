@@ -44,7 +44,7 @@ Install RustDesk.dmg at https://github.com/sj6219/rustdesk/releases/tag/alpha/
 
 Perform the following:
 
-$VCPKG_ROOT/vcpkg install libvpx:arm64-osx libyuv:arm64-osx opus:arm64-osx
+$VCPKG_ROOT/vcpkg install libvpx:arm64-osx libyuv:arm64-osx opus:arm64-osx aom:arm64-osx
 
 cargo update
 
