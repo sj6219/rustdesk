@@ -113,10 +113,11 @@ fn main() {
     hbb_common::gen_version();
     install_oboe();
     // there is problem with cfg(target_os) in build.rs, so use our workaround
-    // let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap();
-    // if target_os == "android" || target_os == "ios" {
+    let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap();
     #[cfg(feature = "flutter")]
-    gen_flutter_rust_bridge();
+    if target_os != "android" {
+        gen_flutter_rust_bridge();
+    }
     //     return;
     // }
     #[cfg(all(windows, feature = "inline"))]
