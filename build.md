@@ -16,7 +16,7 @@ Install LLVM and Strawberry Perl and add them to the environment variable path.
 
 Perform the following:
 
-%VCPKG_ROOT%\vcpkg install libvpx:arm64-windows-static libyuv:arm64-windows-static opus:arm64-windows-static
+%VCPKG_ROOT%\vcpkg install libvpx:arm64-windows-static libyuv:arm64-windows-static opus:arm64-windows-static aom:arm64-windows-static
 
 %comspec% /k "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsamd64_arm64.bat" 
 
