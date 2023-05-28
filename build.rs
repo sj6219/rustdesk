@@ -116,7 +116,7 @@ fn main() {
     // let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap();
     // if target_os == "android" || target_os == "ios" {
     #[cfg(feature = "flutter")]
-    gen_flutter_rust_bridge();
+    //.. gen_flutter_rust_bridge();
     //     return;
     // }
     #[cfg(all(windows, feature = "inline"))]
