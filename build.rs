@@ -25,7 +25,7 @@ fn build_manifest() {
     use std::io::Write;
     if std::env::var("PROFILE").unwrap() == "release" {
         let mut res = winres::WindowsResource::new();
-        res.set_icon("res/icon.ico")
+        res.set_icon("res/tray-icon.ico")
             .set_language(winapi::um::winnt::MAKELANGID(
                 winapi::um::winnt::LANG_ENGLISH,
                 winapi::um::winnt::SUBLANG_ENGLISH_US,
@@ -116,7 +116,7 @@ fn main() {
     // let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap();
     // if target_os == "android" || target_os == "ios" {
     #[cfg(feature = "flutter")]
-    gen_flutter_rust_bridge();
+    //.. gen_flutter_rust_bridge();
     //     return;
     // }
     #[cfg(all(windows, feature = "inline"))]

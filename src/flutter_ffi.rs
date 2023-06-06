@@ -535,9 +535,9 @@ pub fn session_switch_sides(id: String) {
     }
 }
 
-pub fn session_change_resolution(id: String, width: i32, height: i32) {
+pub fn session_change_resolution(id: String, display: i32, width: i32, height: i32) {
     if let Some(session) = SESSIONS.read().unwrap().get(&id) {
-        session.change_resolution(width, height);
+        session.change_resolution(display, width, height);
     }
 }
 
@@ -1359,10 +1359,10 @@ pub fn install_install_path() -> SyncReturn<String> {
     SyncReturn(install_path())
 }
 
-pub fn main_account_auth(op: String) {
+pub fn main_account_auth(op: String, remember_me: bool) {
     let id = get_id();
     let uuid = get_uuid();
-    account_auth(op, id, uuid);
+    account_auth(op, id, uuid, remember_me);
 }
 
 pub fn main_account_auth_cancel() {

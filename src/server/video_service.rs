@@ -506,6 +506,8 @@ fn check_get_displays_changed_msg() -> Option<Message> {
 }
 
 fn run(sp: GenericService) -> ResultType<()> {
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    let _wake_lock = get_wake_lock();
     #[cfg(all(windows, feature = "virtual_display_driver"))]
     ensure_close_virtual_device()?;
 
@@ -1029,12 +1031,14 @@ pub(super) fn get_current_display_2(mut all: Vec<Display>) -> ResultType<(usize,
     return Ok((n, current, all.remove(current)));
 }
 
+#[inline]
 pub fn get_current_display() -> ResultType<(usize, usize, Display)> {
     get_current_display_2(try_get_displays()?)
 }
 
 // `try_reset_current_display` is needed because `get_displays` may change the current display,
 // which may cause the mismatch of current display and the current display name.
+#[inline]
 pub fn get_current_display_name() -> ResultType<String> {
     Ok(get_current_display_2(try_get_displays()?)?.2.name())
 }
@@ -1057,4 +1061,17 @@ fn start_uac_elevation_check() {
             });
         }
     });
+}
+
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+fn get_wake_lock() -> crate::platform::WakeLock {
+    let (display, idle, sleep) = if cfg!(windows) {
+        (true, false, false)
+    } else if cfg!(linux) {
+        (false, false, true)
+    } else {
+        //macos
+        (true, false, false)
+    };
+    crate::platform::WakeLock::new(display, idle, sleep)
 }

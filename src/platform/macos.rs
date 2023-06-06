@@ -658,7 +658,7 @@ pub fn current_resolution(name: &str) -> ResultType<Resolution> {
     }
 }
 
-pub fn change_resolution(name: &str, width: usize, height: usize) -> ResultType<()> {
+pub fn change_resolution_directly(name: &str, width: usize, height: usize) -> ResultType<()> {
     let display = name.parse::<u32>().map_err(|e| anyhow!(e))?;
     unsafe {
         if NO == MacSetMode(display, width as _, height as _) {
@@ -699,5 +699,20 @@ pub fn elevate(args: Vec<&str>, prompt: &str) -> ResultType<bool> {
         None => {
             bail!("Failed to get current exe str");
         }
+    }
+}
+
+pub struct WakeLock(Option<keepawake::AwakeHandle>);
+
+impl WakeLock {
+    pub fn new(display: bool, idle: bool, sleep: bool) -> Self {
+        WakeLock(
+            keepawake::Builder::new()
+                .display(display)
+                .idle(idle)
+                .sleep(sleep)
+                .create()
+                .ok(),
+        )
     }
 }
