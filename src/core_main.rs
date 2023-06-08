@@ -37,11 +37,11 @@ pub fn core_main() -> Option<Vec<String>> {
     {
         // $npipeServer = new-object System.IO.Pipes.NamedPipeServerStream('RustDesk', [System.IO.Pipes.PipeDirection]::InOut)
         // $npipeServer.Dispose()
-        use std::fs::File;
+        // use std::fs::File;
         use std::io::prelude::*;
         if let Ok(mut file) = std::fs::OpenOptions::new().read(true).open("\\\\.\\pipe\\RustDesk") {
             let mut contents = String::new();
-            file.read_to_string(&mut contents);
+            let _ = file.read_to_string(&mut contents);
         }
     }
 
@@ -211,6 +211,12 @@ pub fn core_main() -> Option<Vec<String>> {
             log::info!("start --server with user {}", crate::username());
             #[cfg(any(target_os = "linux", target_os = "windows"))]
             {
+                #[cfg(target_os = "linux")]
+                if crate::platform::is_root() {
+                    hbb_common::allow_err!(crate::platform::run_as_user(vec!["--tray"], None));
+                } else {
+                    hbb_common::allow_err!(crate::run_me(vec!["--tray"]));
+                }
                 crate::start_server(true);
                 return None;
             }

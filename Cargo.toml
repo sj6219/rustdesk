@@ -62,7 +62,7 @@ num_cpus = "1.15"
 bytes = { version = "1.4", features = ["serde"] }
 default-net = "0.14"
 wol-rs = "1.0"
-flutter_rust_bridge = { version = "1.75", optional = true }
+flutter_rust_bridge = { version = "1.75", features = ["uuid"], optional = true}
 errno = "0.3"
 rdev = { git = "https://github.com/fufesou/rdev" }
 url = { version = "2.3", features = ["serde"] }
@@ -174,7 +174,7 @@ rpath = true
 [patch.crates-io]
 ring = { git = "https://github.com/sj6219/ring", branch = "0.16.20_alpha" }
 winapi = { git = "https://github.com/sj6219/winapi-rs", branch = "0.2.8_alpha" }
-winit = { git = "https://github.com/sj6219/winit", branch = "0.26.1_alpha" }
+#winit = { git = "https://github.com/sj6219/winit", branch = "0.26.1_alpha" }
 sodiumoxide = { git = "https://github.com/sj6219/sodiumoxide", branch = "0.2.7_alpha" }
 
 [patch."https://github.com/fufesou/rdev"]

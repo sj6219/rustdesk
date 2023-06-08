@@ -1,6 +1,6 @@
 #windows
 python3 res/inline-sciter.py
-cargo build --features inline --release
+cargo build --features inline --bins --release
 
 cp ./target/release/rustdesk.exe ./Release
 pushd ./libs/portable
