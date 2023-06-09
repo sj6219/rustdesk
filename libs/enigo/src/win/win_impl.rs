@@ -40,7 +40,7 @@ fn mouse_event(flags: u32, data: u32, dx: i32, dy: i32) -> DWORD {
     unsafe { SendInput(1, &mut input as LPINPUT, size_of::<INPUT>() as c_int) }
 }
 
-fn keybd_event(mut flags: u32, vk: u16, scan: u16) -> DWORD {
+fn keybd_event(mut flags: u32, mut vk: u16, scan: u16) -> DWORD {
     //..w!!!!!!2.4
     let mut scan = scan;
     unsafe {
