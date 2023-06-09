@@ -73,6 +73,14 @@ pub fn core_main() -> Option<Vec<String>> {
         }
         i += 1;
     }
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
+    if args.is_empty() {
+        #[cfg(target_os = "linux")]
+        hbb_common::allow_err!(crate::platform::check_autostart_config());
+        if crate::check_process("--server", false) && !crate::check_process("--tray", true) {
+            hbb_common::allow_err!(crate::run_me(vec!["--tray"]));
+        }
+    }
     #[cfg(not(debug_assertions))]
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     register_breakdown_handler(breakdown_callback);
@@ -159,15 +167,6 @@ pub fn core_main() -> Option<Vec<String>> {
                     log::error!("Failed to before-uninstall: {}", err);
                 }
                 return None;
-            } else if args[0] == "--reinstall" {
-                hbb_common::allow_err!(platform::uninstall_me(false));
-                hbb_common::allow_err!(platform::install_me(
-                    "desktopicon startmenu driverCert",
-                    "".to_owned(),
-                    false,
-                    false,
-                ));
-                return None;
             } else if args[0] == "--silent-install" {
                 hbb_common::allow_err!(platform::install_me(
                     "desktopicon startmenu driverCert",
@@ -201,7 +200,9 @@ pub fn core_main() -> Option<Vec<String>> {
                 return None;
             }
         } else if args[0] == "--tray" {
-            crate::tray::start_tray();
+            if !crate::check_process("--tray", true) {
+                crate::tray::start_tray();
+            }
             return None;
         } else if args[0] == "--service" {
             log::info!("start --service");
@@ -211,12 +212,6 @@ pub fn core_main() -> Option<Vec<String>> {
             log::info!("start --server with user {}", crate::username());
             #[cfg(any(target_os = "linux", target_os = "windows"))]
             {
-                #[cfg(target_os = "linux")]
-                if crate::platform::is_root() {
-                    hbb_common::allow_err!(crate::platform::run_as_user(vec!["--tray"], None));
-                } else {
-                    hbb_common::allow_err!(crate::run_me(vec!["--tray"]));
-                }
                 crate::start_server(true);
                 return None;
             }
