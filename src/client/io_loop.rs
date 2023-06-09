@@ -146,7 +146,7 @@ impl<T: InvokeUiSession> Remote<T> {
                         || self.handler.is_rdp();
                     if !is_conn_not_default {
                         (self.client_conn_id, rx_clip_client_lock) =
-                            clipboard::get_rx_cliprdr_client(&self.handler.id);
+                            clipboard::get_rx_cliprdr_client(&self.handler.session_id);
                     };
                 }
                 #[cfg(windows)]
@@ -263,7 +263,7 @@ impl<T: InvokeUiSession> Remote<T> {
             }
         }
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
-        Client::try_stop_clipboard(&self.handler.id);
+        Client::try_stop_clipboard(&self.handler.session_id);
     }
 
     fn handle_job_status(&mut self, id: i32, file_num: i32, err: Option<String>) {
@@ -1206,7 +1206,7 @@ impl<T: InvokeUiSession> Remote<T> {
                         }
                     }
                     Some(misc::Union::SwitchDisplay(s)) => {
-                        self.handler.ui_handler.switch_display(&s);
+                        self.handler.handle_peer_switch_display(&s);
                         self.video_sender.send(MediaData::Reset).ok();
                         if s.width > 0 && s.height > 0 {
                             self.handler.set_display(
@@ -1217,14 +1217,6 @@ impl<T: InvokeUiSession> Remote<T> {
                                 s.cursor_embedded,
                             );
                         }
-                        let custom_resolution = if s.width != s.original_resolution.width
-                            || s.height != s.original_resolution.height
-                        {
-                            Some((s.width, s.height))
-                        } else {
-                            None
-                        };
-                        self.handler.set_custom_resolution(custom_resolution);
                     }
                     Some(misc::Union::CloseReason(c)) => {
                         self.handler.msgbox("error", "Connection Error", &c, "");

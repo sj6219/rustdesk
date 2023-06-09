@@ -1,6 +1,6 @@
 #windows
 python3 res/inline-sciter.py
-cargo build --features inline --release
+cargo build --features inline --bins --release
 
 cp ./target/release/rustdesk.exe ./Release
 pushd ./libs/portable
@@ -10,7 +10,6 @@ popd
 cp ./target/release/rustdesk-portable-packer.exe ./rustdesk-1.2.0-aarch64-windows-sciter-install.exe
 mv ./rustdesk-1.2.0-aarch64-windows-sciter-install.exe ./rustdesk-1.2.0-x64-windows-sciter-install.exe -Force
 
-// flutter 3.10.3
 Push-Location flutter ; flutter pub get ; Pop-Location
 ~/.cargo/bin/flutter_rust_bridge_codegen --rust-input ./src/flutter_ffi.rs --dart-output ./flutter/lib/generated_bridge.dart
 rm -r .\flutter\build\windows\runner\Release\RustDeskIddDriver

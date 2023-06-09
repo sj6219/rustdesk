@@ -262,10 +262,10 @@ pub struct PeerConfig {
 
     #[serde(
         default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_option_resolution"
+        deserialize_with = "deserialize_hashmap_resolutions",
+        skip_serializing_if = "HashMap::is_empty"
     )]
-    pub custom_resolution: Option<Resolution>,
+    pub custom_resolutions: HashMap<String, Resolution>,
 
     // The other scalar value must before this
     #[serde(default, deserialize_with = "PeerConfig::deserialize_options")]
@@ -1521,7 +1521,7 @@ deserialize_default!(deserialize_option_string, Option<String>);
 deserialize_default!(deserialize_hashmap_string_string,  HashMap<String, String>);
 deserialize_default!(deserialize_hashmap_string_bool,  HashMap<String, bool>);
 deserialize_default!(deserialize_hashmap_string_configoidcprovider,  HashMap<String, ConfigOidcProvider>);
-deserialize_default!(deserialize_option_resolution, Option<Resolution>);
+deserialize_default!(deserialize_hashmap_resolutions, HashMap<String, Resolution>);
 
 #[cfg(test)]
 mod tests {
@@ -1579,7 +1579,20 @@ mod tests {
             let wrong_type_str = r#"
             view_style = "adaptive"
             scroll_style = "scrollbar"
-            custom_resolution = true
+            custom_resolutions = true
+            "#;
+            let mut cfg_to_compare = default_peer_config.clone();
+            cfg_to_compare.view_style = "adaptive".to_string();
+            cfg_to_compare.scroll_style = "scrollbar".to_string();
+            let cfg = toml::from_str::<PeerConfig>(wrong_type_str);
+            assert_eq!(cfg, Ok(cfg_to_compare), "Failed to test wrong_type_str");
+
+            let wrong_type_str = r#"
+            view_style = "adaptive"
+            scroll_style = "scrollbar"
+            [custom_resolutions.0]
+            w = "1920"
+            h = 1080
             "#;
             let mut cfg_to_compare = default_peer_config.clone();
             cfg_to_compare.view_style = "adaptive".to_string();
@@ -1588,14 +1601,15 @@ mod tests {
             assert_eq!(cfg, Ok(cfg_to_compare), "Failed to test wrong_type_str");
 
             let wrong_field_str = r#"
-            [custom_resolution]
+            [custom_resolutions.0]
             w = 1920
             h = 1080
             hello = "world"
             [ui_flutter]
             "#;
             let mut cfg_to_compare = default_peer_config.clone();
-            cfg_to_compare.custom_resolution = Some(Resolution { w: 1920, h: 1080 });
+            cfg_to_compare.custom_resolutions =
+                HashMap::from([("0".to_string(), Resolution { w: 1920, h: 1080 })]);
             let cfg = toml::from_str::<PeerConfig>(wrong_field_str);
             assert_eq!(cfg, Ok(cfg_to_compare), "Failed to test wrong_field_str");
         }

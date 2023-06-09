@@ -3,6 +3,7 @@ use desktop::Desktop;
 pub use hbb_common::platform::linux::*;
 use hbb_common::{
     allow_err, bail,
+    config::Config,
     libc::{c_char, c_int, c_long, c_void},
     log,
     message_proto::Resolution,
@@ -306,9 +307,14 @@ fn force_stop_server() {
 }
 
 pub fn start_os_service() {
+    check_if_stop_service();
     stop_rustdesk_servers();
     stop_subprocess();
     start_uinput_service();
+
+    std::thread::spawn(|| {
+        allow_err!(crate::ipc::start(crate::POSTFIX_SERVICE));
+    });
 
     let running = Arc::new(AtomicBool::new(true));
     let r = running.clone();
@@ -776,9 +782,9 @@ pub fn resolutions(name: &str) -> Vec<Resolution> {
 
                 Screen 0: minimum 320 x 200, current 1920 x 1080, maximum 16384 x 16384
                 eDP-1 connected primary 1920x1080+0+0 (normal left inverted right x axis y axis) 344mm x 193mm
-                1920x1080     60.01*+  60.01    59.97    59.96    59.93  
-                1680x1050     59.95    59.88  
-                1600x1024     60.17  
+                1920x1080     60.01*+  60.01    59.97    59.96    59.93
+                1680x1050     59.95    59.88
+                1600x1024     60.17
 
                 XWAYLAND0 connected primary 1920x984+0+0 (normal left inverted right x axis y axis) 0mm x 0mm
                 Virtual1 connected primary 1920x984+0+0 (normal left inverted right x axis y axis) 0mm x 0mm
@@ -1058,5 +1064,103 @@ mod desktop {
             self.get_xauth();
             self.set_is_subprocess();
         }
+    }
+}
+
+pub struct WakeLock(Option<keepawake::AwakeHandle>);
+
+impl WakeLock {
+    pub fn new(display: bool, idle: bool, sleep: bool) -> Self {
+        WakeLock(
+            keepawake::Builder::new()
+                .display(display)
+                .idle(idle)
+                .sleep(sleep)
+                .create()
+                .ok(),
+        )
+    }
+}
+
+fn has_cmd(cmd: &str) -> bool {
+    std::process::Command::new("which")
+        .arg(cmd)
+        .status()
+        .map(|x| x.success())
+        .unwrap_or_default()
+}
+
+pub fn run_cmds_pkexec(cmds: &str) -> bool {
+    const DONE: &str = "RUN_CMDS_PKEXEC_DONE";
+    if let Ok(output) = std::process::Command::new("pkexec")
+        .arg("sh")
+        .arg("-c")
+        .arg(&format!("{cmds};echo {DONE}"))
+        .output()
+    {
+        let out = String::from_utf8_lossy(&output.stdout);
+        log::debug!("cmds: {cmds}");
+        log::debug!("output: {out}");
+        out.contains(DONE)
+    } else {
+        false
+    }
+}
+
+pub fn run_me_with(secs: u32) {
+    let exe = std::env::current_exe()
+        .unwrap_or("".into())
+        .to_string_lossy()
+        .to_string();
+    std::process::Command::new("sh")
+        .arg("-c")
+        .arg(&format!("sleep {secs}; {exe}"))
+        .spawn()
+        .ok();
+}
+
+pub fn uninstall_service(show_new_window: bool) -> bool {
+    if !has_cmd("systemctl") {
+        return false;
+    }
+    log::info!("Uninstalling service...");
+    Config::set_option("stop-service".into(), "Y".into());
+    if !run_cmds_pkexec("systemctl disable rustdesk; systemctl stop rustdesk") {
+        Config::set_option("stop-service".into(), "".into());
+        return true;
+    }
+    if show_new_window {
+        run_me_with(2);
+    }
+    std::process::exit(0);
+}
+
+pub fn install_service() -> bool {
+    if !has_cmd("systemctl") {
+        return false;
+    }
+    log::info!("Installing service...");
+    let home = std::env::var("HOME").unwrap_or_default();
+    let cp = if home != "/root" && !Config::get().is_empty() {
+        format!("cp -f {home}/.config/rustdesk/RustDesk.toml /root/.config/rustdesk/; cp -f {home}/.config/rustdesk/RustDesk2.toml /root/.config/rustdesk/;")
+    } else {
+        "".to_owned()
+    };
+    Config::set_option("stop-service".into(), "".into());
+    if !run_cmds_pkexec(&format!(
+        "{cp}systemctl enable rustdesk; systemctl start rustdesk"
+    )) {
+        Config::set_option("stop-service".into(), "Y".into());
+        return true;
+    }
+    run_me_with(2);
+    std::process::exit(0);
+}
+
+fn check_if_stop_service() {
+    if Config::get_option("stop-service".into()) == "Y" {
+        allow_err!(run_cmds(
+            "systemctl disable rustdesk; systemctl stop rustdesk"
+        ));
     }
 }
