@@ -21,7 +21,7 @@ use hbb_common::{allow_err, anyhow::anyhow, bail, log, message_proto::Resolution
 use include_dir::{include_dir, Dir};
 use objc::{class, msg_send, sel, sel_impl};
 use scrap::{libc::c_void, quartz::ffi::*};
-use std::{ffi::c_char, path::PathBuf};
+use std::path::PathBuf;
 
 static PRIVILEGES_SCRIPTS_DIR: Dir =
     include_dir!("$CARGO_MANIFEST_DIR/src/platform/privileges_scripts");
@@ -357,6 +357,8 @@ pub fn get_cursor_data(hcursor: u64) -> ResultType<CursorData> {
                 let color: id = msg_send![rep, colorAtX:x y:y];
                 // let color: id = msg_send![color, colorUsingColorSpace: cs];
                 if color == nil {
+                    //..
+                    bail!("cursor data fail");
                     continue;
                 }
                 let r: f64 = msg_send![color, redComponent];
