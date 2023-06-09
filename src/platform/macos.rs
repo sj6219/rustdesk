@@ -357,6 +357,8 @@ pub fn get_cursor_data(hcursor: u64) -> ResultType<CursorData> {
                 let color: id = msg_send![rep, colorAtX:x y:y];
                 // let color: id = msg_send![color, colorUsingColorSpace: cs];
                 if color == nil {
+                    //..
+                    bail!("cursor data fail");
                     continue;
                 }
                 let r: f64 = msg_send![color, redComponent];
