@@ -10,10 +10,10 @@ on:
 env:
   CARGO_NDK_VERSION: "3.1.2"
   LLVM_VERSION: "15.0.6"
-  FLUTTER_VERSION: "3.10.1"
+  FLUTTER_VERSION: "3.10.2"
   FLUTTER_RUST_BRIDGE_VERSION: "1.75.3"
   # for arm64 linux
-  FLUTTER_ELINUX_VERSION: "3.10.1"
+  FLUTTER_ELINUX_VERSION: "3.10.2"
   FLUTTER_ELINUX_COMMIT_ID: "410b3ca42f2cd0c485edf517a1666652bab442d4"
   TAG_NAME: "nightly"
   # vcpkg version: 2023.04.15
@@ -79,7 +79,7 @@ jobs:
 
       - name: Install flutter rust bridge deps
         run: |
-          cargo install flutter_rust_bridge_codegen --version ${{ env.FLUTTER_RUST_BRIDGE_VERSION }}
+          cargo install flutter_rust_bridge_codegen --version ${{ env.FLUTTER_RUST_BRIDGE_VERSION }} --features "uuid"
           Push-Location flutter ; flutter pub get ; Pop-Location
           ~/.cargo/bin/flutter_rust_bridge_codegen --rust-input ./src/flutter_ffi.rs --dart-output ./flutter/lib/generated_bridge.dart
 
@@ -312,7 +312,7 @@ jobs:
       - name: Install flutter rust bridge deps
         shell: bash
         run: |
-          cargo install flutter_rust_bridge_codegen --version ${{ env.FLUTTER_RUST_BRIDGE_VERSION }}
+          cargo install flutter_rust_bridge_codegen --version ${{ env.FLUTTER_RUST_BRIDGE_VERSION }} --features "uuid"
           pushd flutter && flutter pub get && popd
           ~/.cargo/bin/flutter_rust_bridge_codegen --rust-input ./src/flutter_ffi.rs --dart-output ./flutter/lib/generated_bridge.dart
 
@@ -945,7 +945,7 @@ jobs:
             if ${{ matrix.job.enable-headless }}; then
               export DEFAULT_FEAT=linux_headless
             fi
-            cargo build --lib --features flutter,${{ matrix.job.extra-build-features }},$DEFAULT_FEAT --release
+            cargo build --lib --features flutter,flutter_texture_render,${{ matrix.job.extra-build-features }},$DEFAULT_FEAT --release
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@master

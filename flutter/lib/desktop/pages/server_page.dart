@@ -30,13 +30,10 @@ class _DesktopServerPageState extends State<DesktopServerPage>
   final tabController = gFFI.serverModel.tabController;
   @override
   void initState() {
-    gFFI.ffiModel.updateEventListener("");
+    gFFI.ffiModel.updateEventListener(gFFI.sessionId, "");
     windowManager.addListener(this);
     tabController.onRemoved = (_, id) {
       onRemoveId(id);
-    };
-    tabController.onSelected = (_, id) {
-      windowManager.setTitle(getWindowNameWithId(id));
     };
     super.initState();
   }
@@ -100,8 +97,17 @@ class ConnectionManagerState extends State<ConnectionManager> {
   @override
   void initState() {
     gFFI.serverModel.updateClientState();
-    gFFI.serverModel.tabController.onSelected = (index, _) =>
-        gFFI.chatModel.changeCurrentID(gFFI.serverModel.clients[index].id);
+    gFFI.serverModel.tabController.onSelected = (client_id_str) {
+      final client_id = int.tryParse(client_id_str);
+      if (client_id != null) {
+        gFFI.chatModel.changeCurrentID(client_id);
+        final client =
+            gFFI.serverModel.clients.firstWhereOrNull((e) => e.id == client_id);
+        if (client != null) {
+          windowManager.setTitle(getWindowNameWithId(client.peerId));
+        }
+      }
+    };
     gFFI.chatModel.isConnManager = true;
     super.initState();
   }
@@ -328,6 +334,7 @@ class _CmHeaderState extends State<_CmHeader>
         _time.value = _time.value + 1;
       }
     });
+    gFFI.serverModel.tabController.onSelected?.call(client.id.toString());
   }
 
   @override
@@ -459,7 +466,7 @@ class _PrivilegeBoardState extends State<_PrivilegeBoard> {
   Widget buildPermissionIcon(bool enabled, IconData iconData,
       Function(bool)? onTap, String tooltipText) {
     return Tooltip(
-      message: tooltipText,
+      message: "$tooltipText: ${enabled ? "ON" : "OFF"}",
       child: Container(
         decoration: BoxDecoration(
           color: enabled ? MyTheme.accent : Colors.grey[700],
@@ -472,20 +479,13 @@ class _PrivilegeBoardState extends State<_PrivilegeBoard> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              Icon(
-                iconData,
-                size: 30.0,
-                color: Colors.white,
-              ),
-              Text(
-                enabled ? "ON" : "OFF",
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontWeight: FontWeight.w200,
+              Expanded(
+                child: Icon(
+                  iconData,
                   color: Colors.white,
-                  fontSize: 10.0,
+                  size: 32,
                 ),
-              )
+              ),
             ],
           ),
         ),
@@ -828,13 +828,13 @@ class _CmControlPanel extends StatelessWidget {
         ),
       );
     }
+    final borderRadius = BorderRadius.circular(10.0);
     return Container(
       height: 28,
       decoration: BoxDecoration(
-          color: color,
-          borderRadius: BorderRadius.circular(10.0),
-          border: border),
+          color: color, borderRadius: borderRadius, border: border),
       child: InkWell(
+        borderRadius: borderRadius,
         onTap: () => checkClickTime(client.id, onClick),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
