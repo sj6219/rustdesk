@@ -344,6 +344,9 @@ pub struct Displays {
 
 impl Displays {
     pub fn new() -> io::Result<Displays> {
+        //..
+        unsafe { winapi::um::shellscalingapi::SetProcessDpiAwareness(winapi::um::shellscalingapi::PROCESS_SYSTEM_DPI_AWARE); }
+        
         let mut factory = ptr::null_mut();
         wrap_hresult(unsafe { CreateDXGIFactory1(&IID_IDXGIFactory1, &mut factory) })?;
 

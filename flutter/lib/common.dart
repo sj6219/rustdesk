@@ -23,6 +23,7 @@ import 'package:texture_rgba_renderer/texture_rgba_renderer.dart';
 import 'package:uni_links/uni_links.dart';
 import 'package:uni_links_desktop/uni_links_desktop.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:uuid/uuid.dart';
 import 'package:win32/win32.dart' as win32;
 import 'package:window_manager/window_manager.dart';
 import 'package:window_size/window_size.dart' as window_size;
@@ -68,6 +69,7 @@ typedef F = String Function(String);
 typedef FMethod = String Function(String, dynamic);
 
 typedef StreamEventHandler = Future<void> Function(Map<String, dynamic>);
+typedef SessionID = UuidValue;
 final iconHardDrive = MemoryImage(Uint8List.fromList(base64Decode(
     'iVBORw0KGgoAAAANSUhEUgAAAMgAAADICAMAAACahl6sAAAAmVBMVEUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAjHWqVAAAAMnRSTlMAv0BmzLJNXlhiUu2fxXDgu7WuSUUe29LJvpqUjX53VTstD7ilNujCqTEk5IYH+vEoFjKvAagAAAPpSURBVHja7d0JbhpBEIXhB3jYzb5vBgzYgO04df/DJXGUKMwU9ECmZ6pQfSfw028LCXW3YYwxxhhjjDHGGGOM0eZ9VV1MckdKWLM1bRQ/35GW/WxHHu1me6ShuyHvNl34VhlTKsYVeDWj1EzgUZ1S1DrAk/UDparZgxd9Sl0BHnxSBhpI3jfKQG2FpLUpE69I2ILikv1nsvygjBwPSNKYMlNHggqUoSKS80AZCnwHqQ1zCRvW+CRegwRFeFAMKKrtM8gTPJlzSfwFgT9dJom3IDN4VGaSeAryAK8m0SSeghTg1ZYiql6CjBDhO8mzlyAVhKhIwgXxrh5NojGIhyRckEdwpCdhgpSQgiWTRGMQNonGIGySp0SDvMDBX5KWxiB8Eo1BgE00SYJBykhNnkmSWJAcLpGaJNMgfJKyxiDAK4WNEwryhMtkJsk8CJtEYxA+icYgQIfCcgkEqcJNXhIRQdgkGoPwSTQG+e8khdu/7JOVREwQIKCwF41B2CQljUH4JLcH6SI+OUlEBQHa0SQag/BJNAbhkjxqDMIn0RgEeI4muSlID9eSkERgEKAVTaIxCJ9EYxA2ydVB8hCASVLRGAQYR5NoDMIn0RgEyFHYSGMQPonGII4kziCNvBgNJonEk4u3GAk8Sprk6eYaqbMDY0oKvUm5jfC/viGiSypV7+M3i2iDsAGpNEDYjlTa3W8RdR/r544g50ilnA0RxoZIE2NIXqQbhkAkGyKNDZHGhkhjQ6SxIdLYEGlsiDQ2JGTVeD0264U9zipPh7XOooffpA6pfNCXjxl4/c3pUzlChwzor53zwYYVfpI5pOV6LWFF/2jiJ5FDSs5jdY/0rwUAkUMeXWdBqnSqD0DikBqdqCHsjTvELm9In0IOri/0pwAEDtlSyNaRjAIAAoesKWTtuusxByBwCJp0oomwBXcYUuCQgE50ENajE4OvZAKHLB1/68Br5NqiyCGYOY8YRd77kTkEb64n7lZN+mOIX4QOwb5FX0ZVx3uOxwW+SB0CbBubemWP8/rlaaeRX+M3uUOuZENsiA25zIbYkPsZElBIHwL13U/PTjJ/cyOOEoVM3I+hziDQlELm7pPxw3eI8/7gPh1fpLA6xGnEeDDgO0UcIAzzM35HxLPIq5SXe9BLzOsj9eUaQqyXzxS1QFSfWM2cCANiHcAISJ0AnCKpUwTuIkkA3EeSInAXSQKcs1V18e24wlllUmQp9v9zXKeHi+akRAMOPVKhAqdPBZeUmnnEsO6QcJ0+4qmOSbBxFfGVRiTUqITrdKcCbyYO3/K4wX4+aQ+FfNjXhu3JfAVjjDHGGGOMMcYYY4xIPwCgfqT6TbhCLAAAAABJRU5ErkJggg==')));
 
@@ -183,7 +185,13 @@ class MyTheme {
     ),
   );
 
-  static const SwitchThemeData switchTheme = SwitchThemeData(splashRadius: 0);
+  static SwitchThemeData switchTheme() {
+    return SwitchThemeData(splashRadius: isDesktop ? 0 : kRadialReactionRadius);
+  }
+
+  static RadioThemeData radioTheme() {
+    return RadioThemeData(splashRadius: isDesktop ? 0 : kRadialReactionRadius);
+  }
 
   // Checkbox
   static const CheckboxThemeData checkboxTheme = CheckboxThemeData(
@@ -309,7 +317,8 @@ class MyTheme {
         ),
       ),
     ),
-    switchTheme: switchTheme,
+    switchTheme: switchTheme(),
+    radioTheme: radioTheme(),
     checkboxTheme: checkboxTheme,
     listTileTheme: listTileTheme,
     menuBarTheme: MenuBarThemeData(
@@ -404,7 +413,8 @@ class MyTheme {
         ),
       ),
     ),
-    switchTheme: switchTheme,
+    switchTheme: switchTheme(),
+    radioTheme: radioTheme(),
     checkboxTheme: checkboxTheme,
     listTileTheme: listTileTheme,
     menuBarTheme: MenuBarThemeData(
@@ -526,6 +536,7 @@ String formatDurationToTime(Duration duration) {
 
 closeConnection({String? id}) {
   if (isAndroid || isIOS) {
+    gFFI.chatModel.hideChatOverlay();
     Navigator.popUntil(globalKey.currentContext!, ModalRoute.withName("/"));
   } else {
     final controller = Get.find<DesktopTabController>();
@@ -538,6 +549,7 @@ void window_on_top(int? id) {
     return;
   }
   if (id == null) {
+    print("Bring window on top");
     // main window
     windowManager.restore();
     windowManager.show();
@@ -839,6 +851,7 @@ class CustomAlertDialog extends StatelessWidget {
       if (!scopeNode.hasFocus) scopeNode.requestFocus();
     });
     bool tabTapped = false;
+    if (isAndroid) gFFI.invokeMethod("enable_soft_keyboard", true);
 
     return FocusScope(
       node: scopeNode,
@@ -880,8 +893,8 @@ class CustomAlertDialog extends StatelessWidget {
   }
 }
 
-void msgBox(String id, String type, String title, String text, String link,
-    OverlayDialogManager dialogManager,
+void msgBox(SessionID sessionId, String type, String title, String text,
+    String link, OverlayDialogManager dialogManager,
     {bool? hasCancel, ReconnectHandle? reconnect}) {
   dialogManager.dismissAll();
   List<Widget> buttons = [];
@@ -926,7 +939,7 @@ void msgBox(String id, String type, String title, String text, String link,
     buttons.insert(
         0,
         dialogButton('Reconnect', isOutline: true, onPressed: () {
-          reconnect(dialogManager, id, false);
+          reconnect(dialogManager, sessionId, false);
         }));
   }
   if (link.isNotEmpty) {
@@ -940,7 +953,7 @@ void msgBox(String id, String type, String title, String text, String link,
       onSubmit: hasOk ? submit : null,
       onCancel: hasCancel == true ? cancel : null,
     ),
-    tag: '$id-$type-$title-$text-$link',
+    tag: '$sessionId-$type-$title-$text-$link',
   );
 }
 
@@ -1156,7 +1169,7 @@ class AndroidPermissionManager {
 // TODO remove argument contentPadding, it’s not used, getToggle() has not
 RadioListTile<T> getRadio<T>(
     Widget title, T toValue, T curValue, ValueChanged<T?>? onChange,
-    {EdgeInsetsGeometry? contentPadding}) {
+    {EdgeInsetsGeometry? contentPadding, bool? dense}) {
   return RadioListTile<T>(
     contentPadding: contentPadding ?? EdgeInsets.zero,
     visualDensity: VisualDensity.compact,
@@ -1165,6 +1178,7 @@ RadioListTile<T> getRadio<T>(
     value: toValue,
     groupValue: curValue,
     onChanged: onChange,
+    dense: dense,
   );
 }
 
@@ -1481,11 +1495,6 @@ Future<bool> initUniLinks() async {
   if (Platform.isLinux) {
     return false;
   }
-  // Register uni links for Windows. The required info of url scheme is already
-  // declared in `Info.plist` for macOS.
-  if (Platform.isWindows) {
-    registerProtocol('rustdesk');
-  }
   // check cold boot
   try {
     final initialLink = await getInitialLink();
@@ -1591,18 +1600,25 @@ bool parseRustdeskUri(String uriPath) {
 bool callUniLinksUriHandler(Uri uri) {
   debugPrint("uni links called: $uri");
   // new connection
+  String peerId;
   if (uri.authority == "connection" && uri.path.startsWith("/new/")) {
-    final peerId = uri.path.substring("/new/".length);
-    var param = uri.queryParameters;
-    String? switch_uuid = param["switch_uuid"];
-    String? password = param["password"];
-    Future.delayed(Duration.zero, () {
-      rustDeskWinManager.newRemoteDesktop(peerId,
-          password: password, switch_uuid: switch_uuid);
-    });
-    return true;
+    peerId = uri.path.substring("/new/".length);
+  } else if (uri.authority == "connect") {
+    peerId = uri.path.substring(1);
+  } else if (uri.authority.length > 2 && uri.path.length <= 1) {
+    // "/" or ""
+    peerId = uri.authority;
+  } else {
+    return false;
   }
-  return false;
+  var param = uri.queryParameters;
+  String? switch_uuid = param["switch_uuid"];
+  String? password = param["password"];
+  Future.delayed(Duration.zero, () {
+    rustDeskWinManager.newRemoteDesktop(peerId,
+        password: password, switch_uuid: switch_uuid);
+  });
+  return true;
 }
 
 connectMainDesktop(String id,
@@ -2037,5 +2053,14 @@ void onCopyFingerprint(String value) {
     showToast('$value\n${translate("Copied")}');
   } else {
     showToast(translate("no fingerprints"));
+  }
+}
+
+Future<void> start_service(bool is_start) async {
+  bool checked = !bind.mainIsInstalled() ||
+      !Platform.isMacOS ||
+      await bind.mainCheckSuperUserPermission();
+  if (checked) {
+    bind.mainSetOption(key: "stop-service", value: is_start ? "" : "Y");
   }
 }
