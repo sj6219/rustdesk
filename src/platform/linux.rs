@@ -11,6 +11,7 @@ use hbb_common::{
 };
 use std::{
     cell::RefCell,
+    io::Write,
     path::{Path, PathBuf},
     process::{Child, Command},
     string::String,
@@ -1095,7 +1096,7 @@ pub fn run_cmds_pkexec(cmds: &str) -> bool {
     if let Ok(output) = std::process::Command::new("pkexec")
         .arg("sh")
         .arg("-c")
-        .arg(&format!("{cmds};echo {DONE}"))
+        .arg(&format!("{cmds} echo {DONE}"))
         .output()
     {
         let out = String::from_utf8_lossy(&output.stdout);
@@ -1119,13 +1120,25 @@ pub fn run_me_with(secs: u32) {
         .ok();
 }
 
+fn switch_service(stop: bool) -> String {
+    let home = std::env::var("HOME").unwrap_or_default();
+    Config::set_option("stop-service".into(), if stop { "Y" } else { "" }.into());
+    if home != "/root" && !Config::get().is_empty() {
+        format!("cp -f {home}/.config/rustdesk/RustDesk.toml /root/.config/rustdesk/; cp -f {home}/.config/rustdesk/RustDesk2.toml /root/.config/rustdesk/;")
+    } else {
+        "".to_owned()
+    }
+}
+
 pub fn uninstall_service(show_new_window: bool) -> bool {
     if !has_cmd("systemctl") {
         return false;
     }
     log::info!("Uninstalling service...");
-    Config::set_option("stop-service".into(), "Y".into());
-    if !run_cmds_pkexec("systemctl disable rustdesk; systemctl stop rustdesk") {
+    let cp = switch_service(true);
+    if !run_cmds_pkexec(&format!(
+        "systemctl disable rustdesk; systemctl stop rustdesk; {cp}"
+    )) {
         Config::set_option("stop-service".into(), "".into());
         return true;
     }
@@ -1140,15 +1153,9 @@ pub fn install_service() -> bool {
         return false;
     }
     log::info!("Installing service...");
-    let home = std::env::var("HOME").unwrap_or_default();
-    let cp = if home != "/root" && !Config::get().is_empty() {
-        format!("cp -f {home}/.config/rustdesk/RustDesk.toml /root/.config/rustdesk/; cp -f {home}/.config/rustdesk/RustDesk2.toml /root/.config/rustdesk/;")
-    } else {
-        "".to_owned()
-    };
-    Config::set_option("stop-service".into(), "".into());
+    let cp = switch_service(false);
     if !run_cmds_pkexec(&format!(
-        "{cp}systemctl enable rustdesk; systemctl start rustdesk"
+        "{cp} systemctl enable rustdesk; systemctl start rustdesk;"
     )) {
         Config::set_option("stop-service".into(), "Y".into());
         return true;
@@ -1163,4 +1170,25 @@ fn check_if_stop_service() {
             "systemctl disable rustdesk; systemctl stop rustdesk"
         ));
     }
+}
+
+pub fn check_autostart_config() -> ResultType<()> {
+    let home = std::env::var("HOME").unwrap_or_default();
+    let path = format!("{home}/.config/autostart");
+    let file = format!("{path}/rustdesk.desktop");
+    std::fs::create_dir_all(&path).ok();
+    if !Path::new(&file).exists() {
+        // write text to the desktop file
+        let mut file = std::fs::File::create(&file)?;
+        file.write_all(
+            "
+[Desktop Entry]
+Type=Application
+Exec=rustdesk --tray
+NoDisplay=false
+        "
+            .as_bytes(),
+        )?;
+    }
+    Ok(())
 }

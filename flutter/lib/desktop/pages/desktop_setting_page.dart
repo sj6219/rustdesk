@@ -1339,6 +1339,7 @@ class _DisplayState extends State<_Display> {
     return _Card(title: 'Other Default Options', children: [
       otherRow('View Mode', 'view_only'),
       otherRow('show_monitors_tip', 'show_monitors_toolbar'),
+      otherRow('Collapse toolbar', 'collapse_toolbar'),
       otherRow('Show remote cursor', 'show_remote_cursor'),
       otherRow('Zoom cursor', 'zoom-cursor'),
       otherRow('Show quality monitor', 'show_quality_monitor'),
@@ -1559,7 +1560,7 @@ class _AboutState extends State<_About> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'Copyright © 2022 Purslane Ltd.\n$license',
+                                'Copyright © 2023 Purslane Ltd.\n$license',
                                 style: const TextStyle(color: Colors.white),
                               ),
                               Text(
