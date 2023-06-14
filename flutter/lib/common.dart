@@ -549,6 +549,7 @@ void window_on_top(int? id) {
     return;
   }
   if (id == null) {
+    print("Bring window on top");
     // main window
     windowManager.restore();
     windowManager.show();
@@ -1168,7 +1169,7 @@ class AndroidPermissionManager {
 // TODO remove argument contentPadding, it’s not used, getToggle() has not
 RadioListTile<T> getRadio<T>(
     Widget title, T toValue, T curValue, ValueChanged<T?>? onChange,
-    {EdgeInsetsGeometry? contentPadding}) {
+    {EdgeInsetsGeometry? contentPadding, bool? dense}) {
   return RadioListTile<T>(
     contentPadding: contentPadding ?? EdgeInsets.zero,
     visualDensity: VisualDensity.compact,
@@ -1177,6 +1178,7 @@ RadioListTile<T> getRadio<T>(
     value: toValue,
     groupValue: curValue,
     onChanged: onChange,
+    dense: dense,
   );
 }
 
