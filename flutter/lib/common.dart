@@ -1169,7 +1169,7 @@ class AndroidPermissionManager {
 // TODO remove argument contentPadding, it’s not used, getToggle() has not
 RadioListTile<T> getRadio<T>(
     Widget title, T toValue, T curValue, ValueChanged<T?>? onChange,
-    {EdgeInsetsGeometry? contentPadding}) {
+    {EdgeInsetsGeometry? contentPadding, bool? dense}) {
   return RadioListTile<T>(
     contentPadding: contentPadding ?? EdgeInsets.zero,
     visualDensity: VisualDensity.compact,
@@ -1178,6 +1178,7 @@ RadioListTile<T> getRadio<T>(
     value: toValue,
     groupValue: curValue,
     onChanged: onChange,
+    dense: dense,
   );
 }
 
@@ -1331,7 +1332,13 @@ Future<void> saveWindowPosition(WindowType type, {int? windowId}) async {
       break;
     default:
       final wc = WindowController.fromWindowId(windowId!);
-      final frame = await wc.getFrame();
+      final Rect frame;
+      try {
+        frame = await wc.getFrame();
+      } catch (e) {
+        debugPrint("Failed to get frame of window $windowId, it may be hidden");
+        return;
+      }
       final position = frame.topLeft;
       final sz = frame.size;
       final isMaximized = await wc.isMaximized();

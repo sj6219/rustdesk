@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/material.dart';
 import 'package:flutter_hbb/common/hbbs/hbbs.dart';
 import 'package:flutter_hbb/common/widgets/peer_tab_page.dart';
 import 'package:get/get.dart';
@@ -12,7 +13,6 @@ import 'platform_model.dart';
 
 class UserModel {
   final RxString userName = ''.obs;
-  final RxString groupName = ''.obs;
   final RxBool isAdmin = false.obs;
   WeakReference<FFI> parent;
 
@@ -41,7 +41,7 @@ class UserModel {
         reset();
         return;
       }
-      final data = json.decode(response.body);
+      final data = json.decode(utf8.decode(response.bodyBytes));
       final error = data['error'];
       if (error != null) {
         throw error;
@@ -61,13 +61,11 @@ class UserModel {
     await gFFI.abModel.reset();
     await gFFI.groupModel.reset();
     userName.value = '';
-    groupName.value = '';
     gFFI.peerTabModel.check_dynamic_tabs();
   }
 
   Future<void> _parseAndUpdateUser(UserPayload user) async {
     userName.value = user.name;
-    groupName.value = user.grp;
     isAdmin.value = user.isAdmin;
   }
 
@@ -107,9 +105,9 @@ class UserModel {
 
     final Map<String, dynamic> body;
     try {
-      body = jsonDecode(resp.body);
+      body = jsonDecode(utf8.decode(resp.bodyBytes));
     } catch (e) {
-      print("jsonDecode resp body failed: ${e.toString()}");
+      print("login: jsonDecode resp body failed: ${e.toString()}");
       rethrow;
     }
 
@@ -121,7 +119,7 @@ class UserModel {
     try {
       loginResponse = LoginResponse.fromJson(body);
     } catch (e) {
-      print("jsonDecode LoginResponse failed: ${e.toString()}");
+      print("login: jsonDecode LoginResponse failed: ${e.toString()}");
       rethrow;
     }
 
@@ -130,5 +128,16 @@ class UserModel {
     }
 
     return loginResponse;
+  }
+
+  static Future<List<dynamic>> queryLoginOptions() async {
+    try {
+      final url = await bind.mainGetApiServer();
+      final resp = await http.get(Uri.parse('$url/api/login-options'));
+      return jsonDecode(resp.body);
+    } catch (e) {
+      print("queryLoginOptions: jsonDecode resp body failed: ${e.toString()}");
+      return [];
+    }
   }
 }

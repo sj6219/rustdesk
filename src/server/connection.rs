@@ -241,12 +241,12 @@ impl Connection {
         id: i32,
         server: super::ServerPtrWeak,
     ) {
+        let _raii_id = raii::ConnectionID::new(id);
         let hash = Hash {
             salt: Config::get_salt(),
             challenge: Config::get_auto_password(6),
             ..Default::default()
         };
-        ALIVE_CONNS.lock().unwrap().push(id);
         let (tx_from_cm_holder, mut rx_from_cm) = mpsc::unbounded_channel::<ipc::Data>();
         // holding tx_from_cm_holder to avoid cpu burning of rx_from_cm.recv when all sender closed
         let tx_from_cm = tx_from_cm_holder.clone();
@@ -282,6 +282,7 @@ impl Connection {
             keyboard: Connection::permission("enable-keyboard"),
             clipboard: Connection::permission("enable-clipboard"),
             audio: Connection::permission("enable-audio"),
+            // to-do: make sure is the option correct here
             file: Connection::permission("enable-file-transfer"),
             restart: Connection::permission("enable-remote-restart"),
             recording: Connection::permission("enable-record-session"),
@@ -424,7 +425,6 @@ impl Connection {
                             } else if &name == "file" {
                                 conn.file = enabled;
                                 conn.send_permission(Permission::File, enabled).await;
-                                conn.send_to_cm(ipc::Data::ClipboardFileEnabled(conn.file_transfer_enabled()));
                             } else if &name == "restart" {
                                 conn.restart = enabled;
                                 conn.send_permission(Permission::Restart, enabled).await;
@@ -437,10 +437,8 @@ impl Connection {
                             allow_err!(conn.stream.send_raw(bytes).await);
                         }
                         #[cfg(windows)]
-                        ipc::Data::ClipboardFile(_clip) => {
-                            if conn.file_transfer_enabled() {
-                                allow_err!(conn.stream.send(&clip_2_msg(_clip)).await);
-                            }
+                        ipc::Data::ClipboardFile(clip) => {
+                            allow_err!(conn.stream.send(&clip_2_msg(clip)).await);
                         }
                         ipc::Data::PrivacyModeState((_, state)) => {
                             let msg_out = match state {
@@ -627,21 +625,11 @@ impl Connection {
         conn.post_conn_audit(json!({
             "action": "close",
         }));
-        let mut active_conns_lock = ALIVE_CONNS.lock().unwrap();
-        active_conns_lock.retain(|&c| c != id);
         if let Some(s) = conn.server.upgrade() {
             let mut s = s.write().unwrap();
             s.remove_connection(&conn.inner);
             #[cfg(not(any(target_os = "android", target_os = "ios")))]
             try_stop_record_cursor_pos();
-        }
-        #[cfg(not(any(target_os = "android", target_os = "ios")))]
-        if active_conns_lock.is_empty() {
-            video_service::reset_resolutions();
-        }
-        #[cfg(all(windows, feature = "virtual_display_driver"))]
-        if active_conns_lock.is_empty() {
-            video_service::try_plug_out_virtual_display();
         }
         log::info!("#{} connection loop exited", id);
     }
@@ -1154,7 +1142,7 @@ impl Connection {
             clipboard: self.clipboard,
             audio: self.audio,
             file: self.file,
-            file_transfer_enabled: self.file_transfer_enabled(),
+            file_transfer_enabled: self.file,
             restart: self.restart,
             recording: self.recording,
             from_switch: self.from_switch,
@@ -1396,9 +1384,13 @@ impl Connection {
                 return true;
             }
 
-            if !hbb_common::is_ipv4_str(&lr.username) && lr.username != Config::get_id() {
+            if !hbb_common::is_ip_str(&lr.username)
+                && !hbb_common::is_domain_port_str(&lr.username)
+                && lr.username != Config::get_id()
+            {
                 self.send_login_error(crate::client::LOGIN_MSG_OFFLINE)
                     .await;
+                return false;
             } else if password::approve_mode() == ApproveMode::Click
                 || password::approve_mode() == ApproveMode::Both && !password::has_valid_password()
             {
@@ -1661,12 +1653,11 @@ impl Connection {
                         update_clipboard(_cb, None);
                     }
                 }
-                Some(message::Union::Cliprdr(_clip)) => {
-                    if self.file_transfer_enabled() {
-                        #[cfg(windows)]
-                        if let Some(clip) = msg_2_clip(_clip) {
-                            self.send_to_cm(ipc::Data::ClipboardFile(clip))
-                        }
+                Some(message::Union::Cliprdr(_clip)) =>
+                {
+                    #[cfg(windows)]
+                    if let Some(clip) = msg_2_clip(_clip) {
+                        self.send_to_cm(ipc::Data::ClipboardFile(clip))
                     }
                 }
                 Some(message::Union::FileAction(fa)) => {
@@ -2552,5 +2543,32 @@ impl Drop for Connection {
     fn drop(&mut self) {
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         self.release_pressed_modifiers();
+    }
+}
+
+mod raii {
+    use super::*;
+    pub struct ConnectionID(i32);
+
+    impl ConnectionID {
+        pub fn new(id: i32) -> Self {
+            ALIVE_CONNS.lock().unwrap().push(id);
+            Self(id)
+        }
+    }
+
+    impl Drop for ConnectionID {
+        fn drop(&mut self) {
+            let mut active_conns_lock = ALIVE_CONNS.lock().unwrap();
+            active_conns_lock.retain(|&c| c != self.0);
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
+            if active_conns_lock.is_empty() {
+                video_service::reset_resolutions();
+            }
+            #[cfg(all(windows, feature = "virtual_display_driver"))]
+            if active_conns_lock.is_empty() {
+                video_service::try_plug_out_virtual_display();
+            }
+        }
     }
 }

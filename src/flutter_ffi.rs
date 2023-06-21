@@ -348,7 +348,13 @@ pub fn session_handle_flutter_key_event(
     }
 }
 
-pub fn session_enter_or_leave(_session_id: SessionID, _enter: bool) {
+// SyncReturn<()> is used to make sure enter() and leave() are executed in the sequence this function is called.
+//
+// If the cursor jumps between remote page of two connections, leave view and enter view will be called.
+// session_enter_or_leave() will be called then.
+// As rust is multi-thread, it is possible that enter() is called before leave().
+// This will cause the keyboard input to take no effect.
+pub fn session_enter_or_leave(_session_id: SessionID, _enter: bool) -> SyncReturn<()> {
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     if let Some(session) = SESSIONS.read().unwrap().get(&_session_id) {
         if _enter {
@@ -357,6 +363,7 @@ pub fn session_enter_or_leave(_session_id: SessionID, _enter: bool) {
             session.leave();
         }
     }
+    SyncReturn(())
 }
 
 pub fn session_input_key(
@@ -585,7 +592,7 @@ pub fn main_get_default_sound_input() -> Option<String> {
 }
 
 pub fn main_get_hostname() -> SyncReturn<String> {
-    SyncReturn(crate::common::hostname())
+    SyncReturn(get_hostname())
 }
 
 pub fn main_change_id(new_id: String) {

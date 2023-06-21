@@ -501,8 +501,8 @@ pub fn try_plug_out_virtual_display() {
 }
 
 fn run(sp: GenericService) -> ResultType<()> {
-    #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    let _wake_lock = get_wake_lock();
+    //.. #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    //.. let _wake_lock = get_wake_lock();
 
     // ensure_inited() is needed because release_resource() may be called.
     #[cfg(target_os = "linux")]
