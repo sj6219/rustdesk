@@ -8,7 +8,6 @@ import 'package:get/get.dart';
 
 import '../../common.dart';
 import '../../common/formatter/id_formatter.dart';
-import '../../models/model.dart';
 import '../../models/peer_model.dart';
 import '../../models/platform_model.dart';
 import '../../desktop/widgets/material_mod_popup_menu.dart' as mod_menu;
@@ -727,7 +726,7 @@ abstract class BasePeerCard extends StatelessWidget {
       (setState, close, context) {
         submit() async {
           if (isLan) {
-            bind.mainRemoveDiscovered(id: id);
+            await bind.mainRemoveDiscovered(id: id);
           } else {
             final favs = (await bind.mainGetFav()).toList();
             if (favs.remove(id)) {
@@ -1233,6 +1232,7 @@ class ActionMore extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return InkWell(
+        borderRadius: BorderRadius.circular(14),
         onTap: () {},
         onHover: (value) => _hover.value = value,
         child: Obx(() => CircleAvatar(
