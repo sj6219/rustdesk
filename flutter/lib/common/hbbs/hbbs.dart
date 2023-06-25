@@ -85,7 +85,7 @@ class LoginRequest {
   String? password;
   String? id;
   String? uuid;
-  bool? trustThisDevice;
+  bool? autoLogin;
   String? type;
   String? verificationCode;
   Map<String, dynamic> deviceInfo = DeviceInfo.toJson();
@@ -95,19 +95,21 @@ class LoginRequest {
       this.password,
       this.id,
       this.uuid,
-      this.trustThisDevice,
+      this.autoLogin,
       this.type,
       this.verificationCode});
 
   Map<String, dynamic> toJson() {
     final Map<String, dynamic> data = <String, dynamic>{};
-    data['username'] = username ?? '';
-    data['password'] = password ?? '';
-    data['id'] = id ?? '';
-    data['uuid'] = uuid ?? '';
-    data['trustThisDevice'] = trustThisDevice ?? '';
-    data['type'] = type ?? '';
-    data['verificationCode'] = verificationCode ?? '';
+    if (username != null) data['username'] = username;
+    if (password != null) data['password'] = password;
+    if (id != null) data['id'] = id;
+    if (uuid != null) data['uuid'] = uuid;
+    if (autoLogin != null) data['autoLogin'] = autoLogin;
+    if (type != null) data['type'] = type;
+    if (verificationCode != null) {
+      data['verificationCode'] = verificationCode;
+    }
     data['deviceInfo'] = deviceInfo;
     return data;
   }
