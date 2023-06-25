@@ -4,7 +4,6 @@ use hbb_common::{
     log, ResultType,
 };
 use reqwest::blocking::Client;
-use serde::ser::SerializeStruct;
 use serde_derive::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use std::{
@@ -57,7 +56,7 @@ pub struct WhitelistItem {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct UserInfo {
-    #[serde(default)]
+    #[serde(default, flatten)]
     pub settings: UserSettings,
     #[serde(default)]
     pub login_device_whitelist: Vec<WhitelistItem>,
@@ -81,18 +80,20 @@ pub enum UserStatus {
     Unverified = -1,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserPayload {
     pub name: String,
+    #[serde(default)]
     pub email: Option<String>,
+    #[serde(default)]
     pub note: Option<String>,
+    #[serde(default)]
     pub status: UserStatus,
     pub info: UserInfo,
-    pub is_admin: bool,
-    pub third_auth_type: Option<String>,
-    // helper field for serialize
     #[serde(default)]
-    pub ser_store_local: bool,
+    pub is_admin: bool,
+    #[serde(default)]
+    pub third_auth_type: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -121,27 +122,9 @@ pub struct AuthResult {
     pub auth_body: Option<AuthBody>,
 }
 
-impl serde::Serialize for UserPayload {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        if self.ser_store_local {
-            let mut state = serializer.serialize_struct("UserPayload", 1)?;
-            state.serialize_field("name", &self.name)?;
-            state.serialize_field("status", &self.status)?;
-            state.end()
-        } else {
-            let mut state = serializer.serialize_struct("UserPayload", 7)?;
-            state.serialize_field("name", &self.name)?;
-            state.serialize_field("email", &self.email)?;
-            state.serialize_field("note", &self.note)?;
-            state.serialize_field("status", &self.status)?;
-            state.serialize_field("info", &self.info)?;
-            state.serialize_field("is_admin", &self.is_admin)?;
-            state.serialize_field("third_auth_type", &self.third_auth_type)?;
-            state.end()
-        }
+impl Default for UserStatus {
+    fn default() -> Self {
+        UserStatus::Normal
     }
 }
 
@@ -244,18 +227,16 @@ impl OidcSession {
         let query_timeout = OIDC_SESSION.read().unwrap().query_timeout;
         while OIDC_SESSION.read().unwrap().keep_querying && begin.elapsed() < query_timeout {
             match Self::query(&code_url.code, &id, &uuid) {
-                Ok(HbbHttpResponse::<_>::Data(mut auth_body)) => {
+                Ok(HbbHttpResponse::<_>::Data(auth_body)) => {
                     if remember_me {
                         LocalConfig::set_option(
                             "access_token".to_owned(),
                             auth_body.access_token.clone(),
                         );
-                        auth_body.user.ser_store_local = true;
                         LocalConfig::set_option(
                             "user_info".to_owned(),
-                            serde_json::to_string(&auth_body.user).unwrap_or_default(),
+                            serde_json::json!({ "name": auth_body.user.name, "status": auth_body.user.status }).to_string(),
                         );
-                        auth_body.user.ser_store_local = false;
                     }
                     OIDC_SESSION
                         .write()
