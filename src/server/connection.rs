@@ -63,6 +63,7 @@ lazy_static::lazy_static! {
     static ref SWITCH_SIDES_UUID: Arc::<Mutex<HashMap<String, (Instant, uuid::Uuid)>>> = Default::default();
 }
 pub static CLICK_TIME: AtomicI64 = AtomicI64::new(0);
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub static MOUSE_MOVE_TIME: AtomicI64 = AtomicI64::new(0);
 
 #[cfg(all(feature = "flutter", feature = "plugin_framework"))]
@@ -163,6 +164,7 @@ pub struct Connection {
     // by peer
     disable_audio: bool,
     // by peer
+    #[cfg(windows)]
     enable_file_transfer: bool,
     // by peer
     audio_sender: Option<MediaSender>,
@@ -282,6 +284,7 @@ impl Connection {
             keyboard: Connection::permission("enable-keyboard"),
             clipboard: Connection::permission("enable-clipboard"),
             audio: Connection::permission("enable-audio"),
+            // to-do: make sure is the option correct here
             file: Connection::permission("enable-file-transfer"),
             restart: Connection::permission("enable-remote-restart"),
             recording: Connection::permission("enable-record-session"),
@@ -290,6 +293,7 @@ impl Connection {
             show_remote_cursor: false,
             ip: "".to_owned(),
             disable_audio: false,
+            #[cfg(windows)]
             enable_file_transfer: false,
             disable_clipboard: false,
             disable_keyboard: false,
@@ -424,7 +428,6 @@ impl Connection {
                             } else if &name == "file" {
                                 conn.file = enabled;
                                 conn.send_permission(Permission::File, enabled).await;
-                                conn.send_to_cm(ipc::Data::ClipboardFileEnabled(conn.file_transfer_enabled()));
                             } else if &name == "restart" {
                                 conn.restart = enabled;
                                 conn.send_permission(Permission::Restart, enabled).await;
@@ -437,10 +440,8 @@ impl Connection {
                             allow_err!(conn.stream.send_raw(bytes).await);
                         }
                         #[cfg(windows)]
-                        ipc::Data::ClipboardFile(_clip) => {
-                            if conn.file_transfer_enabled() {
-                                allow_err!(conn.stream.send(&clip_2_msg(_clip)).await);
-                            }
+                        ipc::Data::ClipboardFile(clip) => {
+                            allow_err!(conn.stream.send(&clip_2_msg(clip)).await);
                         }
                         ipc::Data::PrivacyModeState((_, state)) => {
                             let msg_out = match state {
@@ -823,7 +824,6 @@ impl Connection {
                 .await;
             Self::post_alarm_audit(
                 AlarmAuditType::IpWhitelist, //"ip whitelist",
-                true,
                 json!({ "ip":addr.ip() }),
             );
             return false;
@@ -833,9 +833,6 @@ impl Connection {
 
     async fn on_open(&mut self, addr: SocketAddr) -> bool {
         log::debug!("#{} Connection opened from {}.", self.inner.id, addr);
-        if !self.check_privacy_mode_on().await {
-            return false;
-        }
         if !self.check_whitelist(&addr).await {
             return false;
         }
@@ -915,7 +912,7 @@ impl Connection {
         });
     }
 
-    pub fn post_alarm_audit(typ: AlarmAuditType, from_remote: bool, info: Value) {
+    pub fn post_alarm_audit(typ: AlarmAuditType, info: Value) {
         let url = crate::get_audit_server(
             Config::get_option("api-server"),
             Config::get_option("custom-rendezvous-server"),
@@ -928,7 +925,6 @@ impl Connection {
         v["id"] = json!(Config::get_id());
         v["uuid"] = json!(crate::encode64(hbb_common::get_uuid()));
         v["typ"] = json!(typ as i8);
-        v["from_remote"] = json!(from_remote);
         v["info"] = serde_json::Value::String(info.to_string());
         tokio::spawn(async move {
             allow_err!(Self::post_audit_async(url, v).await);
@@ -1127,6 +1123,7 @@ impl Connection {
         self.audio && !self.disable_audio
     }
 
+    #[cfg(windows)]
     fn file_transfer_enabled(&self) -> bool {
         self.file && self.enable_file_transfer
     }
@@ -1144,7 +1141,7 @@ impl Connection {
             clipboard: self.clipboard,
             audio: self.audio,
             file: self.file,
-            file_transfer_enabled: self.file_transfer_enabled(),
+            file_transfer_enabled: self.file,
             restart: self.restart,
             recording: self.recording,
             from_switch: self.from_switch,
@@ -1358,7 +1355,11 @@ impl Connection {
                         }
                     }
                 }
-                _ => {}
+                _ => {
+                    if !self.check_privacy_mode_on().await {
+                        return false;
+                    }
+                }
             }
 
             #[cfg(all(target_os = "linux", feature = "linux_headless"))]
@@ -1460,7 +1461,6 @@ impl Connection {
                         .await;
                     Self::post_alarm_audit(
                         AlarmAuditType::ManyWrongPassword,
-                        true,
                         json!({
                                     "ip":self.ip,
                         }),
@@ -1469,7 +1469,6 @@ impl Connection {
                     self.send_login_error("Please try 1 minute later").await;
                     Self::post_alarm_audit(
                         AlarmAuditType::FrequentAttempt,
-                        true,
                         json!({
                                     "ip":self.ip,
                         }),
@@ -1655,12 +1654,11 @@ impl Connection {
                         update_clipboard(_cb, None);
                     }
                 }
-                Some(message::Union::Cliprdr(_clip)) => {
-                    if self.file_transfer_enabled() {
-                        #[cfg(windows)]
-                        if let Some(clip) = msg_2_clip(_clip) {
-                            self.send_to_cm(ipc::Data::ClipboardFile(clip))
-                        }
+                Some(message::Union::Cliprdr(_clip)) =>
+                {
+                    #[cfg(windows)]
+                    if let Some(clip) = msg_2_clip(_clip) {
+                        self.send_to_cm(ipc::Data::ClipboardFile(clip))
                     }
                 }
                 Some(message::Union::FileAction(fa)) => {
