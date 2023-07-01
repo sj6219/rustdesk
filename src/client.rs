@@ -593,11 +593,17 @@ impl Client {
         let mut succeed = false;
         let mut uuid = "".to_owned();
         let mut ipv4 = true;
+
         for i in 1..=3 {
-            // use different socket due to current hbbs implement requiring different nat address for each attempt
+            // use different socket due to current hbbs implementation requiring different nat address for each attempt
             let mut socket = socket_client::connect_tcp(rendezvous_server, CONNECT_TIMEOUT)
                 .await
                 .with_context(|| "Failed to connect to rendezvous server")?;
+
+            if !key.is_empty() && !token.is_empty() {
+                // mainly for the security of token
+                allow_err!(secure_punch_connection(&mut socket, key).await);
+            }
 
             ipv4 = socket.local_addr().is_ipv4();
             let mut msg_out = RendezvousMessage::new();
@@ -619,15 +625,16 @@ impl Client {
                 ..Default::default()
             });
             socket.send(&msg_out).await?;
-            if let Some(Ok(bytes)) = socket.next_timeout(CONNECT_TIMEOUT).await {
-                if let Ok(msg_in) = RendezvousMessage::parse_from_bytes(&bytes) {
-                    if let Some(rendezvous_message::Union::RelayResponse(rs)) = msg_in.union {
-                        if !rs.refuse_reason.is_empty() {
-                            bail!(rs.refuse_reason);
-                        }
-                        succeed = true;
-                        break;
+
+            if let Some(msg_in) =
+                crate::get_next_nonkeyexchange_msg(&mut socket, Some(CONNECT_TIMEOUT)).await
+            {
+                if let Some(rendezvous_message::Union::RelayResponse(rs)) = msg_in.union {
+                    if !rs.refuse_reason.is_empty() {
+                        bail!(rs.refuse_reason);
                     }
+                    succeed = true;
+                    break;
                 }
             }
         }
