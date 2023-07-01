@@ -96,7 +96,7 @@ class ConfigOP {
 class WidgetOP extends StatefulWidget {
   final ConfigOP config;
   final RxString curOP;
-  final Function(String) cbLogin;
+  final Function(Map<String, dynamic>) cbLogin;
   const WidgetOP({
     Key? key,
     required this.config,
@@ -153,9 +153,8 @@ class _WidgetOPState extends State<WidgetOP> {
         }
         if (authBody != null) {
           _updateTimer?.cancel();
-          final String username = authBody['user']['name'];
           widget.curOP.value = '';
-          widget.cbLogin(username);
+          widget.cbLogin(authBody as Map<String, dynamic>);
         }
 
         setState(() {
@@ -255,7 +254,7 @@ class _WidgetOPState extends State<WidgetOP> {
 class LoginWidgetOP extends StatelessWidget {
   final List<ConfigOP> ops;
   final RxString curOP;
-  final Function(String) cbLogin;
+  final Function(Map<String, dynamic>) cbLogin;
 
   LoginWidgetOP({
     Key? key,
@@ -368,7 +367,8 @@ const kAuthReqTypeOidc = 'oidc/';
 /// common login dialog for desktop
 /// call this directly
 Future<bool?> loginDialog() async {
-  var username = TextEditingController();
+  var username =
+      TextEditingController(text: UserModel.getLocalUserInfo()?['name'] ?? '');
   var password = TextEditingController();
   final userFocusNode = FocusNode()..requestFocus();
   Timer(Duration(milliseconds: 100), () => userFocusNode..requestFocus());
@@ -378,7 +378,10 @@ Future<bool?> loginDialog() async {
   var isInProgress = false;
   final RxString curOP = ''.obs;
 
-  final loginOptions = await UserModel.queryLoginOptions();
+  final loginOptions = [].obs;
+  Future.delayed(Duration.zero, () async {
+    loginOptions.value = await UserModel.queryLoginOptions();
+  });
 
   final res = await gFFI.dialogManager.show<bool>((setState, close, context) {
     username.addListener(() {
@@ -416,7 +419,7 @@ Future<bool?> loginDialog() async {
             password: password.text,
             id: await bind.mainGetMyId(),
             uuid: await bind.mainGetUuid(),
-            trustThisDevice: false,
+            autoLogin: true,
             type: HttpType.kAuthReqTypeAccount));
 
         switch (resp.type) {
@@ -424,6 +427,8 @@ Future<bool?> loginDialog() async {
             if (resp.access_token != null) {
               await bind.mainSetLocalOption(
                   key: 'access_token', value: resp.access_token!);
+              await bind.mainSetLocalOption(
+                  key: 'user_info', value: jsonEncode(resp.user ?? {}));
               close(true);
               return;
             }
@@ -442,52 +447,57 @@ Future<bool?> loginDialog() async {
         }
       } on RequestException catch (err) {
         passwordMsg = translate(err.cause);
-        debugPrintStack(label: err.toString());
       } catch (err) {
         passwordMsg = "Unknown Error: $err";
-        debugPrintStack(label: err.toString());
       }
       curOP.value = '';
       setState(() => isInProgress = false);
     }
 
-    final oidcOptions = loginOptions
-        .where((opt) => opt.startsWith(kAuthReqTypeOidc))
-        .map((opt) => opt.substring(kAuthReqTypeOidc.length))
-        .toList();
-
-    thirdAuthWidget() => Offstage(
-          offstage: oidcOptions.isEmpty,
-          child: Column(
-            children: [
-              const SizedBox(
-                height: 8.0,
-              ),
-              Center(
-                  child: Text(
-                translate('or'),
-                style: TextStyle(fontSize: 16),
-              )),
-              const SizedBox(
-                height: 8.0,
-              ),
-              LoginWidgetOP(
-                ops: [
-                  ConfigOP(op: 'GitHub', iconWidth: 20),
-                  ConfigOP(op: 'Google', iconWidth: 20),
-                  ConfigOP(op: 'Okta', iconWidth: 38),
-                ]
-                    .where((op) => oidcOptions.contains(op.op.toLowerCase()))
-                    .toList(),
-                curOP: curOP,
-                cbLogin: (String username) {
-                  gFFI.userModel.userName.value = username;
-                  close(true);
-                },
-              ),
-            ],
-          ),
-        );
+    thirdAuthWidget() => Obx(() {
+          final oidcOptions = loginOptions
+              .where((opt) => opt.startsWith(kAuthReqTypeOidc))
+              .map((opt) => opt.substring(kAuthReqTypeOidc.length))
+              .toList();
+          return Offstage(
+            offstage: oidcOptions.isEmpty,
+            child: Column(
+              children: [
+                const SizedBox(
+                  height: 8.0,
+                ),
+                Center(
+                    child: Text(
+                  translate('or'),
+                  style: TextStyle(fontSize: 16),
+                )),
+                const SizedBox(
+                  height: 8.0,
+                ),
+                LoginWidgetOP(
+                  ops: [
+                    ConfigOP(op: 'GitHub', iconWidth: 20),
+                    ConfigOP(op: 'Google', iconWidth: 20),
+                    ConfigOP(op: 'Okta', iconWidth: 38),
+                  ]
+                      .where((op) => oidcOptions.contains(op.op.toLowerCase()))
+                      .toList(),
+                  curOP: curOP,
+                  cbLogin: (Map<String, dynamic> authBody) {
+                    try {
+                      // access_token is already stored in the rust side.
+                      gFFI.userModel.getLoginResponseFromAuthBody(authBody);
+                    } catch (e) {
+                      debugPrint(
+                          'Failed to parse oidc login body: "$authBody"');
+                    }
+                    close(true);
+                  },
+                ),
+              ],
+            ),
+          );
+        });
 
     return CustomAlertDialog(
       title: Text(translate('Login')),
@@ -517,16 +527,14 @@ Future<bool?> loginDialog() async {
   });
 
   if (res != null) {
-    // update ab and group status
-    await gFFI.abModel.pullAb();
-    await gFFI.groupModel.pull();
+    await UserModel.updateOtherModels();
   }
 
   return res;
 }
 
 Future<bool?> verificationCodeDialog(UserPayload? user) async {
-  var trustThisDevice = false;
+  var autoLogin = true;
   var isInProgress = false;
   String? errorText;
 
@@ -559,7 +567,7 @@ Future<bool?> verificationCodeDialog(UserPayload? user) async {
             username: user?.name,
             id: await bind.mainGetMyId(),
             uuid: await bind.mainGetUuid(),
-            trustThisDevice: trustThisDevice,
+            autoLogin: autoLogin,
             type: HttpType.kAuthReqTypeEmailCode));
 
         switch (resp.type) {
@@ -577,10 +585,8 @@ Future<bool?> verificationCodeDialog(UserPayload? user) async {
         }
       } on RequestException catch (err) {
         errorText = translate(err.cause);
-        debugPrintStack(label: err.toString());
       } catch (err) {
         errorText = "Unknown Error: $err";
-        debugPrintStack(label: err.toString());
       }
 
       setState(() => isInProgress = false);

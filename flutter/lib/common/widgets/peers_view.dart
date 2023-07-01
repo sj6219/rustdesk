@@ -80,7 +80,6 @@ class _PeersViewState extends State<_PeersView> with WindowListener {
   var _lastQueryPeers = <String>{};
   var _lastQueryTime = DateTime.now().subtract(const Duration(hours: 1));
   var _queryCount = 0;
-  var _loaded = false;
   var _exit = false;
 
   late final mobileWidth = () {
@@ -126,7 +125,7 @@ class _PeersViewState extends State<_PeersView> with WindowListener {
     return ChangeNotifierProvider<Peers>(
       create: (context) => widget.peers,
       child: Consumer<Peers>(
-        builder: (context, peers, child) => peers.peers.isEmpty && _loaded
+        builder: (context, peers, child) => peers.peers.isEmpty
             ? Center(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -167,7 +166,6 @@ class _PeersViewState extends State<_PeersView> with WindowListener {
   String _peerId(String cardId) => cardId.replaceAll(widget.peers.name, '');
 
   Widget _buildPeersView(Peers peers) {
-    _loaded = true;
     final updateEvent = peers.event;
     final body = ObxValue<RxList>((filters) {
       return FutureBuilder<List<Peer>>(
@@ -441,10 +439,25 @@ class MyGroupPeerView extends BasePeersView {
           key: key,
           name: 'my group peer',
           loadEvent: 'load_my_group_peers',
+          peerFilter: filter,
           peerCardBuilder: (Peer peer) => MyGroupPeerCard(
             peer: peer,
             menuPadding: menuPadding,
           ),
           initPeers: initPeers,
         );
+
+  static bool filter(Peer peer) {
+    if (gFFI.groupModel.searchUserText.isNotEmpty) {
+      if (!peer.username.contains(gFFI.groupModel.searchUserText)) {
+        return false;
+      }
+    }
+    if (gFFI.groupModel.selectedUser.isNotEmpty) {
+      if (gFFI.groupModel.selectedUser.value != peer.username) {
+        return false;
+      }
+    }
+    return true;
+  }
 }
