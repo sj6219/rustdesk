@@ -221,7 +221,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Remember me", "記住我"),
         ("Trust this device", "信任此裝置"),
         ("Verification code", "驗證碼"),
-        ("verification_tip", "檢測到新裝置登入，已向註冊電子信箱發送了登入驗證碼，請輸入驗證碼以繼續登入"),
+        ("verification_tip", "已向註冊電子信箱發送了登入驗證碼，請輸入驗證碼以繼續登入"),
         ("Logout", "登出"),
         ("Tags", "標籤"),
         ("Search ID", "搜尋 ID"),
@@ -453,7 +453,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Voice call", "語音通話"),
         ("Text chat", "文字聊天"),
         ("Stop voice call", "停止語音通話"),
-        ("relay_hint_tip", "可能無法直接連線，可以嘗試中繼連線。\n另外，如果想要直接使用中繼連線，可以在 ID 後面新增/r，或者在卡片選項裡選擇強制走中繼連線。"),
+        ("relay_hint_tip", "可能無法直接連線，可以嘗試中繼連線。\n另外，如果想要直接使用中繼連線，可以在 ID 後面新增/r，如果最近訪問裏存在該卡片，也可以在卡片選項裏選擇強制走中繼連接。"),
         ("Reconnect", "重新連線"),
         ("Codec", "編解碼器"),
         ("Resolution", "解析度"),
@@ -509,5 +509,8 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("resolution_fit_local_tip", ""),
         ("resolution_custom_tip", ""),
         ("Collapse toolbar", ""),
+        ("Accept and Elevate", ""),
+        ("accept_and_elevate_btn_tooltip", ""),
+        ("clipboard_wait_response_timeout_tip", ""),
     ].iter().cloned().collect();
 }

@@ -158,10 +158,7 @@ class ConnectionManagerState extends State<ConnectionManager> {
                         message: key,
                         waitDuration: Duration(seconds: 1),
                         child: label),
-                    Obx(() => Offstage(
-                        offstage:
-                            !(client?.hasUnreadChatMessage.value ?? false),
-                        child: Icon(Icons.circle, color: Colors.red, size: 10)))
+                    unreadMessageCountBuilder(client?.unreadChatMessageCount),
                   ],
                 );
               },
@@ -170,7 +167,9 @@ class ConnectionManagerState extends State<ConnectionManager> {
                   Consumer<ChatModel>(
                     builder: (_, model, child) => model.isShowCMChatPage
                         ? Expanded(
-                            child: ChatPage(),
+                            child: buildRemoteBlock(
+                              child: ChatPage(),
+                            ),
                             flex: (kConnectionManagerWindowSizeOpenChat.width -
                                     kConnectionManagerWindowSizeClosedChat
                                         .width)
@@ -759,13 +758,14 @@ class _CmControlPanel extends StatelessWidget {
             handleElevate(context);
             windowManager.minimize();
           },
-              text: 'Accept',
+              text: 'Accept and Elevate',
               icon: Icon(
                 Icons.security_rounded,
                 color: Colors.white,
                 size: 14,
               ),
-              textColor: Colors.white),
+              textColor: Colors.white,
+              tooltip: 'accept_and_elevate_btn_tooltip'),
         ),
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -803,15 +803,14 @@ class _CmControlPanel extends StatelessWidget {
     ).marginOnly(bottom: buttonBottomMargin);
   }
 
-  Widget buildButton(
-    BuildContext context, {
-    required Color? color,
-    required Function() onClick,
-    Icon? icon,
-    BoxBorder? border,
-    required String text,
-    required Color? textColor,
-  }) {
+  Widget buildButton(BuildContext context,
+      {required Color? color,
+      required Function() onClick,
+      Icon? icon,
+      BoxBorder? border,
+      required String text,
+      required Color? textColor,
+      String? tooltip}) {
     Widget textWidget;
     if (icon != null) {
       textWidget = Text(
@@ -829,7 +828,7 @@ class _CmControlPanel extends StatelessWidget {
       );
     }
     final borderRadius = BorderRadius.circular(10.0);
-    return Container(
+    final btn = Container(
       height: 28,
       decoration: BoxDecoration(
           color: color, borderRadius: borderRadius, border: border),
@@ -844,7 +843,14 @@ class _CmControlPanel extends StatelessWidget {
           ],
         ),
       ),
-    ).marginAll(4);
+    );
+    return (tooltip != null
+            ? Tooltip(
+                message: translate(tooltip),
+                child: btn,
+              )
+            : btn)
+        .marginAll(4);
   }
 
   void handleDisconnect() {
