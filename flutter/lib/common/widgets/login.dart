@@ -434,11 +434,16 @@ Future<bool?> loginDialog() async {
             }
             break;
           case HttpType.kAuthResTypeEmailCheck:
-            setState(() => isInProgress = false);
-            final res = await verificationCodeDialog(resp.user);
-            if (res == true) {
+            if (isMobile) {
               close(true);
-              return;
+              verificationCodeDialog(resp.user);
+            } else {
+              setState(() => isInProgress = false);
+              final res = await verificationCodeDialog(resp.user);
+              if (res == true) {
+                close(true);
+                return;
+              }
             }
             break;
           default:
@@ -499,8 +504,36 @@ Future<bool?> loginDialog() async {
           );
         });
 
+    final title = Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          translate('Login'),
+        ).marginOnly(top: MyTheme.dialogPadding),
+        InkWell(
+          child: Icon(
+            Icons.close,
+            size: 25,
+            // No need to handle the branch of null.
+            // Because we can ensure the color is not null when debug.
+            color: Theme.of(context)
+                .textTheme
+                .titleLarge
+                ?.color
+                ?.withOpacity(0.55),
+          ),
+          onTap: onDialogCancel,
+          hoverColor: Colors.red,
+          borderRadius: BorderRadius.circular(5),
+        ).marginOnly(top: 10, right: 15),
+      ],
+    );
+    final titlePadding = EdgeInsets.fromLTRB(MyTheme.dialogPadding, 0, 0, 0);
+
     return CustomAlertDialog(
-      title: Text(translate('Login')),
+      title: title,
+      titlePadding: titlePadding,
       contentBoxConstraints: BoxConstraints(minWidth: 400),
       content: Column(
         crossAxisAlignment: CrossAxisAlignment.center,
@@ -521,7 +554,6 @@ Future<bool?> loginDialog() async {
           thirdAuthWidget(),
         ],
       ),
-      actions: [dialogButton('Close', onPressed: onDialogCancel)],
       onCancel: onDialogCancel,
     );
   });
