@@ -43,8 +43,6 @@ class _RemotePageState extends State<RemotePage> {
   double _mouseScrollIntegral = 0; // mouse scroll speed controller
   Orientation? _currentOrientation;
 
-  final _blockableOverlayState = BlockableOverlayState();
-
   final keyboardVisibilityController = KeyboardVisibilityController();
   late final StreamSubscription<bool> keyboardSubscription;
   final FocusNode _mobileFocusNode = FocusNode();
@@ -70,26 +68,28 @@ class _RemotePageState extends State<RemotePage> {
     gFFI.qualityMonitorModel.checkShowQualityMonitor(sessionId);
     keyboardSubscription =
         keyboardVisibilityController.onChange.listen(onSoftKeyboardChanged);
-    _blockableOverlayState.applyFfi(gFFI);
     initSharedStates(widget.id);
+    gFFI.chatModel
+        .changeCurrentKey(MessageKey(widget.id, ChatModel.clientModeID));
   }
 
   @override
-  void dispose() {
+  Future<void> dispose() async {
+    // https://github.com/flutter/flutter/issues/64935
+    super.dispose();
     gFFI.dialogManager.hideMobileActionsOverlay();
     gFFI.inputModel.listenToMouse(false);
-    gFFI.invokeMethod("enable_soft_keyboard", true);
+    await gFFI.invokeMethod("enable_soft_keyboard", true);
     _mobileFocusNode.dispose();
     _physicalFocusNode.dispose();
-    gFFI.close();
+    await gFFI.close();
     _timer?.cancel();
     gFFI.dialogManager.dismissAll();
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.manual,
+    await SystemChrome.setEnabledSystemUIMode(SystemUiMode.manual,
         overlays: SystemUiOverlay.values);
-    Wakelock.disable();
-    keyboardSubscription.cancel();
+    await Wakelock.disable();
+    await keyboardSubscription.cancel();
     removeSharedStates(widget.id);
-    super.dispose();
   }
 
   void onSoftKeyboardChanged(bool visible) {
@@ -350,8 +350,8 @@ class _RemotePageState extends State<RemotePage> {
                             color: Colors.white,
                             icon: Icon(Icons.message),
                             onPressed: () {
-                              gFFI.chatModel
-                                  .changeCurrentID(ChatModel.clientModeID);
+                              gFFI.chatModel.changeCurrentKey(MessageKey(
+                                  widget.id, ChatModel.clientModeID));
                               gFFI.chatModel.toggleChatOverlay();
                             },
                           )
