@@ -720,11 +720,12 @@ impl Config {
             // ~/Library/Preferences/com.carriez.RustDesk/RustDesk.toml
             // C:\WINDOWS\ServiceProfiles\LocalService\AppData\Roaming\RustDesk\config\RustDesk.toml
             // /var/root/Library/Preferences/com.carriez.RustDesk/RustDesk.toml
-            return Some(
-                rand::thread_rng()
-                    .gen_range(1_000_000_000..2_000_000_000)
-                    .to_string(),
-            );
+
+            // return Some(
+            //     rand::thread_rng()
+            //         .gen_range(1_000_000_000..2_000_000_000)
+            //         .to_string(),
+            // );
         }
 
         #[cfg(any(target_os = "android", target_os = "ios"))]

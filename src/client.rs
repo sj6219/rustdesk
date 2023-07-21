@@ -1993,6 +1993,7 @@ pub fn send_pointer_device_event(
     if command {
         evt.modifiers.push(ControlKey::Meta.into());
     }
+    /*..
     #[cfg(all(target_os = "macos", not(feature = "flutter")))]
     if check_scroll_on_mac(mask, x, y) {
         let factor = 3;
@@ -2000,6 +2001,8 @@ pub fn send_pointer_device_event(
         mouse_event.x *= factor;
         mouse_event.y *= factor;
     }
+    */
+
     msg_out.set_pointer_device_event(evt);
     interface.send(Data::Message(msg_out));
 }
