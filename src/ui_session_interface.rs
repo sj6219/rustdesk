@@ -1,3 +1,4 @@
+use crate::input::{MOUSE_BUTTON_LEFT, MOUSE_TYPE_DOWN, MOUSE_TYPE_UP};
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 use std::{collections::HashMap, sync::atomic::AtomicBool};
 use std::{
@@ -7,7 +8,7 @@ use std::{
         atomic::{AtomicUsize, Ordering},
         Arc, Mutex, RwLock,
     },
-    time::{Duration, SystemTime},
+    time::SystemTime,
 };
 
 use async_trait::async_trait;
@@ -34,8 +35,8 @@ use hbb_common::{
 use crate::client::io_loop::Remote;
 use crate::client::{
     check_if_retry, handle_hash, handle_login_error, handle_login_from_ui, handle_test_delay,
-    input_os_password, load_config, send_mouse, start_video_audio_threads, FileManager, Key,
-    LoginConfigHandler, QualityStatus, KEY_MAP,
+    input_os_password, load_config, send_mouse, send_pointer_device_event,
+    start_video_audio_threads, FileManager, Key, LoginConfigHandler, QualityStatus, KEY_MAP,
 };
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 use crate::common::GrabState;
@@ -49,8 +50,8 @@ const CHANGE_RESOLUTION_VALID_TIMEOUT_SECS: u64 = 15;
 
 #[derive(Clone, Default)]
 pub struct Session<T: InvokeUiSession> {
-    pub session_id: SessionID,
-    pub id: String, // peer id
+    pub session_id: SessionID, // different from the one in LoginConfigHandler, used for flutter UI message pass
+    pub id: String,            // peer id
     pub password: String,
     pub args: Vec<String>,
     pub lc: Arc<RwLock<LoginConfigHandler>>,
@@ -144,12 +145,6 @@ impl<T: InvokeUiSession> Session<T> {
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     pub fn is_rdp(&self) -> bool {
         self.lc.read().unwrap().conn_type.eq(&ConnType::RDP)
-    }
-
-    pub fn set_connection_info(&mut self, direct: bool, received: bool) {
-        let mut lc = self.lc.write().unwrap();
-        lc.direct = Some(direct);
-        lc.received = received;
     }
 
     pub fn get_view_style(&self) -> String {
@@ -312,9 +307,7 @@ impl<T: InvokeUiSession> Session<T> {
     }
 
     pub fn get_audit_server(&self, typ: String) -> String {
-        if self.lc.read().unwrap().conn_id <= 0
-            || LocalConfig::get_option("access_token").is_empty()
-        {
+        if LocalConfig::get_option("access_token").is_empty() {
             return "".to_owned();
         }
         crate::get_audit_server(
@@ -327,9 +320,9 @@ impl<T: InvokeUiSession> Session<T> {
     pub fn send_note(&self, note: String) {
         let url = self.get_audit_server("conn".to_string());
         let id = self.id.clone();
-        let conn_id = self.lc.read().unwrap().conn_id;
+        let session_id = self.lc.read().unwrap().session_id;
         std::thread::spawn(move || {
-            send_note(url, id, conn_id, note);
+            send_note(url, id, session_id, note);
         });
     }
 
@@ -701,6 +694,18 @@ impl<T: InvokeUiSession> Session<T> {
         self.send_key_event(&key_event);
     }
 
+    pub fn send_touch_scale(&self, scale: i32, alt: bool, ctrl: bool, shift: bool, command: bool) {
+        let scale_evt = TouchScaleUpdate {
+            scale,
+            ..Default::default()
+        };
+        let mut touch_evt = TouchEvent::new();
+        touch_evt.set_scale_update(scale_evt);
+        let mut evt = PointerDeviceEvent::new();
+        evt.set_touch_event(touch_evt);
+        send_pointer_device_event(evt, alt, ctrl, shift, command, self);
+    }
+
     pub fn send_mouse(
         &self,
         mask: i32,
@@ -732,8 +737,20 @@ impl<T: InvokeUiSession> Session<T> {
         if cfg!(target_os = "macos") {
             let buttons = mask >> 3;
             let evt_type = mask & 0x7;
-            if buttons == 1 && evt_type == 1 && ctrl && self.peer_platform() != "Mac OS" {
-                self.send_mouse((1 << 3 | 2) as _, x, y, alt, ctrl, shift, command);
+            if buttons == MOUSE_BUTTON_LEFT
+                && evt_type == MOUSE_TYPE_DOWN
+                && ctrl
+                && self.peer_platform() != "Mac OS"
+            {
+                self.send_mouse(
+                    (MOUSE_BUTTON_LEFT << 3 | MOUSE_TYPE_UP) as _,
+                    x,
+                    y,
+                    alt,
+                    ctrl,
+                    shift,
+                    command,
+                );
             }
         }
     }
@@ -946,38 +963,6 @@ impl<T: InvokeUiSession> Session<T> {
     pub fn close_voice_call(&self) {
         self.send(Data::CloseVoiceCall);
     }
-
-    pub fn show_relay_hint(
-        &mut self,
-        last_recv_time: tokio::time::Instant,
-        msgtype: &str,
-        title: &str,
-        text: &str,
-    ) -> bool {
-        let duration = Duration::from_secs(3);
-        let counter_interval = 3;
-        let lock = self.lc.read().unwrap();
-        let success_time = lock.success_time;
-        let direct = lock.direct.unwrap_or(false);
-        let received = lock.received;
-        drop(lock);
-        if let Some(success_time) = success_time {
-            if direct && last_recv_time.duration_since(success_time) < duration {
-                let retry_for_relay = direct && !received;
-                let retry = check_if_retry(msgtype, title, text, retry_for_relay);
-                if retry && !retry_for_relay {
-                    self.lc.write().unwrap().direct_error_counter += 1;
-                    if self.lc.read().unwrap().direct_error_counter % counter_interval == 0 {
-                        #[cfg(feature = "flutter")]
-                        return true;
-                    }
-                }
-            } else {
-                self.lc.write().unwrap().direct_error_counter = 0;
-            }
-        }
-        false
-    }
 }
 
 pub trait InvokeUiSession: Send + Sync + Clone + 'static + Sized + Default {
@@ -1065,9 +1050,9 @@ impl<T: InvokeUiSession> Interface for Session<T> {
     }
 
     fn msgbox(&self, msgtype: &str, title: &str, text: &str, link: &str) {
-        let direct = self.lc.read().unwrap().direct.unwrap_or_default();
+        let direct = self.lc.read().unwrap().direct;
         let received = self.lc.read().unwrap().received;
-        let retry_for_relay = direct && !received;
+        let retry_for_relay = direct == Some(true) && !received;
         let retry = check_if_retry(msgtype, title, text, retry_for_relay);
         self.ui_handler.msgbox(msgtype, title, text, link, retry);
     }
@@ -1124,7 +1109,6 @@ impl<T: InvokeUiSession> Interface for Session<T> {
                 "Connected, waiting for image...",
                 "",
             );
-            self.lc.write().unwrap().success_time = Some(tokio::time::Instant::now());
         }
         self.on_connected(self.lc.read().unwrap().conn_type);
         #[cfg(windows)]
@@ -1353,7 +1337,7 @@ async fn start_one_port_forward<T: InvokeUiSession>(
 }
 
 #[tokio::main(flavor = "current_thread")]
-async fn send_note(url: String, id: String, conn_id: i32, note: String) {
-    let body = serde_json::json!({ "id": id, "Id": conn_id, "note": note });
+async fn send_note(url: String, id: String, sid: u64, note: String) {
+    let body = serde_json::json!({ "id": id, "session_id": sid, "note": note });
     allow_err!(crate::post_request(url, body.to_string(), "").await);
 }

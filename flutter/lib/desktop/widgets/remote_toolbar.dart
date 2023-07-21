@@ -1,5 +1,7 @@
 import 'dart:convert';
 import 'dart:ui' as ui;
+import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -111,6 +113,36 @@ class _ToolbarTheme {
   static const double buttonVMargin = 6;
   static const double iconRadius = 8;
   static const double elevation = 3;
+
+  static const Color bordDark = MyTheme.bordDark;
+  static const Color bordLight = MyTheme.bordLight;
+
+  static const Color dividerDark = MyTheme.dividerDark;
+  static const Color dividerLight = MyTheme.dividerLight;
+  static double dividerSpaceToAction = Platform.isWindows ? 8 : 14;
+
+  static double menuBorderRadius = Platform.isWindows ? 5.0 : 7.0;
+  static EdgeInsets menuPadding = Platform.isWindows
+      ? EdgeInsets.fromLTRB(4, 12, 4, 12)
+      : EdgeInsets.fromLTRB(6, 14, 6, 14);
+  static const double menuButtonBorderRadius = 3.0;
+
+  static final defaultMenuStyle = MenuStyle(
+    side: MaterialStateProperty.all(BorderSide(
+      width: 1,
+      color: MyTheme.currentThemeMode() == ThemeMode.light
+          ? _ToolbarTheme.bordLight
+          : _ToolbarTheme.bordDark,
+    )),
+    shape: MaterialStatePropertyAll(RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(_ToolbarTheme.menuBorderRadius))),
+    padding: MaterialStateProperty.all(_ToolbarTheme.menuPadding),
+  );
+  static final defaultMenuButtonStyle = ButtonStyle(
+    backgroundColor: MaterialStatePropertyAll(Colors.transparent),
+    padding: MaterialStatePropertyAll(EdgeInsets.zero),
+    overlayColor: MaterialStatePropertyAll(Colors.transparent),
+  );
 }
 
 typedef DismissFunc = void Function();
@@ -434,7 +466,7 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
       toolbarItems.add(_ChatMenu(id: widget.id, ffi: widget.ffi));
       toolbarItems.add(_VoiceCallMenu(id: widget.id, ffi: widget.ffi));
     }
-    toolbarItems.add(_RecordMenu());
+    toolbarItems.add(_RecordMenu(ffi: widget.ffi));
     toolbarItems.add(_CloseMenu(id: widget.id, ffi: widget.ffi));
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -475,9 +507,17 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
           textStyle: MaterialStatePropertyAll(
             TextStyle(fontWeight: FontWeight.normal),
           ),
+          shape: MaterialStatePropertyAll(RoundedRectangleBorder(
+              borderRadius:
+                  BorderRadius.circular(_ToolbarTheme.menuButtonBorderRadius))),
         ),
       ),
-      dividerTheme: DividerThemeData(space: 4),
+      dividerTheme: DividerThemeData(
+        space: _ToolbarTheme.dividerSpaceToAction,
+        color: MyTheme.currentThemeMode() == ThemeMode.light
+            ? _ToolbarTheme.dividerLight
+            : _ToolbarTheme.dividerDark,
+      ),
       menuBarTheme: MenuBarThemeData(
           style: MenuStyle(
         padding: MaterialStatePropertyAll(EdgeInsets.zero),
@@ -1219,11 +1259,12 @@ class _ResolutionsMenuState extends State<_ResolutionsMenu> {
     }
 
     for (final r in resolutions) {
-      if (r.width == _localResolution!.width && r.height == _localResolution!.height) {
+      if (r.width == _localResolution!.width &&
+          r.height == _localResolution!.height) {
         return r;
       }
     }
-  
+
     return null;
   }
 
@@ -1412,7 +1453,8 @@ class _ChatMenuState extends State<_ChatMenu> {
             initPos = Offset(pos.dx, pos.dy + _ToolbarTheme.dividerHeight);
           }
 
-          widget.ffi.chatModel.changeCurrentID(ChatModel.clientModeID);
+          widget.ffi.chatModel.changeCurrentKey(
+              MessageKey(widget.ffi.id, ChatModel.clientModeID));
           widget.ffi.chatModel.toggleChatOverlay(chatInitPos: initPos);
         });
   }
@@ -1467,16 +1509,17 @@ class _VoiceCallMenu extends StatelessWidget {
 }
 
 class _RecordMenu extends StatelessWidget {
-  const _RecordMenu({Key? key}) : super(key: key);
+  final FFI ffi;
+  const _RecordMenu({Key? key, required this.ffi}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    var ffi = Provider.of<FfiModel>(context);
+    var ffiModel = Provider.of<FfiModel>(context);
     var recordingModel = Provider.of<RecordingModel>(context);
     final visible =
-        recordingModel.start || ffi.permissions['recording'] != false;
+        recordingModel.start || ffiModel.permissions['recording'] != false;
     if (!visible) return Offstage();
-    return _IconMenuButton(
+    final menuButton = _IconMenuButton(
       assetName: 'assets/rec.svg',
       tooltip: recordingModel.start
           ? 'Stop session recording'
@@ -1489,6 +1532,14 @@ class _RecordMenu extends StatelessWidget {
           ? _ToolbarTheme.hoverRedColor
           : _ToolbarTheme.hoverBlueColor,
     );
+    return ChangeNotifierProvider.value(
+        value: ffi.qualityMonitorModel,
+        child: Consumer<QualityMonitorModel>(
+            builder: (context, model, child) => Offstage(
+                  // If already started, AV1->Hidden/Stop, Other->Start, same as actual
+                  offstage: model.data.codecFormat == 'AV1',
+                  child: menuButton,
+                )));
   }
 }
 
@@ -1625,11 +1676,8 @@ class _IconSubmenuButtonState extends State<_IconSubmenuButton> {
         width: _ToolbarTheme.buttonSize,
         height: _ToolbarTheme.buttonSize,
         child: SubmenuButton(
-            menuStyle: widget.menuStyle,
-            style: ButtonStyle(
-                backgroundColor: MaterialStatePropertyAll(Colors.transparent),
-                padding: MaterialStatePropertyAll(EdgeInsets.zero),
-                overlayColor: MaterialStatePropertyAll(Colors.transparent)),
+            menuStyle: widget.menuStyle ?? _ToolbarTheme.defaultMenuStyle,
+            style: _ToolbarTheme.defaultMenuButtonStyle,
             onHover: (value) => setState(() {
                   hover = value;
                 }),
@@ -1671,6 +1719,7 @@ class _SubmenuButton extends StatelessWidget {
       child: child,
       menuChildren:
           menuChildren.map((e) => _buildPointerTrackWidget(e, ffi)).toList(),
+      menuStyle: _ToolbarTheme.defaultMenuStyle,
     );
   }
 }

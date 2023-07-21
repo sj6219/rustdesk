@@ -484,7 +484,6 @@ fn check_get_displays_changed_msg() -> Option<Message> {
     let displays = check_displays_new()?;
     let (current, displays) = get_displays_2(&displays);
     let mut pi = PeerInfo {
-        conn_id: crate::SYNC_PEER_INFO_DISPLAYS,
         ..Default::default()
     };
     pi.displays = displays.clone();
@@ -504,7 +503,7 @@ fn run(sp: GenericService) -> ResultType<()> {
     //.. #[cfg(not(any(target_os = "android", target_os = "ios")))]
     //.. let _wake_lock = get_wake_lock();
 
-    // ensure_inited() is needed because release_resource() may be called.
+    // ensure_inited() is needed because clear() may be called.
     #[cfg(target_os = "linux")]
     super::wayland::ensure_inited()?;
     #[cfg(windows)]
@@ -624,6 +623,8 @@ fn run(sp: GenericService) -> ResultType<()> {
             bail!("SWITCH");
         }
         if c.current != *CURRENT_DISPLAY.lock().unwrap() {
+            #[cfg(target_os = "linux")]
+            super::wayland::clear();
             *SWITCH.lock().unwrap() = true;
             bail!("SWITCH");
         }
@@ -658,6 +659,8 @@ fn run(sp: GenericService) -> ResultType<()> {
             if let Some(msg_out) = check_get_displays_changed_msg() {
                 sp.send(msg_out);
                 log::info!("Displays changed");
+                #[cfg(target_os = "linux")]
+                super::wayland::clear();
                 *SWITCH.lock().unwrap() = true;
                 bail!("SWITCH");
             }
@@ -726,7 +729,7 @@ fn run(sp: GenericService) -> ResultType<()> {
                             // Do not reset the capturer for now, as it will cause the prompt to show every few minutes.
                             // https://github.com/rustdesk/rustdesk/issues/4276
                             //
-                            // super::wayland::release_resource();
+                            // super::wayland::clear();
                             // bail!("Wayland capturer none 100 times, try restart capture");
                         }
                     }
@@ -735,6 +738,8 @@ fn run(sp: GenericService) -> ResultType<()> {
             Err(err) => {
                 if check_display_changed(c.ndisplay, c.current, c.width, c.height) {
                     log::info!("Displays changed");
+                    #[cfg(target_os = "linux")]
+                    super::wayland::clear();
                     *SWITCH.lock().unwrap() = true;
                     bail!("SWITCH");
                 }
@@ -779,9 +784,7 @@ fn run(sp: GenericService) -> ResultType<()> {
     }
 
     #[cfg(target_os = "linux")]
-    if !scrap::is_x11() {
-        super::wayland::release_resource();
-    }
+    super::wayland::clear();
 
     Ok(())
 }
@@ -987,7 +990,7 @@ fn try_get_displays() -> ResultType<Vec<Display>> {
 }
 
 #[inline]
-#[cfg(windows)]
+#[cfg(all(windows, feature = "virtual_display_driver"))]
 fn no_displays(displays: &Vec<Display>) -> bool {
     let display_len = displays.len();
     if display_len == 0 {

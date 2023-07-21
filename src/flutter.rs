@@ -67,8 +67,12 @@ lazy_static::lazy_static! {
 #[no_mangle]
 pub extern "C" fn rustdesk_core_main() -> bool {
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    return crate::core_main::core_main().is_some();
-    #[cfg(any(target_os = "android", target_os = "ios"))]
+    if crate::core_main::core_main().is_some() {
+        return true;
+    } else {
+        #[cfg(target_os = "macos")]
+        std::process::exit(0);
+    }
     false
 }
 
@@ -906,7 +910,7 @@ pub mod connection_manager {
 
     #[inline]
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    pub fn start_listen_ipc_thread() {
+    fn start_listen_ipc_thread() {
         start_listen_ipc(true);
     }
 
@@ -925,6 +929,12 @@ pub mod connection_manager {
         } else {
             start_ipc(cm);
         }
+    }
+
+    #[inline]
+    pub fn cm_init() {
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        start_listen_ipc_thread();
     }
 
     #[cfg(target_os = "android")]

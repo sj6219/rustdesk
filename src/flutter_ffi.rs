@@ -685,7 +685,7 @@ pub fn main_get_connect_status() -> String {
     }
     #[cfg(any(target_os = "android", target_os = "ios"))]
     {
-        let mut state = hbb_common::config::get_online_statue();
+        let mut state = hbb_common::config::get_online_state();
         if state > 0 {
             state = 1;
         }
@@ -716,6 +716,10 @@ pub fn main_post_request(url: String, body: String, header: String) {
 
 pub fn main_get_local_option(key: String) -> SyncReturn<String> {
     SyncReturn(get_local_option(key))
+}
+
+pub fn main_get_env(key: String) -> SyncReturn<String> {
+    SyncReturn(std::env::var(key).unwrap_or_default())
 }
 
 pub fn main_set_local_option(key: String, value: String) {
@@ -1062,6 +1066,24 @@ pub fn main_start_dbus_server() {
         std::thread::spawn(|| {
             let _ = start_dbus_server();
         });
+    }
+}
+
+pub fn session_send_pointer(session_id: SessionID, msg: String) {
+    if let Ok(m) = serde_json::from_str::<HashMap<String, serde_json::Value>>(&msg) {
+        let alt = m.get("alt").is_some();
+        let ctrl = m.get("ctrl").is_some();
+        let shift = m.get("shift").is_some();
+        let command = m.get("command").is_some();
+        if let Some(touch_event) = m.get("touch") {
+            if let Some(scale) = touch_event.get("scale") {
+                if let Some(session) = SESSIONS.read().unwrap().get(&session_id) {
+                    if let Some(scale) = scale.as_i64() {
+                        session.send_touch_scale(scale as _, alt, ctrl, shift, command);
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -1444,9 +1466,9 @@ pub fn main_use_texture_render() -> SyncReturn<bool> {
     }
 }
 
-pub fn cm_start_listen_ipc_thread() {
+pub fn cm_init() {
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    crate::flutter::connection_manager::start_listen_ipc_thread();
+    crate::flutter::connection_manager::cm_init();
 }
 
 /// Start an ipc server for receiving the url scheme.

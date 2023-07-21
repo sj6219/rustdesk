@@ -423,7 +423,7 @@ impl<T: InvokeUiCM> IpcTaskRunner<T> {
                                 Data::ClipboardFileEnabled(_enabled) => {
                                     #[cfg(windows)]
                                     {
-                                        self.file_transfer_enabled_peer =_enabled;
+                                        self.file_transfer_enabled_peer = _enabled;
                                     }
                                 }
                                 Data::Theme(dark) => {
@@ -533,7 +533,6 @@ pub async fn start_ipc<T: InvokeUiCM>(cm: ConnectionManager<T>) {
                 e
             );
         }
-        allow_err!(crate::privacy_win_mag::start());
     });
 
     #[cfg(target_os = "windows")]

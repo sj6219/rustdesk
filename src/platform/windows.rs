@@ -455,6 +455,7 @@ extern "C" {
     fn win_stop_system_key_propagate(v: BOOL);
     fn is_win_down() -> BOOL;
     fn is_local_system() -> BOOL;
+    fn alloc_console_and_redirect();
 }
 
 extern "system" {
@@ -926,35 +927,6 @@ pub fn copy_exe_cmd(src_exe: &str, exe: &str, path: &str) -> String {
     )
 }
 
-/* // update_me has bad compatibility, so disable it.
-pub fn update_me() -> ResultType<()> {
-    let (_, path, _, exe) = get_install_info();
-    let src_exe = std::env::current_exe()?.to_str().unwrap_or("").to_owned();
-    let cmds = format!(
-        "
-        chcp 65001
-        sc stop {app_name}
-        taskkill /F /IM {broker_exe}
-        taskkill /F /IM {app_name}.exe /FI \"PID ne {cur_pid}\"
-        {copy_exe}
-        sc start {app_name}
-        {lic}
-    ",
-        copy_exe = copy_exe_cmd(&src_exe, &exe, &path),
-        broker_exe = WIN_MAG_INJECTED_PROCESS_EXE,
-        app_name = crate::get_app_name(),
-        lic = register_licence(),
-        cur_pid = get_current_pid(),
-    );
-    run_cmds(cmds, false, "update")?;
-    run_after_run_cmds(false);
-    std::process::Command::new(&exe)
-        .args(&["--remove", &src_exe])
-        .spawn()?;
-    Ok(())
-}
-*/
-
 fn get_after_install(exe: &str) -> String {
     let app_name = crate::get_app_name();
     let ext = app_name.to_lowercase();
@@ -1092,6 +1064,15 @@ if exist \"{tmp_path}\\{app_name} Tray.lnk\" del /f /q \"{tmp_path}\\{app_name} 
         "".to_owned()
     };
 
+    // potential bug here: if run_cmd cancelled, but config file is changed.
+    if let Ok(lic) = crate::platform::windows::get_license_from_exe_name() {
+        if !lic.host.is_empty() {
+            Config::set_option("key".into(), lic.key);
+            Config::set_option("custom-rendezvous-server".into(), lic.host);
+            Config::set_option("api-server".into(), lic.api);
+        }
+    }
+
     let cmds = format!(
         "
 {uninstall_str}
@@ -1112,7 +1093,6 @@ reg add {subkey} /f /v VersionBuild /t REG_DWORD /d {version_build}
 reg add {subkey} /f /v UninstallString /t REG_SZ /d \"\\\"{exe}\\\" --uninstall\"
 reg add {subkey} /f /v EstimatedSize /t REG_DWORD /d {size}
 reg add {subkey} /f /v WindowsInstaller /t REG_DWORD /d 0
-{lic}
 cscript \"{mk_shortcut}\"
 cscript \"{uninstall_shortcut}\"
 cscript \"{tray_shortcut}\"
@@ -1127,7 +1107,6 @@ copy /Y \"{tmp_path}\\Uninstall {app_name}.lnk\" \"{path}\\\"
     ",
         version=crate::VERSION,
         build_date=crate::BUILD_DATE,
-        lic=register_licence(),
         after_install=get_after_install(&exe),
         sleep=if debug {
             "timeout 300"
@@ -1346,7 +1325,7 @@ fn get_reg_of(subkey: &str, name: &str) -> String {
     "".to_owned()
 }
 
-fn get_license_from_exe_name() -> ResultType<License> {
+pub fn get_license_from_exe_name() -> ResultType<License> {
     let mut exe = std::env::current_exe()?.to_str().unwrap_or("").to_owned();
     // if defined portable appname entry, replace original executable name with it.
     if let Ok(portable_exe) = std::env::var(PORTABLE_APPNAME_RUNTIME_ENV_KEY) {
@@ -1361,42 +1340,9 @@ pub fn is_win_server() -> bool {
     unsafe { is_windows_server() > 0 }
 }
 
-pub fn get_license() -> Option<License> {
-    let mut lic: License = Default::default();
-    if let Ok(tmp) = get_license_from_exe_name() {
-        lic = tmp;
-    } else {
-        lic.key = get_reg("Key");
-        lic.host = get_reg("Host");
-        lic.api = get_reg("Api");
-    }
-    if lic.key.is_empty() || lic.host.is_empty() {
-        return None;
-    }
-    Some(lic)
-}
-
 pub fn bootstrap() {
-    if let Some(lic) = get_license() {
-        *config::PROD_RENDEZVOUS_SERVER.write().unwrap() = lic.host.clone();
-    }
-}
-
-fn register_licence() -> String {
-    let (subkey, _, _, _) = get_install_info();
     if let Ok(lic) = get_license_from_exe_name() {
-        format!(
-            "
-        reg add {subkey} /f /v Key /t REG_SZ /d \"{key}\"
-        reg add {subkey} /f /v Host /t REG_SZ /d \"{host}\"
-        reg add {subkey} /f /v Api /t REG_SZ /d \"{api}\"
-    ",
-            key = &lic.key,
-            host = &lic.host,
-            api = &lic.api,
-        )
-    } else {
-        "".to_owned()
+        *config::EXE_RENDEZVOUS_SERVER.write().unwrap() = lic.host.clone();
     }
 }
 
@@ -1923,18 +1869,22 @@ pub fn uninstall_cert() -> ResultType<()> {
 mod cert {
     use hbb_common::{allow_err, bail, log, ResultType};
     use std::{path::Path, str::from_utf8};
-    use winapi::shared::{
-        minwindef::{BYTE, DWORD, TRUE},
-        ntdef::NULL,
-    };
-    use winapi::um::{
-        errhandlingapi::GetLastError,
-        wincrypt::{
-            CertCloseStore, CertEnumCertificatesInStore, CertNameToStrA, CertOpenSystemStoreA,
-            CryptHashCertificate, ALG_ID, CALG_SHA1, CERT_ID_SHA1_HASH, CERT_X500_NAME_STR,
-            PCCERT_CONTEXT,
+    use winapi::{
+        shared::{
+            minwindef::{BYTE, DWORD, FALSE, TRUE},
+            ntdef::NULL,
         },
-        winreg::HKEY_LOCAL_MACHINE,
+        um::{
+            errhandlingapi::GetLastError,
+            wincrypt::{
+                CertAddEncodedCertificateToStore, CertCloseStore, CertDeleteCertificateFromStore,
+                CertEnumCertificatesInStore, CertNameToStrA, CertOpenSystemStoreW,
+                CryptHashCertificate, ALG_ID, CALG_SHA1, CERT_ID_SHA1_HASH,
+                CERT_STORE_ADD_REPLACE_EXISTING, CERT_X500_NAME_STR, PCCERT_CONTEXT,
+                X509_ASN_ENCODING,
+            },
+            winreg::HKEY_LOCAL_MACHINE,
+        },
     };
     use winreg::{
         enums::{KEY_WRITE, REG_BINARY},
@@ -1945,6 +1895,8 @@ mod cert {
         "SOFTWARE\\Microsoft\\SystemCertificates\\ROOT\\Certificates\\";
     const THUMBPRINT_ALG: ALG_ID = CALG_SHA1;
     const THUMBPRINT_LEN: DWORD = 20;
+
+    const CERT_ISSUER_1: &str = "CN=\"WDKTestCert admin,133225435702113567\"\0";
 
     #[inline]
     unsafe fn compute_thumbprint(pb_encoded: *const BYTE, cb_encoded: DWORD) -> (Vec<u8>, String) {
@@ -2000,6 +1952,12 @@ mod cert {
 
     pub fn install_cert<P: AsRef<Path>>(path: P) -> ResultType<()> {
         let mut cert_bytes = std::fs::read(path)?;
+        install_cert_reg(&mut cert_bytes)?;
+        install_cert_add_cert_store(&mut cert_bytes)?;
+        Ok(())
+    }
+
+    fn install_cert_reg(cert_bytes: &mut [u8]) -> ResultType<()> {
         unsafe {
             let thumbprint = compute_thumbprint(cert_bytes.as_mut_ptr(), cert_bytes.len() as _);
             log::debug!("Thumbprint of cert {}", &thumbprint.1);
@@ -2008,25 +1966,56 @@ mod cert {
             let (cert_key, _) = reg_cert_key.create_subkey(&thumbprint.1)?;
             let data = winreg::RegValue {
                 vtype: REG_BINARY,
-                bytes: create_cert_blob(thumbprint.0, cert_bytes),
+                bytes: create_cert_blob(thumbprint.0, cert_bytes.to_vec()),
             };
             cert_key.set_raw_value("Blob", &data)?;
         }
         Ok(())
     }
 
+    fn install_cert_add_cert_store(cert_bytes: &mut [u8]) -> ResultType<()> {
+        unsafe {
+            let store_handle = CertOpenSystemStoreW(0 as _, "ROOT\0".as_ptr() as _);
+            if store_handle.is_null() {
+                bail!("Error opening certificate store: {}", GetLastError());
+            }
+            let mut cert_ctx: PCCERT_CONTEXT = std::ptr::null_mut();
+            if FALSE
+                == CertAddEncodedCertificateToStore(
+                    store_handle,
+                    X509_ASN_ENCODING,
+                    cert_bytes.as_mut_ptr(),
+                    cert_bytes.len() as _,
+                    CERT_STORE_ADD_REPLACE_EXISTING,
+                    &mut cert_ctx as _,
+                )
+            {
+                log::error!(
+                    "Failed to call CertAddEncodedCertificateToStore: {}",
+                    GetLastError()
+                );
+            } else {
+                log::info!("Add cert to store successfully");
+            }
+
+            CertCloseStore(store_handle, 0);
+        }
+        Ok(())
+    }
+
     fn get_thumbprints_to_rm() -> ResultType<Vec<String>> {
-        let issuers_to_rm = ["CN=\"WDKTestCert admin,133225435702113567\""];
+        let issuers_to_rm = [CERT_ISSUER_1];
 
         let mut thumbprints = Vec::new();
         let mut buf = [0u8; 1024];
 
         unsafe {
-            let store_handle = CertOpenSystemStoreA(0 as _, "ROOT\0".as_ptr() as _);
+            let store_handle = CertOpenSystemStoreW(0 as _, "ROOT\0".as_ptr() as _);
             if store_handle.is_null() {
                 bail!("Error opening certificate store: {}", GetLastError());
             }
 
+            let mut vec_ctx = Vec::new();
             let mut cert_ctx: PCCERT_CONTEXT = CertEnumCertificatesInStore(store_handle, NULL as _);
             while !cert_ctx.is_null() {
                 // https://stackoverflow.com/a/66432736
@@ -2038,9 +2027,11 @@ mod cert {
                     buf.len() as _,
                 );
                 if cb_size != 1 {
+                    let mut add_ctx = false;
                     if let Ok(issuer) = from_utf8(&buf[..cb_size as _]) {
                         for iss in issuers_to_rm.iter() {
-                            if issuer.contains(iss) {
+                            if issuer == *iss {
+                                add_ctx = true;
                                 let (_, thumbprint) = compute_thumbprint(
                                     (*cert_ctx).pbCertEncoded,
                                     (*cert_ctx).cbCertEncoded,
@@ -2051,8 +2042,14 @@ mod cert {
                             }
                         }
                     }
+                    if add_ctx {
+                        vec_ctx.push(cert_ctx);
+                    }
                 }
                 cert_ctx = CertEnumCertificatesInStore(store_handle, cert_ctx);
+            }
+            for ctx in vec_ctx {
+                CertDeleteCertificateFromStore(ctx);
             }
             CertCloseStore(store_handle, 0);
         }
@@ -2063,6 +2060,7 @@ mod cert {
     pub fn uninstall_cert() -> ResultType<()> {
         let thumbprints = get_thumbprints_to_rm()?;
         let reg_cert_key = unsafe { open_reg_cert_store()? };
+        log::info!("Found {} certs to remove", thumbprints.len());
         for thumbprint in thumbprints.iter() {
             allow_err!(reg_cert_key.delete_subkey(thumbprint));
         }
@@ -2161,9 +2159,11 @@ pub fn uninstall_service(show_new_window: bool) -> bool {
     sc stop {app_name}
     sc delete {app_name}
     if exist \"%PROGRAMDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\{app_name} Tray.lnk\" del /f /q \"%PROGRAMDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\{app_name} Tray.lnk\"
+    taskkill /F /IM {broker_exe}
     taskkill /F /IM {app_name}.exe{filter}
     ",
         app_name = crate::get_app_name(),
+        broker_exe = WIN_MAG_INJECTED_PROCESS_EXE,
     );
     if let Err(err) = run_cmds(cmds, false, "uninstall") {
         Config::set_option("stop-service".into(), "".into());
@@ -2273,6 +2273,15 @@ fn run_after_run_cmds(silent: bool) {
     std::thread::sleep(std::time::Duration::from_millis(300));
 }
 
+#[inline]
+pub fn try_kill_broker() {
+    allow_err!(std::process::Command::new("cmd")
+        .arg("/c")
+        .arg(&format!("taskkill /F /IM {}", WIN_MAG_INJECTED_PROCESS_EXE))
+        .creation_flags(winapi::um::winbase::CREATE_NO_WINDOW)
+        .spawn());
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2295,5 +2304,34 @@ mod tests {
         assert_eq!(chr, Some('a'));
         let chr = get_char_from_vk(VK_ESCAPE as u32); // VK_ESC
         assert_eq!(chr, None)
+    }
+}
+
+pub fn message_box(text: &str) {
+    let mut text = text.to_owned();
+    if !text.ends_with("!") {
+        use arboard::Clipboard as ClipboardContext;
+        match ClipboardContext::new() {
+            Ok(mut ctx) => {
+                ctx.set_text(&text).ok();
+                text = format!("{}\n\nAbove text has been copied to clipboard", &text);
+            }
+            _ => {}
+        }
+    }
+    let text = text
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect::<Vec<u16>>();
+    let caption = "RustDesk Output"
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect::<Vec<u16>>();
+    unsafe { MessageBoxW(std::ptr::null_mut(), text.as_ptr(), caption.as_ptr(), MB_OK) };
+}
+
+pub fn alloc_console() {
+    unsafe {
+        alloc_console_and_redirect();
     }
 }
