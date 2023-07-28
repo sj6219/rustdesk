@@ -118,7 +118,7 @@ pub fn show_run_without_install() -> bool {
 #[inline]
 pub fn get_license() -> String {
     #[cfg(windows)]
-    if let Some(lic) = crate::platform::windows::get_license() {
+    if let Ok(lic) = crate::platform::windows::get_license_from_exe_name() {
         #[cfg(feature = "flutter")]
         return format!("Key: {}\nHost: {}\nApi: {}", lic.key, lic.host, lic.api);
         // default license format is html formed (sciter)
@@ -233,7 +233,7 @@ pub fn get_options() -> String {
     for (k, v) in options.iter() {
         m.insert(k.into(), v.to_owned().into());
     }
-    serde_json::to_string(&m).unwrap()
+    serde_json::to_string(&m).unwrap_or_default()
 }
 
 #[inline]
@@ -1027,8 +1027,10 @@ const UNKNOWN_ERROR: &'static str = "Unknown error";
 
 #[inline]
 #[tokio::main(flavor = "current_thread")]
-pub async fn change_id_shared(id: String, old_id: String) {
-    *ASYNC_JOB_STATUS.lock().unwrap() = change_id_shared_(id, old_id).await.to_owned();
+pub async fn change_id_shared(id: String, old_id: String) -> String {
+    let res = change_id_shared_(id, old_id).await.to_owned();
+    *ASYNC_JOB_STATUS.lock().unwrap() = res.clone();
+    res
 }
 
 pub async fn change_id_shared_(id: String, old_id: String) -> &'static str {
@@ -1037,7 +1039,12 @@ pub async fn change_id_shared_(id: String, old_id: String) -> &'static str {
     }
 
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    let uuid = Bytes::from(machine_uid::get().unwrap_or("".to_owned()).as_bytes().to_vec());
+    let uuid = Bytes::from(
+        hbb_common::machine_uid::get()
+            .unwrap_or("".to_owned())
+            .as_bytes()
+            .to_vec(),
+    );
     #[cfg(any(target_os = "android", target_os = "ios"))]
     let uuid = Bytes::from(hbb_common::get_uuid());
 
@@ -1105,23 +1112,23 @@ async fn check_id(
             {
                 match msg_in.union {
                     Some(rendezvous_message::Union::RegisterPkResponse(rpr)) => {
-                        match rpr.result.enum_value_or_default() {
-                            register_pk_response::Result::OK => {
+                        match rpr.result.enum_value() {
+                            Ok(register_pk_response::Result::OK) => {
                                 ok = true;
                             }
-                            register_pk_response::Result::ID_EXISTS => {
+                            Ok(register_pk_response::Result::ID_EXISTS) => {
                                 return "Not available";
                             }
-                            register_pk_response::Result::TOO_FREQUENT => {
+                            Ok(register_pk_response::Result::TOO_FREQUENT) => {
                                 return "Too frequent";
                             }
-                            register_pk_response::Result::NOT_SUPPORT => {
+                            Ok(register_pk_response::Result::NOT_SUPPORT) => {
                                 return "server_not_support";
                             }
-                            register_pk_response::Result::SERVER_ERROR => {
+                            Ok(register_pk_response::Result::SERVER_ERROR) => {
                                 return "Server error";
                             }
-                            register_pk_response::Result::INVALID_ID_FORMAT => {
+                            Ok(register_pk_response::Result::INVALID_ID_FORMAT) => {
                                 return INVALID_FORMAT;
                             }
                             _ => {}
