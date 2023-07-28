@@ -518,5 +518,11 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Exit", "退出"),
         ("Open", "打开"),
         ("logout_tip", "确定要退出登录吗？"),
+        ("Service", ""),
+        ("Start", ""),
+        ("Stop", ""),
+        ("exceed_max_devices", ""),
+        ("Sync with recent sessions", ""),
+        ("Sort tags", ""),
     ].iter().cloned().collect();
 }
