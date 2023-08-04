@@ -1282,6 +1282,15 @@ bool mainGetBoolOptionSync(String key) {
   return option2bool(key, bind.mainGetOptionSync(key: key));
 }
 
+mainSetLocalBoolOption(String key, bool value) async {
+  String v = bool2option(key, value);
+  await bind.mainSetLocalOption(key: key, value: v);
+}
+
+bool mainGetLocalBoolOptionSync(String key) {
+  return option2bool(key, bind.mainGetLocalOption(key: key));
+}
+
 Future<bool> matchPeer(String searchText, Peer peer) async {
   if (searchText.isEmpty) {
     return true;
@@ -1389,6 +1398,17 @@ Future<void> saveWindowPosition(WindowType type, {int? windowId}) async {
       isMaximized = await wc.isMaximized();
       break;
   }
+  if (Platform.isWindows) {
+    const kMinOffset = -10000;
+    const kMaxOffset = 10000;
+    if (position.dx < kMinOffset ||
+        position.dy < kMinOffset ||
+        position.dx > kMaxOffset ||
+        position.dy > kMaxOffset) {
+      debugPrint("Invalid position: $position, ignore saving position");
+      return;
+    }
+  }
 
   final pos = LastWindowPosition(
       sz.width, sz.height, position.dx, position.dy, isMaximized);
@@ -1399,24 +1419,10 @@ Future<void> saveWindowPosition(WindowType type, {int? windowId}) async {
 }
 
 Future<Size> _adjustRestoreMainWindowSize(double? width, double? height) async {
-  const double minWidth = 600;
-  const double minHeight = 100;
-  double maxWidth = (((isDesktop || isWebDesktop)
-          ? kDesktopMaxDisplaySize
-          : kMobileMaxDisplaySize))
-      .toDouble();
-  double maxHeight = ((isDesktop || isWebDesktop)
-          ? kDesktopMaxDisplaySize
-          : kMobileMaxDisplaySize)
-      .toDouble();
-
-  if (isDesktop || isWebDesktop) {
-    final screen = (await window_size.getWindowInfo()).screen;
-    if (screen != null) {
-      maxWidth = screen.visibleFrame.width;
-      maxHeight = screen.visibleFrame.height;
-    }
-  }
+  const double minWidth = 1;
+  const double minHeight = 1;
+  const double maxWidth = 6480;
+  const double maxHeight = 6480;
 
   final defaultWidth =
       ((isDesktop || isWebDesktop) ? 1280 : kMobileDefaultDisplayWidth)

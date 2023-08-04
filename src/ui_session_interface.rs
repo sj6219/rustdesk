@@ -412,7 +412,7 @@ impl<T: InvokeUiSession> Session<T> {
 
     pub fn get_path_sep(&self, is_remote: bool) -> &'static str {
         let p = self.get_platform(is_remote);
-        if &p == "Windows" {
+        if &p == crate::PLATFORM_WINDOWS {
             return "\\";
         } else {
             return "/";
@@ -1190,6 +1190,12 @@ impl<T: InvokeUiSession> Session<T> {
 
 #[tokio::main(flavor = "current_thread")]
 pub async fn io_loop<T: InvokeUiSession>(handler: Session<T>) {
+    // It is ok to call this function multiple times.
+    #[cfg(target_os ="windows")]
+    if !handler.is_file_transfer() && !handler.is_port_forward() {
+        clipboard::ContextSend::enable(true);
+    }
+
     #[cfg(any(target_os = "android", target_os = "ios"))]
     let (sender, receiver) = mpsc::unbounded_channel::<Data>();
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
