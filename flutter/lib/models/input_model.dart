@@ -51,6 +51,11 @@ class InputModel {
   var _fling = false;
   Timer? _flingTimer;
   final _flingBaseDelay = 30;
+  // trackpad, peer linux
+  final _trackpadSpeed = 0.06;
+  var _trackpadScrollUnsent = Offset.zero;
+
+  var _lastScale = 1.0;
 
   // mouse
   final isPhysicalMouse = false.obs;
@@ -265,6 +270,14 @@ class InputModel {
     sendMouse('up', button);
   }
 
+  void tapDown(MouseButtons button) {
+    sendMouse('down', button);
+  }
+
+  void tapUp(MouseButtons button) {
+    sendMouse('up', button);
+  }
+
   /// Send scroll event with scroll distance [y].
   void scroll(int y) {
     bind.sessionSendMouse(
@@ -326,16 +339,44 @@ class InputModel {
   }
 
   void onPointerPanZoomStart(PointerPanZoomStartEvent e) {
+    _lastScale = 1.0;
     _stopFling = true;
   }
 
   // https://docs.flutter.dev/release/breaking-changes/trackpad-gestures
-  // TODO(support zoom in/out)
   void onPointerPanZoomUpdate(PointerPanZoomUpdateEvent e) {
+    final scale = ((e.scale - _lastScale) * 1000).toInt();
+    _lastScale = e.scale;
+
+    if (scale != 0) {
+      bind.sessionSendPointer(
+          sessionId: sessionId,
+          msg: json.encode({
+            'touch': {'scale': scale}
+          }));
+      return;
+    }
+
     final delta = e.panDelta;
     _trackpadLastDelta = delta;
+
     var x = delta.dx.toInt();
     var y = delta.dy.toInt();
+    if (parent.target?.ffiModel.pi.platform == kPeerPlatformLinux) {
+      _trackpadScrollUnsent += (delta * _trackpadSpeed);
+      x = _trackpadScrollUnsent.dx.truncate();
+      y = _trackpadScrollUnsent.dy.truncate();
+      _trackpadScrollUnsent -= Offset(x.toDouble(), y.toDouble());
+    } else {
+      if (x == 0 && y == 0) {
+        final thr = 0.1;
+        if (delta.dx.abs() > delta.dy.abs()) {
+          x = delta.dx > thr ? 1 : (delta.dx < -thr ? -1 : 0);
+        } else {
+          y = delta.dy > thr ? 1 : (delta.dy < -thr ? -1 : 0);
+        }
+      }
+    }
     if (x != 0 || y != 0) {
       bind.sessionSendMouse(
           sessionId: sessionId,
@@ -362,6 +403,11 @@ class InputModel {
       // Try set delta (x,y) and delay.
       var dx = x.toInt();
       var dy = y.toInt();
+      if (parent.target?.ffiModel.pi.platform == kPeerPlatformLinux) {
+        dx = (x * _trackpadSpeed).toInt();
+        dy = (y * _trackpadSpeed).toInt();
+      }
+
       var delay = _flingBaseDelay;
 
       if (dx == 0 && dy == 0) {
@@ -390,6 +436,12 @@ class InputModel {
   }
 
   void onPointerPanZoomEnd(PointerPanZoomEndEvent e) {
+    bind.sessionSendPointer(
+        sessionId: sessionId,
+        msg: json.encode({
+          'touch': {'scale': 0}
+        }));
+
     waitLastFlingDone();
     _stopFling = false;
 
@@ -405,7 +457,7 @@ class InputModel {
   }
 
   void onPointDownImage(PointerDownEvent e) {
-    debugPrint("onPointDownImage");
+    debugPrint("onPointDownImage ${e.kind}");
     _stopFling = true;
     if (e.kind != ui.PointerDeviceKind.mouse) {
       if (isPhysicalMouse.value) {

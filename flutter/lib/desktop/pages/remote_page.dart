@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:ui' as ui;
 
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:flutter/material.dart';
@@ -113,7 +112,7 @@ class _RemotePageState extends State<RemotePage>
           .showLoading(translate('Connecting...'), onCancel: closeConnection);
     });
     if (!Platform.isLinux) {
-      //.. Wakelock.enable(); 
+      Wakelock.enable();
     }
     // Register texture.
     _textureId.value = -1;
@@ -206,11 +205,15 @@ class _RemotePageState extends State<RemotePage>
   }
 
   @override
-  void dispose() {
+  Future<void> dispose() async {
+    // https://github.com/flutter/flutter/issues/64935
+    super.dispose();
     debugPrint("REMOTE PAGE dispose ${widget.id}");
     if (useTextureRender) {
       platformFFI.registerTexture(sessionId, 0);
-      textureRenderer.closeTexture(_textureKey);
+      // sleep for a while to avoid the texture is used after it's unregistered.
+      await Future.delayed(Duration(milliseconds: 100));
+      await textureRenderer.closeTexture(_textureKey);
     }
     // ensure we leave this session, this is a double check
     bind.sessionEnterOrLeave(sessionId: sessionId, enter: false);
@@ -218,16 +221,15 @@ class _RemotePageState extends State<RemotePage>
     _ffi.dialogManager.hideMobileActionsOverlay();
     _ffi.recordingModel.onClose();
     _rawKeyFocusNode.dispose();
-    _ffi.close();
+    await _ffi.close();
     _timer?.cancel();
     _ffi.dialogManager.dismissAll();
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.manual,
+    await SystemChrome.setEnabledSystemUIMode(SystemUiMode.manual,
         overlays: SystemUiOverlay.values);
     if (!Platform.isLinux) {
-      //.. Wakelock.disable();
+      await Wakelock.disable();
     }
-    Get.delete<FFI>(tag: widget.id);
-    super.dispose();
+    await Get.delete<FFI>(tag: widget.id);
     removeSharedStates(widget.id);
   }
 
@@ -335,6 +337,17 @@ class _RemotePageState extends State<RemotePage>
     }
   }
 
+  Widget _buildRawTouchAndPointerRegion(
+    Widget child,
+    PointerEnterEventListener? onEnter,
+    PointerExitEventListener? onExit,
+  ) {
+    return RawTouchGestureDetectorRegion(
+      child: _buildRawPointerMouseRegion(child, onEnter, onExit),
+      ffi: _ffi,
+    );
+  }
+
   Widget _buildRawPointerMouseRegion(
     Widget child,
     PointerEnterEventListener? onEnter,
@@ -382,7 +395,7 @@ class _RemotePageState extends State<RemotePage>
           textureId: _textureId,
           useTextureRender: useTextureRender,
           listenerBuilder: (child) =>
-              _buildRawPointerMouseRegion(child, enterView, leaveView),
+              _buildRawTouchAndPointerRegion(child, enterView, leaveView),
         );
       }))
     ];
@@ -399,7 +412,7 @@ class _RemotePageState extends State<RemotePage>
       Positioned(
         top: 10,
         right: 10,
-        child: _buildRawPointerMouseRegion(
+        child: _buildRawTouchAndPointerRegion(
             QualityMonitor(_ffi.qualityMonitorModel), null, null),
       ),
     );

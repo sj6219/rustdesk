@@ -44,6 +44,7 @@ class _FileManagerTabPageState extends State<FileManagerTabPage> {
         page: FileManagerPage(
           key: ValueKey(params['id']),
           id: params['id'],
+          password: params['password'],
           tabController: tabController,
           forceRelay: params['forceRelay'],
         )));
@@ -72,6 +73,7 @@ class _FileManagerTabPageState extends State<FileManagerTabPage> {
             page: FileManagerPage(
               key: ValueKey(id),
               id: id,
+              password: args['password'],
               tabController: tabController,
               forceRelay: args['forceRelay'],
             )));
@@ -127,7 +129,7 @@ class _FileManagerTabPageState extends State<FileManagerTabPage> {
     } else {
       final opt = "enable-confirm-closing-tabs";
       final bool res;
-      if (!option2bool(opt, await bind.mainGetOption(key: opt))) {
+      if (!option2bool(opt, await bind.mainGetLocalOption(key: opt))) {
         res = true;
       } else {
         res = await closeConfirmDialog();

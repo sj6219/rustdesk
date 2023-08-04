@@ -319,7 +319,7 @@ class _DesktopHomePageState extends State<DesktopHomePage>
           "Status",
           "There is a newer version of ${bind.mainGetAppNameSync()} ${bind.mainGetNewVersion()} available.",
           "Click to download", () async {
-        final Uri url = Uri.parse('https://rustdesk.com');
+        final Uri url = Uri.parse('https://rustdesk.com/download');
         await launchUrl(url);
       });
     }
@@ -372,7 +372,7 @@ class _DesktopHomePageState extends State<DesktopHomePage>
     } else if (Platform.isLinux) {
       if (bind.mainCurrentIsWayland()) {
         return buildInstallCard(
-            "Warning", translate("wayland_experiment_tip"), "", () async {},
+            "Warning", "wayland_experiment_tip", "", () async {},
             help: 'Help',
             link: 'https://rustdesk.com/docs/en/manual/linux/#x11-required');
       } else if (bind.mainIsLoginWayland()) {

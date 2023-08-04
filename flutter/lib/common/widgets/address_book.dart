@@ -3,12 +3,15 @@ import 'package:flutter_hbb/common/formatter/id_formatter.dart';
 import 'package:flutter_hbb/common/widgets/peer_card.dart';
 import 'package:flutter_hbb/common/widgets/peers_view.dart';
 import 'package:flutter_hbb/desktop/widgets/popup_menu.dart';
-import '../../consts.dart';
+import 'package:flutter_hbb/models/ab_model.dart';
+import 'package:flutter_hbb/models/platform_model.dart';
 import '../../desktop/widgets/material_mod_popup_menu.dart' as mod_menu;
 import 'package:get/get.dart';
 
 import '../../common.dart';
 import 'login.dart';
+
+final hideAbTagsPanel = false.obs;
 
 class AddressBook extends StatefulWidget {
   final EdgeInsets? menuPadding;
@@ -43,9 +46,6 @@ class _AddressBookState extends State<AddressBook> {
           if (gFFI.abModel.abError.isNotEmpty) {
             return _buildShowError(gFFI.abModel.abError.value);
           }
-          if (gFFI.abModel.fromServer.isFalse) {
-            return Offstage();
-          }
           return isDesktop
               ? _buildAddressBookDesktop()
               : _buildAddressBookMobile();
@@ -70,29 +70,31 @@ class _AddressBookState extends State<AddressBook> {
   Widget _buildAddressBookDesktop() {
     return Row(
       children: [
-        Container(
-          decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
-              border:
-                  Border.all(color: Theme.of(context).colorScheme.background)),
-          child: Container(
-            width: 180,
-            height: double.infinity,
-            padding: const EdgeInsets.all(8.0),
-            child: Column(
-              children: [
-                _buildTagHeader().marginOnly(left: 8.0, right: 0),
-                Expanded(
-                  child: Container(
-                    width: double.infinity,
-                    height: double.infinity,
-                    child: _buildTags(),
-                  ),
-                )
-              ],
-            ),
-          ),
-        ).marginOnly(right: 12.0),
+        Offstage(
+            offstage: hideAbTagsPanel.value,
+            child: Container(
+              decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                      color: Theme.of(context).colorScheme.background)),
+              child: Container(
+                width: 150,
+                height: double.infinity,
+                padding: const EdgeInsets.all(8.0),
+                child: Column(
+                  children: [
+                    _buildTagHeader().marginOnly(left: 8.0, right: 0),
+                    Expanded(
+                      child: Container(
+                        width: double.infinity,
+                        height: double.infinity,
+                        child: _buildTags(),
+                      ),
+                    )
+                  ],
+                ),
+              ),
+            ).marginOnly(right: 12.0)),
         _buildPeersViews()
       ],
     );
@@ -101,25 +103,27 @@ class _AddressBookState extends State<AddressBook> {
   Widget _buildAddressBookMobile() {
     return Column(
       children: [
-        Container(
-          decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(6),
-              border:
-                  Border.all(color: Theme.of(context).colorScheme.background)),
-          child: Container(
-            padding: const EdgeInsets.all(8.0),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _buildTagHeader().marginOnly(left: 8.0, right: 0),
-                Container(
-                  width: double.infinity,
-                  child: _buildTags(),
+        Offstage(
+            offstage: hideAbTagsPanel.value,
+            child: Container(
+              decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(
+                      color: Theme.of(context).colorScheme.background)),
+              child: Container(
+                padding: const EdgeInsets.all(8.0),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _buildTagHeader().marginOnly(left: 8.0, right: 0),
+                    Container(
+                      width: double.infinity,
+                      child: _buildTags(),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-          ),
-        ).marginOnly(bottom: 12.0),
+              ),
+            ).marginOnly(bottom: 12.0)),
         _buildPeersViews()
       ],
     );
@@ -143,9 +147,16 @@ class _AddressBookState extends State<AddressBook> {
   }
 
   Widget _buildTags() {
-    return Obx(
-      () => Wrap(
-        children: gFFI.abModel.tags
+    return Obx(() {
+      final List tags;
+      if (gFFI.abModel.sortTags.value) {
+        tags = gFFI.abModel.tags.toList();
+        tags.sort();
+      } else {
+        tags = gFFI.abModel.tags;
+      }
+      return Wrap(
+        children: tags
             .map((e) => AddressBookTag(
                 name: e,
                 tags: gFFI.abModel.selectedTags,
@@ -157,8 +168,8 @@ class _AddressBookState extends State<AddressBook> {
                   }
                 }))
             .toList(),
-      ),
-    );
+      );
+    });
   }
 
   Widget _buildPeersViews() {
@@ -167,8 +178,40 @@ class _AddressBookState extends State<AddressBook> {
           alignment: Alignment.topLeft,
           child: Obx(() => AddressBookPeersView(
                 menuPadding: widget.menuPadding,
+                // ignore: invalid_use_of_protected_member
                 initPeers: gFFI.abModel.peers.value,
               ))),
+    );
+  }
+
+  @protected
+  MenuEntryBase<String> syncMenuItem() {
+    return MenuEntrySwitch<String>(
+      switchType: SwitchType.scheckbox,
+      text: translate('Sync with recent sessions'),
+      getter: () async {
+        return shouldSyncAb();
+      },
+      setter: (bool v) async {
+        bind.mainSetLocalOption(key: syncAbOption, value: v ? 'Y' : '');
+      },
+      dismissOnClicked: true,
+    );
+  }
+
+  @protected
+  MenuEntryBase<String> sortMenuItem() {
+    return MenuEntrySwitch<String>(
+      switchType: SwitchType.scheckbox,
+      text: translate('Sort tags'),
+      getter: () async {
+        return shouldSortTags();
+      },
+      setter: (bool v) async {
+        bind.mainSetLocalOption(key: sortAbTagsOption, value: v ? 'Y' : '');
+        gFFI.abModel.sortTags.value = v;
+      },
+      dismissOnClicked: true,
     );
   }
 
@@ -177,6 +220,8 @@ class _AddressBookState extends State<AddressBook> {
       getEntry(translate("Add ID"), abAddId),
       getEntry(translate("Add Tag"), abAddTag),
       getEntry(translate("Unselect all tags"), gFFI.abModel.unsetSelectedTags),
+      sortMenuItem(),
+      syncMenuItem(),
     ];
 
     mod_menu.showMenu(
@@ -196,6 +241,9 @@ class _AddressBookState extends State<AddressBook> {
   }
 
   void abAddId() async {
+    if (gFFI.abModel.isFull(true)) {
+      return;
+    }
     var isInProgress = false;
     IDTextEditingController idController = IDTextEditingController(text: '');
     TextEditingController aliasController = TextEditingController(text: '');
@@ -456,7 +504,6 @@ MenuEntryButton<String> getEntry(String title, VoidCallback proc) {
       style: style,
     ),
     proc: proc,
-    padding: kDesktopMenuPadding,
     dismissOnClicked: true,
   );
 }

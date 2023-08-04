@@ -14,12 +14,11 @@ use flutter_rust_bridge::{StreamSink, SyncReturn};
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 use hbb_common::allow_err;
 use hbb_common::{
-    config::{self, LocalConfig, PeerConfig, PeerInfoSerde, ONLINE},
+    config::{self, LocalConfig, PeerConfig, PeerInfoSerde},
     fs, log,
     message_proto::KeyboardMode,
     ResultType,
 };
-use serde_json::json;
 use std::{
     collections::HashMap,
     ffi::{CStr, CString},
@@ -607,8 +606,21 @@ pub fn main_get_option(key: String) -> String {
     get_option(key)
 }
 
+pub fn main_get_option_sync(key: String) -> SyncReturn<String> {
+    SyncReturn(get_option(key))
+}
+
 pub fn main_get_error() -> String {
     get_error()
+}
+
+pub fn main_show_option(_key: String) -> SyncReturn<bool> {
+    #[cfg(all(target_os = "linux", feature = "linux_headless"))]
+    #[cfg(not(any(feature = "flatpak", feature = "appimage")))]
+    if _key.eq(config::CONFIG_OPTION_ALLOW_LINUX_HEADLESS) {
+        return SyncReturn(true);
+    }
+    SyncReturn(false)
 }
 
 pub fn main_set_option(key: String, value: String) {
@@ -625,6 +637,10 @@ pub fn main_set_option(key: String, value: String) {
 
 pub fn main_get_options() -> String {
     get_options()
+}
+
+pub fn main_get_options_sync() -> SyncReturn<String> {
+    SyncReturn(get_options())
 }
 
 pub fn main_set_options(json: String) {
@@ -680,14 +696,18 @@ pub fn main_get_lan_peers() -> String {
 }
 
 pub fn main_get_connect_status() -> String {
-    let status = get_connect_status();
-    // (status_num, key_confirmed, mouse_time, id)
-    let mut m = serde_json::Map::new();
-    m.insert("status_num".to_string(), json!(status.0));
-    m.insert("key_confirmed".to_string(), json!(status.1));
-    m.insert("mouse_time".to_string(), json!(status.2));
-    m.insert("id".to_string(), json!(status.3));
-    serde_json::to_string(&m).unwrap_or("".to_string())
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        serde_json::to_string(&get_connect_status()).unwrap_or("".to_string())
+    }
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    {
+        let mut state = hbb_common::config::get_online_state();
+        if state > 0 {
+            state = 1;
+        }
+        serde_json::json!({ "status_num": state }).to_string()
+    }
 }
 
 pub fn main_check_connect_status() {
@@ -713,6 +733,10 @@ pub fn main_post_request(url: String, body: String, header: String) {
 
 pub fn main_get_local_option(key: String) -> SyncReturn<String> {
     SyncReturn(get_local_option(key))
+}
+
+pub fn main_get_env(key: String) -> SyncReturn<String> {
+    SyncReturn(std::env::var(key).unwrap_or_default())
 }
 
 pub fn main_set_local_option(key: String, value: String) {
@@ -753,6 +777,15 @@ pub fn main_set_peer_alias(id: String, alias: String) {
     set_peer_option(id, "alias".to_owned(), alias)
 }
 
+pub fn main_get_new_stored_peers() -> String {
+    let peers: Vec<String> = config::NEW_STORED_PEER_CONFIG
+        .lock()
+        .unwrap()
+        .drain()
+        .collect();
+    serde_json::to_string(&peers).unwrap_or_default()
+}
+
 pub fn main_forget_password(id: String) {
     forget_password(id)
 }
@@ -763,7 +796,7 @@ pub fn main_peer_has_password(id: String) -> bool {
 
 pub fn main_load_recent_peers() {
     if !config::APP_DIR.read().unwrap().is_empty() {
-        let peers: Vec<HashMap<&str, String>> = PeerConfig::peers()
+        let peers: Vec<HashMap<&str, String>> = PeerConfig::peers(None)
             .drain(..)
             .map(|(id, _, p)| peer_to_map(id, p))
             .collect();
@@ -784,7 +817,7 @@ pub fn main_load_recent_peers() {
 
 pub fn main_load_recent_peers_sync() -> SyncReturn<String> {
     if !config::APP_DIR.read().unwrap().is_empty() {
-        let peers: Vec<HashMap<&str, String>> = PeerConfig::peers()
+        let peers: Vec<HashMap<&str, String>> = PeerConfig::peers(None)
             .drain(..)
             .map(|(id, _, p)| peer_to_map(id, p))
             .collect();
@@ -801,10 +834,22 @@ pub fn main_load_recent_peers_sync() -> SyncReturn<String> {
     SyncReturn("".to_string())
 }
 
+pub fn main_load_recent_peers_for_ab(filter: String) -> String {
+    let id_filters = serde_json::from_str::<Vec<String>>(&filter).unwrap_or_default();
+    if !config::APP_DIR.read().unwrap().is_empty() {
+        let peers: Vec<HashMap<&str, String>> = PeerConfig::peers(Some(id_filters))
+            .drain(..)
+            .map(|(id, _, p)| peer_to_map_ab(id, p))
+            .collect();
+        return serde_json::ser::to_string(&peers).unwrap_or("".to_owned());
+    }
+    "".to_string()
+}
+
 pub fn main_load_fav_peers() {
     if !config::APP_DIR.read().unwrap().is_empty() {
         let favs = get_fav();
-        let mut recent = PeerConfig::peers();
+        let mut recent = PeerConfig::peers(None);
         let mut lan = config::LanPeers::load()
             .peers
             .iter()
@@ -995,10 +1040,6 @@ pub fn main_get_fingerprint() -> String {
     get_fingerprint()
 }
 
-pub fn main_get_online_statue() -> i64 {
-    ONLINE.lock().unwrap().values().max().unwrap_or(&0).clone()
-}
-
 pub fn cm_get_clients_state() -> String {
     crate::ui_cm_interface::get_clients_state()
 }
@@ -1063,6 +1104,38 @@ pub fn main_start_dbus_server() {
         std::thread::spawn(|| {
             let _ = start_dbus_server();
         });
+    }
+}
+
+pub fn main_save_ab(json: String) {
+    if json.len() > 1024 {
+        std::thread::spawn(|| {
+            config::Ab::store(json);
+        });
+    } else {
+        config::Ab::store(json);
+    }
+}
+
+pub fn main_clear_ab() {
+    config::Ab::remove();
+}
+
+pub fn session_send_pointer(session_id: SessionID, msg: String) {
+    if let Ok(m) = serde_json::from_str::<HashMap<String, serde_json::Value>>(&msg) {
+        let alt = m.get("alt").is_some();
+        let ctrl = m.get("ctrl").is_some();
+        let shift = m.get("shift").is_some();
+        let command = m.get("command").is_some();
+        if let Some(touch_event) = m.get("touch") {
+            if let Some(scale) = touch_event.get("scale") {
+                if let Some(session) = SESSIONS.read().unwrap().get(&session_id) {
+                    if let Some(scale) = scale.as_i64() {
+                        session.send_touch_scale(scale as _, alt, ctrl, shift, command);
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -1194,7 +1267,14 @@ pub fn main_check_mouse_time() {
 }
 
 pub fn main_get_mouse_time() -> f64 {
-    get_mouse_time()
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        get_mouse_time()
+    }
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    {
+        0.0
+    }
 }
 
 pub fn main_wol(id: String) {
@@ -1438,9 +1518,9 @@ pub fn main_use_texture_render() -> SyncReturn<bool> {
     }
 }
 
-pub fn cm_start_listen_ipc_thread() {
+pub fn cm_init() {
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    crate::flutter::connection_manager::start_listen_ipc_thread();
+    crate::flutter::connection_manager::cm_init();
 }
 
 /// Start an ipc server for receiving the url scheme.

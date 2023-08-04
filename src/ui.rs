@@ -126,8 +126,16 @@ pub fn start(args: &mut [String]) {
             crate::platform::windows::enable_lowlevel_keyboard(hw as _);
         }
         let mut iter = args.iter();
-        let cmd = iter.next().unwrap().clone();
-        let id = iter.next().unwrap().clone();
+        let Some(cmd) = iter.next() else {
+            log::error!("Failed to get cmd arg");
+            return;
+        };
+        let cmd = cmd.to_owned();
+        let Some(id) = iter.next() else {
+            log::error!("Failed to get id arg");
+            return;
+        };
+        let id = id.to_owned();
         let pass = iter.next().unwrap_or(&"".to_owned()).clone();
         let args: Vec<String> = iter.map(|x| x.clone()).collect();
         frame.set_title(&id);
@@ -261,7 +269,8 @@ impl UI {
     }
 
     fn get_options(&self) -> Value {
-        let hashmap: HashMap<String, String> = serde_json::from_str(&get_options()).unwrap();
+        let hashmap: HashMap<String, String> =
+            serde_json::from_str(&get_options()).unwrap_or_default();
         let mut m = Value::map();
         for (k, v) in hashmap {
             m.set_item(k, v);
@@ -364,9 +373,9 @@ impl UI {
     fn get_connect_status(&mut self) -> Value {
         let mut v = Value::array(0);
         let x = get_connect_status();
-        v.push(x.0);
-        v.push(x.1);
-        v.push(x.3);
+        v.push(x.status_num);
+        v.push(x.key_confirmed);
+        v.push(x.id);
         v
     }
 
@@ -405,7 +414,7 @@ impl UI {
 
     fn get_recent_sessions(&mut self) -> Value {
         // to-do: limit number of recent sessions, and remove old peer file
-        let peers: Vec<Value> = PeerConfig::peers()
+        let peers: Vec<Value> = PeerConfig::peers(None)
             .drain(..)
             .map(|p| Self::get_peer_value(p.0, p.2))
             .collect();
@@ -544,6 +553,7 @@ impl UI {
     }
 
     fn change_id(&self, id: String) {
+        reset_async_job_status();
         let old_id = self.get_id();
         change_id_shared(id, old_id);
     }
@@ -553,7 +563,7 @@ impl UI {
     }
 
     fn is_ok_change_id(&self) -> bool {
-        machine_uid::get().is_ok()
+        hbb_common::machine_uid::get().is_ok()
     }
 
     fn get_async_job_status(&self) -> String {
