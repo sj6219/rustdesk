@@ -53,7 +53,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Audio Input", "音频输入"),
         ("Enhancements", "增强功能"),
         ("Hardware Codec", "硬件编解码"),
-        ("Adaptive Bitrate", "自适应码率"),
+        ("Adaptive bitrate", "自适应码率"),
         ("ID Server", "ID 服务器"),
         ("Relay Server", "中继服务器"),
         ("API Server", "API 服务器"),
@@ -461,7 +461,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("No transfers in progress", "无进行中的传输"),
         ("Set one-time password length", "设置一次性密码长度"),
         ("install_cert_tip", "安装 RustDesk 证书"),
-        ("comfirm_install_cert_tip", "此证书为 RustDesk 测试证书，您可以信任此证书。证书将被用于信任和安装 RustDesk 驱动。"),
+        ("confirm_install_cert_tip", "此证书为 RustDesk 测试证书，您可以信任此证书。证书将被用于信任和安装 RustDesk 驱动。"),
         ("RDP Settings", "RDP 设置"),
         ("Sort by", "排序方式"),
         ("New Connection", "新连接"),
@@ -524,5 +524,9 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("exceed_max_devices", "管理的设备数已达到最大值"),
         ("Sync with recent sessions", "同步最近会话"),
         ("Sort tags", "对标签进行排序"),
+        ("Open connection in new tab", "在选项卡中打开新连接"),
+        ("Move tab to new window", "将标签页移至新窗口"),
+        ("Can not be empty", "不能为空"),
+        ("Already exists", "已经存在"),
     ].iter().cloned().collect();
 }

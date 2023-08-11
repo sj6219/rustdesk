@@ -197,7 +197,7 @@ void runMultiWindow(
   switch (appType) {
     case kAppTypeDesktopRemote:
       await restoreWindowPosition(WindowType.RemoteDesktop,
-          windowId: kWindowId!);
+          windowId: kWindowId!, peerId: argument['id'] as String?);
       break;
     case kAppTypeDesktopFileTransfer:
       await restoreWindowPosition(WindowType.FileTransfer,
@@ -250,7 +250,7 @@ showCmWindow({bool isStartup = false}) async {
       await windowManager.minimize(); //needed
       await windowManager.setSizeAlignment(
           kConnectionManagerWindowSizeClosedChat, Alignment.topRight);
-      window_on_top(null);
+      windowOnTop(null);
     }
   }
 }
@@ -418,7 +418,7 @@ class _AppState extends State<App> {
               : (context, child) {
                   child = _keepScaleBuilder(context, child);
                   child = botToastBuilder(context, child);
-                  if (desktopType == DesktopType.main) {
+                  if (isDesktop && desktopType == DesktopType.main) {
                     child = keyListenerBuilder(context, child);
                   }
                   return child;
@@ -465,9 +465,9 @@ Widget keyListenerBuilder(BuildContext context, Widget? child) {
     onKey: (RawKeyEvent event) {
       if (event.logicalKey == LogicalKeyboardKey.shiftLeft) {
         if (event is RawKeyDownEvent) {
-          gFFI.peerTabModel.isShiftDown = true;
+          gFFI.peerTabModel.setShiftDown(true);
         } else if (event is RawKeyUpEvent) {
-          gFFI.peerTabModel.isShiftDown = false;
+          gFFI.peerTabModel.setShiftDown(false);
         }
       }
     },

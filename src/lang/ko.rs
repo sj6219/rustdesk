@@ -53,7 +53,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Audio Input", "오디오 입력"),
         ("Enhancements", ""),
         ("Hardware Codec", "하드웨어 코덱"),
-        ("Adaptive Bitrate", "가변 비트레이트"),
+        ("Adaptive bitrate", "가변 비트레이트"),
         ("ID Server", "ID 서버"),
         ("Relay Server", "Relay 서버"),
         ("API Server", "API 서버"),
@@ -461,7 +461,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("No transfers in progress", ""),
         ("Set one-time password length", ""),
         ("install_cert_tip", ""),
-        ("comfirm_install_cert_tip", ""),
+        ("confirm_install_cert_tip", ""),
         ("RDP Settings", ""),
         ("Sort by", ""),
         ("New Connection", ""),
@@ -524,5 +524,9 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("exceed_max_devices", ""),
         ("Sync with recent sessions", ""),
         ("Sort tags", ""),
+        ("Open connection in new tab", ""),
+        ("Move tab to new window", ""),
+        ("Can not be empty", ""),
+        ("Already exists", ""),
     ].iter().cloned().collect();
 }

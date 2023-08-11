@@ -146,8 +146,10 @@ class DesktopTabController {
 
   /// For addTab, tabPage has not been initialized, set [callOnSelected] to false,
   /// and call [onSelected] at the end of initState
-  void jumpTo(int index, {bool callOnSelected = true}) {
-    if (!isDesktop || index < 0) return;
+  bool jumpTo(int index, {bool callOnSelected = true}) {
+    if (!isDesktop || index < 0) {
+      return false;
+    }
     state.update((val) {
       val!.selected = index;
       Future.delayed(Duration(milliseconds: 100), (() {
@@ -168,7 +170,12 @@ class DesktopTabController {
         onSelected?.call(key);
       }
     }
+    return true;
   }
+
+  bool jumpToByKey(String key, {bool callOnSelected = true}) =>
+      jumpTo(state.value.tabs.indexWhere((tab) => tab.key == key),
+          callOnSelected: callOnSelected);
 
   void closeBy(String? key) {
     if (!isDesktop) return;
@@ -514,10 +521,17 @@ class WindowActionPanelState extends State<WindowActionPanel>
     super.dispose();
   }
 
-  void _setMaximize(bool maximize) {
-    stateGlobal.setMaximize(maximize);
+  void _setMaximized(bool maximize) {
+    stateGlobal.setMaximized(maximize);
     _saveFrameDebounce.call(_saveFrame);
     setState(() {});
+  }
+
+  @override
+  void onWindowMinimize() {
+    stateGlobal.setMinimized(true);
+    stateGlobal.setMaximized(false);
+    super.onWindowMinimize();
   }
 
   @override
@@ -526,7 +540,8 @@ class WindowActionPanelState extends State<WindowActionPanel>
     if (!widget.isMaximized.value) {
       widget.isMaximized.value = true;
     }
-    _setMaximize(true);
+    stateGlobal.setMinimized(false);
+    _setMaximized(true);
     super.onWindowMaximize();
   }
 
@@ -536,7 +551,8 @@ class WindowActionPanelState extends State<WindowActionPanel>
     if (widget.isMaximized.value) {
       widget.isMaximized.value = false;
     }
-    _setMaximize(false);
+    stateGlobal.setMinimized(false);
+    _setMaximized(false);
     super.onWindowUnmaximize();
   }
 
