@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_hbb/consts.dart';
 import 'package:flutter_hbb/main.dart';
+import 'package:flutter_hbb/models/chat_model.dart';
 import 'package:flutter_hbb/models/platform_model.dart';
 import 'package:get/get.dart';
 import 'package:wakelock/wakelock.dart';
@@ -216,6 +217,9 @@ class ServerModel with ChangeNotifier {
       update = true;
     }
     if (_temporaryPasswordLength != temporaryPasswordLength) {
+      if (_temporaryPasswordLength.isNotEmpty) {
+        bind.mainUpdateTemporaryPassword();
+      }
       _temporaryPasswordLength = temporaryPasswordLength;
       update = true;
     }
@@ -409,18 +413,25 @@ class ServerModel with ChangeNotifier {
   updateClientState([String? json]) async {
     if (isTest) return;
     var res = await bind.cmGetClientsState();
+    List<dynamic> clientsJson;
     try {
-      final List clientsJson = jsonDecode(res);
-      _clients.clear();
-      tabController.state.value.tabs.clear();
-      for (var clientJson in clientsJson) {
+      clientsJson = jsonDecode(res);
+    } catch (e) {
+      debugPrint("Failed to decode clientsJson: '$res', error $e");
+      return;
+    }
+
+    _clients.clear();
+    tabController.state.value.tabs.clear();
+
+    for (var clientJson in clientsJson) {
+      try {
         final client = Client.fromJson(clientJson);
         _clients.add(client);
         _addTab(client);
+      } catch (e) {
+        debugPrint("Failed to decode clientJson '$clientJson', error $e");
       }
-      notifyListeners();
-    } catch (e) {
-      debugPrint("Failed to updateClientState:$e");
     }
   }
 
@@ -462,16 +473,10 @@ class ServerModel with ChangeNotifier {
         key: client.id.toString(),
         label: client.name,
         closable: false,
-        onTap: () {
-          if (client.hasUnreadChatMessage.value) {
-            client.hasUnreadChatMessage.value = false;
-            final chatModel = parent.target!.chatModel;
-            chatModel.showChatPage(client.id);
-          }
-        },
+        onTap: () {},
         page: desktop.buildConnectionCard(client)));
     Future.delayed(Duration.zero, () async {
-      if (!hideCm) window_on_top(null);
+      if (!hideCm) windowOnTop(null);
     });
     // Only do the hidden task when on Desktop.
     if (client.authorized && isDesktop) {
@@ -480,6 +485,8 @@ class ServerModel with ChangeNotifier {
         cmHiddenTimer = null;
       });
     }
+    parent.target?.chatModel
+        .updateConnIdOfKey(MessageKey(client.peerId, client.id));
   }
 
   void showLoginDialog(Client client) {
@@ -608,7 +615,7 @@ class ServerModel with ChangeNotifier {
         if (client.incomingVoiceCall) {
           // Has incoming phone call, let's set the window on top.
           Future.delayed(Duration.zero, () {
-            window_on_top(null);
+            windowOnTop(null);
           });
         }
         notifyListeners();
@@ -643,7 +650,7 @@ class Client {
   bool inVoiceCall = false;
   bool incomingVoiceCall = false;
 
-  RxBool hasUnreadChatMessage = false.obs;
+  RxInt unreadChatMessageCount = 0.obs;
 
   Client(this.id, this.authorized, this.isFileTransfer, this.name, this.peerId,
       this.keyboard, this.clipboard, this.audio);

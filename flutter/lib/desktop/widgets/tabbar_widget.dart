@@ -146,8 +146,10 @@ class DesktopTabController {
 
   /// For addTab, tabPage has not been initialized, set [callOnSelected] to false,
   /// and call [onSelected] at the end of initState
-  void jumpTo(int index, {bool callOnSelected = true}) {
-    if (!isDesktop || index < 0) return;
+  bool jumpTo(int index, {bool callOnSelected = true}) {
+    if (!isDesktop || index < 0) {
+      return false;
+    }
     state.update((val) {
       val!.selected = index;
       Future.delayed(Duration(milliseconds: 100), (() {
@@ -168,7 +170,12 @@ class DesktopTabController {
         onSelected?.call(key);
       }
     }
+    return true;
   }
+
+  bool jumpToByKey(String key, {bool callOnSelected = true}) =>
+      jumpTo(state.value.tabs.indexWhere((tab) => tab.key == key),
+          callOnSelected: callOnSelected);
 
   void closeBy(String? key) {
     if (!isDesktop) return;
@@ -186,6 +193,10 @@ class DesktopTabController {
   void clear() {
     state.value.tabs.clear();
     state.refresh();
+  }
+
+  Widget? widget(String key) {
+    return state.value.tabs.firstWhereOrNull((tab) => tab.key == key)?.page;
   }
 }
 
@@ -221,6 +232,7 @@ class DesktopTab extends StatelessWidget {
   final double? maxLabelWidth;
   final Color? selectedTabBackgroundColor;
   final Color? unSelectedTabBackgroundColor;
+  final Color? selectedBorderColor;
 
   final DesktopTabController controller;
 
@@ -248,6 +260,7 @@ class DesktopTab extends StatelessWidget {
     this.maxLabelWidth,
     this.selectedTabBackgroundColor,
     this.unSelectedTabBackgroundColor,
+    this.selectedBorderColor,
   }) : super(key: key) {
     tabType = controller.tabType;
     isMainWindow = tabType == DesktopTabType.main ||
@@ -295,37 +308,16 @@ class DesktopTab extends StatelessWidget {
     if (tabType != DesktopTabType.main) {
       return child;
     }
-    var block = false.obs;
-    return Obx(() => MouseRegion(
-          onEnter: (_) async {
-            var access_mode = await bind.mainGetOption(key: 'access-mode');
-            var option = option2bool(
-                'allow-remote-config-modification',
-                await bind.mainGetOption(
-                    key: 'allow-remote-config-modification'));
-            if (access_mode == 'view' || (access_mode.isEmpty && !option)) {
-              var time0 = DateTime.now().millisecondsSinceEpoch;
-              await bind.mainCheckMouseTime();
-              Timer(const Duration(milliseconds: 120), () async {
-                var d = time0 - await bind.mainGetMouseTime();
-                if (d < 120) {
-                  block.value = true;
-                }
-              });
-            }
-          },
-          onExit: (_) => block.value = false,
-          child: Stack(
-            children: [
-              child,
-              Offstage(
-                  offstage: !block.value,
-                  child: Container(
-                    color: Colors.black.withOpacity(0.5),
-                  )),
-            ],
-          ),
-        ));
+    return buildRemoteBlock(
+        child: child,
+        use: () async {
+          var access_mode = await bind.mainGetOption(key: 'access-mode');
+          var option = option2bool(
+              'allow-remote-config-modification',
+              await bind.mainGetOption(
+                  key: 'allow-remote-config-modification'));
+          return access_mode == 'view' || (access_mode.isEmpty && !option);
+        });
   }
 
   List<Widget> _tabWidgets = [];
@@ -430,15 +422,17 @@ class DesktopTab extends StatelessWidget {
                               }
                             },
                             child: _ListView(
-                                controller: controller,
-                                tabBuilder: tabBuilder,
-                                tabMenuBuilder: tabMenuBuilder,
-                                labelGetter: labelGetter,
-                                maxLabelWidth: maxLabelWidth,
-                                selectedTabBackgroundColor:
-                                    selectedTabBackgroundColor,
-                                unSelectedTabBackgroundColor:
-                                    unSelectedTabBackgroundColor))),
+                              controller: controller,
+                              tabBuilder: tabBuilder,
+                              tabMenuBuilder: tabMenuBuilder,
+                              labelGetter: labelGetter,
+                              maxLabelWidth: maxLabelWidth,
+                              selectedTabBackgroundColor:
+                                  selectedTabBackgroundColor,
+                              unSelectedTabBackgroundColor:
+                                  unSelectedTabBackgroundColor,
+                              selectedBorderColor: selectedBorderColor,
+                            ))),
                   ],
                 ))),
         // hide simulated action buttons when we in compatible ui mode, because of reusing system title bar.
@@ -491,6 +485,8 @@ class WindowActionPanel extends StatefulWidget {
 
 class WindowActionPanelState extends State<WindowActionPanel>
     with MultiWindowListener, WindowListener {
+  final _saveFrameDebounce = Debouncer(delay: Duration(seconds: 1));
+
   @override
   void initState() {
     super.initState();
@@ -525,9 +521,17 @@ class WindowActionPanelState extends State<WindowActionPanel>
     super.dispose();
   }
 
-  void _setMaximize(bool maximize) {
-    stateGlobal.setMaximize(maximize);
+  void _setMaximized(bool maximize) {
+    stateGlobal.setMaximized(maximize);
+    _saveFrameDebounce.call(_saveFrame);
     setState(() {});
+  }
+
+  @override
+  void onWindowMinimize() {
+    stateGlobal.setMinimized(true);
+    stateGlobal.setMaximized(false);
+    super.onWindowMinimize();
   }
 
   @override
@@ -536,7 +540,8 @@ class WindowActionPanelState extends State<WindowActionPanel>
     if (!widget.isMaximized.value) {
       widget.isMaximized.value = true;
     }
-    _setMaximize(true);
+    stateGlobal.setMinimized(false);
+    _setMaximized(true);
     super.onWindowMaximize();
   }
 
@@ -546,8 +551,29 @@ class WindowActionPanelState extends State<WindowActionPanel>
     if (widget.isMaximized.value) {
       widget.isMaximized.value = false;
     }
-    _setMaximize(false);
+    stateGlobal.setMinimized(false);
+    _setMaximized(false);
     super.onWindowUnmaximize();
+  }
+
+  _saveFrame() async {
+    if (widget.tabType == DesktopTabType.main) {
+      await saveWindowPosition(WindowType.Main);
+    } else if (kWindowType != null && kWindowId != null) {
+      await saveWindowPosition(kWindowType!, windowId: kWindowId);
+    }
+  }
+
+  @override
+  void onWindowMoved() {
+    _saveFrameDebounce.call(_saveFrame);
+    super.onWindowMoved();
+  }
+
+  @override
+  void onWindowResized() {
+    _saveFrameDebounce.call(_saveFrame);
+    super.onWindowMoved();
   }
 
   @override
@@ -691,7 +717,7 @@ Future<bool> closeConfirmDialog() async {
     submit() {
       final opt = "enable-confirm-closing-tabs";
       String value = bool2option(opt, confirm);
-      bind.mainSetOption(key: opt, value: value);
+      bind.mainSetLocalOption(key: opt, value: value);
       close(true);
     }
 
@@ -741,6 +767,7 @@ class _ListView extends StatelessWidget {
   final LabelGetter? labelGetter;
   final double? maxLabelWidth;
   final Color? selectedTabBackgroundColor;
+  final Color? selectedBorderColor;
   final Color? unSelectedTabBackgroundColor;
 
   Rx<DesktopTabState> get state => controller.state;
@@ -753,6 +780,7 @@ class _ListView extends StatelessWidget {
     this.maxLabelWidth,
     this.selectedTabBackgroundColor,
     this.unSelectedTabBackgroundColor,
+    this.selectedBorderColor,
   });
 
   /// Check whether to show ListView
@@ -805,6 +833,7 @@ class _ListView extends StatelessWidget {
                   selectedTabBackgroundColor: selectedTabBackgroundColor ??
                       MyTheme.tabbar(context).selectedTabBackgroundColor,
                   unSelectedTabBackgroundColor: unSelectedTabBackgroundColor,
+                  selectedBorderColor: selectedBorderColor,
                 );
               }).toList()));
   }
@@ -825,6 +854,7 @@ class _Tab extends StatefulWidget {
   final double? maxLabelWidth;
   final Color? selectedTabBackgroundColor;
   final Color? unSelectedTabBackgroundColor;
+  final Color? selectedBorderColor;
 
   const _Tab({
     Key? key,
@@ -842,6 +872,7 @@ class _Tab extends StatefulWidget {
     this.maxLabelWidth,
     this.selectedTabBackgroundColor,
     this.unSelectedTabBackgroundColor,
+    this.selectedBorderColor,
   }) : super(key: key);
 
   @override
@@ -932,35 +963,46 @@ class _TabState extends State<_Tab> with RestorationMixin {
         },
         onTap: () => widget.onTap(),
         child: Container(
-          color: isSelected
-              ? widget.selectedTabBackgroundColor
-              : widget.unSelectedTabBackgroundColor,
-          child: Row(
-            children: [
-              SizedBox(
-                  height: _kTabBarHeight,
-                  child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        _buildTabContent(),
-                        Obx((() => _CloseButton(
-                              visible: hover.value && widget.closable,
-                              tabSelected: isSelected,
-                              onClose: () => widget.onClose(),
-                            )))
-                      ])).paddingOnly(left: 10, right: 5),
-              Offstage(
-                offstage: !showDivider,
-                child: VerticalDivider(
-                  width: 1,
-                  indent: _kDividerIndent,
-                  endIndent: _kDividerIndent,
-                  color: MyTheme.tabbar(context).dividerColor,
-                ),
-              )
-            ],
-          ),
-        ),
+            decoration: isSelected && widget.selectedBorderColor != null
+                ? BoxDecoration(
+                    border: Border(
+                      bottom: BorderSide(
+                        color: widget.selectedBorderColor!,
+                        width: 1,
+                      ),
+                    ),
+                  )
+                : null,
+            child: Container(
+              color: isSelected
+                  ? widget.selectedTabBackgroundColor
+                  : widget.unSelectedTabBackgroundColor,
+              child: Row(
+                children: [
+                  SizedBox(
+                      height: _kTabBarHeight,
+                      child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            _buildTabContent(),
+                            Obx((() => _CloseButton(
+                                  visible: hover.value && widget.closable,
+                                  tabSelected: isSelected,
+                                  onClose: () => widget.onClose(),
+                                )))
+                          ])).paddingOnly(left: 10, right: 5),
+                  Offstage(
+                    offstage: !showDivider,
+                    child: VerticalDivider(
+                      width: 1,
+                      indent: _kDividerIndent,
+                      endIndent: _kDividerIndent,
+                      color: MyTheme.tabbar(context).dividerColor,
+                    ),
+                  )
+                ],
+              ),
+            )),
       ),
     );
   }
@@ -1116,14 +1158,14 @@ class TabbarTheme extends ThemeExtension<TabbarTheme> {
       selectedIconColor: Color.fromARGB(255, 26, 26, 26),
       unSelectedIconColor: Color.fromARGB(255, 96, 96, 96),
       dividerColor: Color.fromARGB(255, 238, 238, 238),
-      hoverColor: Color.fromARGB(51, 158, 158, 158),
-      closeHoverColor: Color.fromARGB(255, 224, 224, 224),
-      selectedTabBackgroundColor: Color.fromARGB(255, 240, 240, 240));
+      hoverColor: Colors.white54,
+      closeHoverColor: Colors.white,
+      selectedTabBackgroundColor: Colors.white54);
 
   static const dark = TabbarTheme(
       selectedTabIconColor: MyTheme.accent,
       unSelectedTabIconColor: Color.fromARGB(255, 30, 65, 98),
-      selectedTextColor: Color.fromARGB(255, 255, 255, 255),
+      selectedTextColor: Colors.white,
       unSelectedTextColor: Color.fromARGB(255, 192, 192, 192),
       selectedIconColor: Color.fromARGB(255, 192, 192, 192),
       unSelectedIconColor: Color.fromARGB(255, 255, 255, 255),
