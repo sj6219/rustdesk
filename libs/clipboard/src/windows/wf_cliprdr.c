@@ -1367,6 +1367,11 @@ static UINT cliprdr_send_format_list(wfClipboard *clipboard, UINT32 connID)
 	if (!clipboard)
 		return ERROR_INTERNAL_ERROR;
 
+	if (!IsClipboardFormatAvailable(CF_HDROP))
+	{
+		return ERROR_SUCCESS;
+	}
+
 	ZeroMemory(&formatList, sizeof(CLIPRDR_FORMAT_LIST));
 
 	/* Ignore if other app is holding clipboard */
@@ -1392,37 +1397,11 @@ static UINT cliprdr_send_format_list(wfClipboard *clipboard, UINT32 connID)
 		}
 
 		index = 0;
-
-		if (IsClipboardFormatAvailable(CF_HDROP))
-		{
-    		// ..
-			// {
-			// 	static char path[512];
-			// 	char *ptr;
-			// 	FILE *fp;
-			// 	if (path[0] == 0) {
-			// 		GetModuleFileNameA(0, &path, sizeof(path));
-			// 		if ((ptr = strrchr(path, '\\')) != 0) {
-			// 			strcpy(ptr+1, "rustdesk.log");
-			// 			if ((fp = fopen(path, "a")) != 0) {
-			// 				fprintf(fp, "____________________________1\n%d\n", GetCurrentProcessId());
-			// 				fclose(fp);
-			// 			}
-			// 		}
-			// 	}
-			// }
-			UINT fsid = RegisterClipboardFormat(CFSTR_FILEDESCRIPTORW);
-			UINT fcid = RegisterClipboardFormat(CFSTR_FILECONTENTS);
-
-			formats[index++].formatId = fsid;
-			formats[index++].formatId = fcid;
-		}
-		else
-		{
-			while (formatId = EnumClipboardFormats(formatId) && index < numFormats)
-				formats[index++].formatId = formatId;
-		}
-
+		// IsClipboardFormatAvailable(CF_HDROP) is checked above
+		UINT fsid = RegisterClipboardFormat(CFSTR_FILEDESCRIPTORW);
+		UINT fcid = RegisterClipboardFormat(CFSTR_FILECONTENTS);
+		formats[index++].formatId = fsid;
+		formats[index++].formatId = fcid;
 		numFormats = index;
 
 		if (!CloseClipboard())
@@ -2430,21 +2409,6 @@ wf_cliprdr_server_format_data_request(CliprdrClientContext *context,
 
 	if (requestedFormatId == RegisterClipboardFormat(CFSTR_FILEDESCRIPTORW))
 	{
-		{
-			static char path[512];
-			char *ptr;
-			FILE *fp;
-			if (path[0] == 0) {
-				GetModuleFileNameA(0, &path, sizeof(path));
-				if ((ptr = strrchr(path, '\\')) != 0) {
-					strcpy(ptr+1, "rustdesk.log");
-					if ((fp = fopen(path, "a")) != 0) {
-						fprintf(fp, "____________________________2\n%d\n", GetCurrentProcessId());
-						fclose(fp);
-					}
-				}
-			}
-		}
 		size_t len;
 		size_t i;
 		WCHAR *wFileName;

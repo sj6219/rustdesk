@@ -303,7 +303,7 @@ impl Server {
     // get a new unique id
     pub fn get_new_id(&mut self) -> i32 {
         self.id_count += 1;
-        self.id_count 
+        self.id_count
     }
 }
 
@@ -363,13 +363,9 @@ pub async fn start_server(is_server: bool) {
         log::info!("XAUTHORITY={:?}", std::env::var("XAUTHORITY"));
     }
     #[cfg(feature = "hwcodec")]
-    {
-        use std::sync::Once;
-        static ONCE: Once = Once::new();
-        ONCE.call_once(|| {
-            scrap::hwcodec::check_config_process();
-        })
-    }
+    scrap::hwcodec::check_config_process();
+    #[cfg(windows)]
+    hbb_common::platform::windows::start_cpu_performance_monitor();
 
     if is_server {
         crate::common::set_server_running(true);
@@ -379,16 +375,15 @@ pub async fn start_server(is_server: bool) {
                 std::process::exit(-1);
             }
         });
-        #[cfg(windows)]
-        crate::platform::windows::bootstrap();
         input_service::fix_key_down_timeout_loop();
-        crate::hbbs_http::sync::start();
         #[cfg(target_os = "linux")]
         if crate::platform::current_is_wayland() {
             allow_err!(input_service::setup_uinput(0, 1920, 0, 1080).await);
         }
         #[cfg(any(target_os = "macos", target_os = "linux"))]
         tokio::spawn(async { sync_and_watch_config_dir().await });
+        #[cfg(target_os = "windows")]
+        crate::platform::try_kill_broker();
         crate::RendezvousMediator::start_all().await;
     } else {
         match crate::ipc::connect(1000, "").await {
