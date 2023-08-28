@@ -594,7 +594,7 @@ pub fn current_is_wayland() -> bool {
 
 #[inline]
 pub fn get_new_version() -> String {
-    hbb_common::get_version_from_url(&*SOFTWARE_UPDATE_URL.lock().unwrap())
+    (*SOFTWARE_UPDATE_URL.lock().unwrap().rsplit('/').next().unwrap_or("")).to_string()
 }
 
 #[inline]
@@ -625,6 +625,7 @@ pub fn discover() {
 
 #[cfg(feature = "flutter")]
 pub fn peer_to_map(id: String, p: PeerConfig) -> HashMap<&'static str, String> {
+    use hbb_common::sodiumoxide::base64;
     HashMap::<&str, String>::from_iter([
         ("id", id),
         ("username", p.info.username.clone()),
@@ -634,18 +635,16 @@ pub fn peer_to_map(id: String, p: PeerConfig) -> HashMap<&'static str, String> {
             "alias",
             p.options.get("alias").unwrap_or(&"".to_owned()).to_owned(),
         ),
+        (
+            "hash",
+            base64::encode(p.password, base64::Variant::Original),
+        ),
     ])
 }
 
 #[cfg(feature = "flutter")]
-pub fn peer_to_map_ab(id: String, p: PeerConfig) -> HashMap<&'static str, String> {
-    use hbb_common::sodiumoxide::base64;
-    let mut m = peer_to_map(id, p.clone());
-    m.insert(
-        "hash",
-        base64::encode(p.password, base64::Variant::Original),
-    );
-    m
+pub fn peer_exists(id: &str) -> bool {
+    PeerConfig::exists(id)
 }
 
 #[inline]
@@ -974,10 +973,6 @@ pub fn get_fingerprint() -> String {
     return ipc::get_fingerprint();
 }
 
-pub fn get_hostname() -> String {
-    crate::common::hostname()
-}
-
 #[inline]
 pub fn get_login_device_info() -> LoginDeviceInfo {
     LoginDeviceInfo {
@@ -990,7 +985,7 @@ pub fn get_login_device_info() -> LoginDeviceInfo {
 
 #[inline]
 pub fn get_login_device_info_json() -> String {
-    serde_json::to_string(&get_login_device_info()).unwrap_or_default()
+    serde_json::to_string(&get_login_device_info()).unwrap_or("{}".to_string())
 }
 
 // notice: avoiding create ipc connection repeatedly,
