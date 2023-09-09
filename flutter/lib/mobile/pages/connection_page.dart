@@ -28,7 +28,7 @@ class ConnectionPage extends StatefulWidget implements PageShape {
   final title = translate("Connection");
 
   @override
-  final appBarActions = !isAndroid ? <Widget>[const WebMenu()] : <Widget>[];
+  final appBarActions = isWeb ? <Widget>[const WebMenu()] : <Widget>[];
 
   @override
   State<ConnectionPage> createState() => _ConnectionPageState();
@@ -66,6 +66,7 @@ class _ConnectionPageState extends State<ConnectionPage> {
     _idController.addListener(() {
       _idEmpty.value = _idController.text.isEmpty;
     });
+    Get.put<IDTextEditingController>(_idController);
   }
 
   @override
@@ -195,6 +196,9 @@ class _ConnectionPageState extends State<ConnectionPage> {
   @override
   void dispose() {
     _idController.dispose();
+    if (Get.isRegistered<IDTextEditingController>()) {
+      Get.delete<IDTextEditingController>();
+    }
     super.dispose();
   }
 }
@@ -207,25 +211,6 @@ class WebMenu extends StatefulWidget {
 }
 
 class _WebMenuState extends State<WebMenu> {
-  String url = "";
-
-  @override
-  void initState() {
-    super.initState();
-    () async {
-      final urlRes = await bind.mainGetApiServer();
-      var update = false;
-      if (urlRes != url) {
-        url = urlRes;
-        update = true;
-      }
-
-      if (update) {
-        setState(() {});
-      }
-    }();
-  }
-
   @override
   Widget build(BuildContext context) {
     Provider.of<FfiModel>(context);
@@ -247,16 +232,14 @@ class _WebMenuState extends State<WebMenu> {
                   child: Text(translate('ID/Relay Server')),
                 )
               ] +
-              (url.contains('admin.rustdesk.com')
-                  ? <PopupMenuItem<String>>[]
-                  : [
-                      PopupMenuItem(
-                        value: "login",
-                        child: Text(gFFI.userModel.userName.value.isEmpty
-                            ? translate("Login")
-                            : '${translate("Logout")} (${gFFI.userModel.userName.value})'),
-                      )
-                    ]) +
+              [
+                PopupMenuItem(
+                  value: "login",
+                  child: Text(gFFI.userModel.userName.value.isEmpty
+                      ? translate("Login")
+                      : '${translate("Logout")} (${gFFI.userModel.userName.value})'),
+                )
+              ] +
               [
                 PopupMenuItem(
                   value: "about",

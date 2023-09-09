@@ -6,7 +6,9 @@ use crate::{
     privacy_win_mag::{self, WIN_MAG_INJECTED_PROCESS_EXE},
 };
 use hbb_common::{
-    allow_err, bail,
+    allow_err,
+    anyhow::anyhow,
+    bail,
     config::{self, Config},
     log,
     message_proto::Resolution,
@@ -848,10 +850,9 @@ pub fn check_update_broker_process() -> ResultType<()> {
     let origin_process_exe = privacy_win_mag::ORIGIN_PROCESS_EXE;
 
     let exe_file = std::env::current_exe()?;
-    if exe_file.parent().is_none() {
+    let Some(cur_dir) = exe_file.parent() else {
         bail!("Cannot get parent of current exe file");
-    }
-    let cur_dir = exe_file.parent().unwrap();
+    };
     let cur_exe = cur_dir.join(process_exe);
 
     if !std::path::Path::new(&cur_exe).exists() {
@@ -902,29 +903,29 @@ fn get_install_info_with_subkey(subkey: String) -> (String, String, String, Stri
     (subkey, path, start_menu, exe)
 }
 
-pub fn copy_raw_cmd(src_raw: &str, _raw: &str, _path: &str) -> String {
+pub fn copy_raw_cmd(src_raw: &str, _raw: &str, _path: &str) -> ResultType<String> {
     let main_raw = format!(
         "XCOPY \"{}\" \"{}\" /Y /E /H /C /I /K /R /Z",
         PathBuf::from(src_raw)
             .parent()
-            .unwrap()
+            .ok_or(anyhow!("Can't get parent directory of {src_raw}"))?
             .to_string_lossy()
             .to_string(),
         _path
     );
-    return main_raw;
+    return Ok(main_raw);
 }
 
-pub fn copy_exe_cmd(src_exe: &str, exe: &str, path: &str) -> String {
-    let main_exe = copy_raw_cmd(src_exe, exe, path);
-    format!(
+pub fn copy_exe_cmd(src_exe: &str, exe: &str, path: &str) -> ResultType<String> {
+    let main_exe = copy_raw_cmd(src_exe, exe, path)?;
+    Ok(format!(
         "
         {main_exe}
         copy /Y \"{ORIGIN_PROCESS_EXE}\" \"{path}\\{broker_exe}\"
         ",
         ORIGIN_PROCESS_EXE = privacy_win_mag::ORIGIN_PROCESS_EXE,
         broker_exe = privacy_win_mag::INJECTED_PROCESS_EXE,
-    )
+    ))
 }
 
 fn get_after_install(exe: &str) -> String {
@@ -953,6 +954,7 @@ fn get_after_install(exe: &str) -> String {
     reg add HKEY_CLASSES_ROOT\\{ext}\\shell\\open /f
     reg add HKEY_CLASSES_ROOT\\{ext}\\shell\\open\\command /f
     reg add HKEY_CLASSES_ROOT\\{ext}\\shell\\open\\command /f /ve /t REG_SZ /d \"\\\"{exe}\\\" \\\"%%1\\\"\"
+    netsh advfirewall firewall add rule name=\"{app_name} Service\" dir=out action=allow program=\"{exe}\" enable=yes
     netsh advfirewall firewall add rule name=\"{app_name} Service\" dir=in action=allow program=\"{exe}\" enable=yes
     {create_service}
     reg add HKEY_LOCAL_MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System /f /v SoftwareSASGeneration /t REG_DWORD /d 1
@@ -1065,12 +1067,10 @@ if exist \"{tmp_path}\\{app_name} Tray.lnk\" del /f /q \"{tmp_path}\\{app_name} 
     };
 
     // potential bug here: if run_cmd cancelled, but config file is changed.
-    if let Ok(lic) = crate::platform::windows::get_license_from_exe_name() {
-        if !lic.host.is_empty() {
-            Config::set_option("key".into(), lic.key);
-            Config::set_option("custom-rendezvous-server".into(), lic.host);
-            Config::set_option("api-server".into(), lic.api);
-        }
+    if let Some(lic) = get_license() {
+        Config::set_option("key".into(), lic.key);
+        Config::set_option("custom-rendezvous-server".into(), lic.host);
+        Config::set_option("api-server".into(), lic.api);
     }
 
     let cmds = format!(
@@ -1118,7 +1118,7 @@ copy /Y \"{tmp_path}\\Uninstall {app_name}.lnk\" \"{path}\\\"
         } else {
             &dels
         },
-        copy_exe = copy_exe_cmd(&src_exe, &exe, &path),
+        copy_exe = copy_exe_cmd(&src_exe, &exe, &path)?,
         import_config = get_import_config(&exe),
     );
     run_cmds(cmds, debug, "install")?;
@@ -1200,7 +1200,7 @@ fn write_cmds(cmds: String, ext: &str, tip: &str) -> ResultType<std::path::PathB
     tmp.push(format!("{}_{}.{}", crate::get_app_name(), tip, ext));
     let mut file = std::fs::File::create(&tmp)?;
     if ext == "bat" {
-        let tmp2 = get_undone_file(&tmp);
+        let tmp2 = get_undone_file(&tmp)?;
         std::fs::File::create(&tmp2).ok();
         cmds = format!(
             "
@@ -1231,18 +1231,20 @@ fn to_le(v: &mut [u16]) -> &[u8] {
     unsafe { v.align_to().1 }
 }
 
-fn get_undone_file(tmp: &PathBuf) -> PathBuf {
+fn get_undone_file(tmp: &PathBuf) -> ResultType<PathBuf> {
     let mut tmp1 = tmp.clone();
     tmp1.set_file_name(format!(
         "{}.undone",
-        tmp.file_name().unwrap().to_string_lossy()
+        tmp.file_name()
+            .ok_or(anyhow!("Failed to get filename of {:?}", tmp))?
+            .to_string_lossy()
     ));
-    tmp1
+    Ok(tmp1)
 }
 
 fn run_cmds(cmds: String, show: bool, tip: &str) -> ResultType<()> {
     let tmp = write_cmds(cmds, "bat", tip)?;
-    let tmp2 = get_undone_file(&tmp);
+    let tmp2 = get_undone_file(&tmp)?;
     let tmp_fn = tmp.to_str().unwrap_or("");
     let res = runas::Command::new("cmd")
         .args(&["/C", &tmp_fn])
@@ -1330,7 +1332,6 @@ pub fn get_license_from_exe_name() -> ResultType<License> {
     // if defined portable appname entry, replace original executable name with it.
     if let Ok(portable_exe) = std::env::var(PORTABLE_APPNAME_RUNTIME_ENV_KEY) {
         exe = portable_exe;
-        log::debug!("update portable executable name to {}", exe);
     }
     get_license_from_string(&exe)
 }
@@ -1547,18 +1548,8 @@ pub fn elevate_or_run_as_system(is_setup: bool, is_elevate: bool, is_run_as_syst
     }
 }
 
-// https://github.com/mgostIH/process_list/blob/master/src/windows/mod.rs
-#[repr(transparent)]
-pub(self) struct RAIIHandle(pub HANDLE);
-
-impl Drop for RAIIHandle {
-    fn drop(&mut self) {
-        // This never gives problem except when running under a debugger.
-        unsafe { CloseHandle(self.0) };
-    }
-}
-
 pub fn is_elevated(process_id: Option<DWORD>) -> ResultType<bool> {
+    use hbb_common::platform::windows::RAIIHandle;
     unsafe {
         let handle: HANDLE = match process_id {
             Some(process_id) => OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, process_id),
@@ -2309,15 +2300,29 @@ mod tests {
 
 pub fn message_box(text: &str) {
     let mut text = text.to_owned();
-    if !text.ends_with("!") {
+    let nodialog = std::env::var("NO_DIALOG").unwrap_or_default() == "Y";
+    if !text.ends_with("!") || nodialog {
         use arboard::Clipboard as ClipboardContext;
         match ClipboardContext::new() {
             Ok(mut ctx) => {
                 ctx.set_text(&text).ok();
-                text = format!("{}\n\nAbove text has been copied to clipboard", &text);
+                if !nodialog {
+                    text = format!("{}\n\nAbove text has been copied to clipboard", &text);
+                }
             }
             _ => {}
         }
+    }
+    if nodialog {
+        if std::env::var("PRINT_OUT").unwrap_or_default() == "Y" {
+            println!("{text}");
+        }
+        if let Ok(x) = std::env::var("WRITE_TO_FILE") {
+            if !x.is_empty() {
+                allow_err!(std::fs::write(x, text));
+            }
+        }
+        return;
     }
     let text = text
         .encode_utf16()
@@ -2334,4 +2339,20 @@ pub fn alloc_console() {
     unsafe {
         alloc_console_and_redirect();
     }
+}
+
+fn get_license() -> Option<License> {
+    let mut lic: License = Default::default();
+    if let Ok(tmp) = get_license_from_exe_name() {
+        lic = tmp;
+    } else {
+        // for back compatibility from migrating from <= 1.2.1 to 1.2.2
+        lic.key = get_reg("Key");
+        lic.host = get_reg("Host");
+        lic.api = get_reg("Api");
+    }
+    if lic.key.is_empty() || lic.host.is_empty() {
+        return None;
+    }
+    Some(lic)
 }

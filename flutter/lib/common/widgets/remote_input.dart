@@ -6,6 +6,7 @@ import 'package:flutter/gestures.dart';
 
 import 'package:flutter_hbb/models/platform_model.dart';
 import 'package:flutter_hbb/common.dart';
+import 'package:flutter_hbb/consts.dart';
 import 'package:flutter_hbb/models/model.dart';
 import 'package:flutter_hbb/models/input_model.dart';
 
@@ -93,8 +94,8 @@ class _RawTouchGestureDetectorRegionState
     }
     if (handleTouch) {
       ffi.cursorModel.move(d.localPosition.dx, d.localPosition.dy);
+      inputModel.tapDown(MouseButtons.left);
     }
-    inputModel.tapDown(MouseButtons.left);
   }
 
   onTapUp(TapUpDetails d) {
@@ -103,8 +104,15 @@ class _RawTouchGestureDetectorRegionState
     }
     if (handleTouch) {
       ffi.cursorModel.move(d.localPosition.dx, d.localPosition.dy);
+      inputModel.tapUp(MouseButtons.left);
     }
-    inputModel.tapUp(MouseButtons.left);
+  }
+
+  onTap() {
+    if (lastDeviceKind != PointerDeviceKind.touch) {
+      return;
+    }
+    inputModel.tap(MouseButtons.left);
   }
 
   onDoubleTapDown(TapDownDetails d) {
@@ -136,12 +144,18 @@ class _RawTouchGestureDetectorRegionState
     }
   }
 
-  // for mobiles
-  onLongPress() {
+  onLongPressUp() {
     if (lastDeviceKind != PointerDeviceKind.touch) {
       return;
     }
-    if (isDesktop) {
+    if (handleTouch) {
+      inputModel.tapUp(MouseButtons.left);
+    }
+  }
+
+  // for mobiles
+  onLongPress() {
+    if (lastDeviceKind != PointerDeviceKind.touch) {
       return;
     }
     if (handleTouch) {
@@ -151,12 +165,20 @@ class _RawTouchGestureDetectorRegionState
     inputModel.tap(MouseButtons.right);
   }
 
+  onDoubleFinerTapDown(TapDownDetails d) {
+    lastDeviceKind = d.kind;
+    if (lastDeviceKind != PointerDeviceKind.touch) {
+      return;
+    }
+    // ignore for desktop and mobile
+  }
+
   onDoubleFinerTap(TapDownDetails d) {
     lastDeviceKind = d.kind;
     if (lastDeviceKind != PointerDeviceKind.touch) {
       return;
     }
-    if (isDesktop || !handleTouch) {
+    if (isDesktop || !ffiModel.touchMode) {
       inputModel.tap(MouseButtons.right);
     }
   }
@@ -221,12 +243,16 @@ class _RawTouchGestureDetectorRegionState
     if (lastDeviceKind != PointerDeviceKind.touch) {
       return;
     }
-    if (handleTouch) {
-      inputModel.sendMouse('up', MouseButtons.left);
-    }
+    inputModel.sendMouse('up', MouseButtons.left);
   }
 
   // scale + pan event
+  onTwoFingerScaleStart(ScaleStartDetails d) {
+    if (lastDeviceKind != PointerDeviceKind.touch) {
+      return;
+    }
+  }
+
   onTwoFingerScaleUpdate(ScaleUpdateDetails d) {
     if (lastDeviceKind != PointerDeviceKind.touch) {
       return;
@@ -238,9 +264,9 @@ class _RawTouchGestureDetectorRegionState
       if (scale != 0) {
         bind.sessionSendPointer(
             sessionId: sessionId,
-            msg: json.encode({
-              'touch': {'scale': scale}
-            }));
+            msg: json.encode(
+                PointerEventToRust(kPointerEventKindTouch, 'scale', scale)
+                    .toJson()));
       }
     } else {
       // mobile
@@ -258,9 +284,8 @@ class _RawTouchGestureDetectorRegionState
     if (isDesktop) {
       bind.sessionSendPointer(
           sessionId: sessionId,
-          msg: json.encode({
-            'touch': {'scale': 0}
-          }));
+          msg: json.encode(
+              PointerEventToRust(kPointerEventKindTouch, 'scale', 0).toJson()));
     } else {
       // mobile
       _scale = 1;
@@ -291,7 +316,8 @@ class _RawTouchGestureDetectorRegionState
               () => TapGestureRecognizer(), (instance) {
         instance
           ..onTapDown = onTapDown
-          ..onTapUp = onTapUp;
+          ..onTapUp = onTapUp
+          ..onTap = onTap;
       }),
       DoubleTapGestureRecognizer:
           GestureRecognizerFactoryWithHandlers<DoubleTapGestureRecognizer>(
@@ -305,6 +331,7 @@ class _RawTouchGestureDetectorRegionState
               () => LongPressGestureRecognizer(), (instance) {
         instance
           ..onLongPressDown = onLongPressDown
+          ..onLongPressUp = onLongPressUp
           ..onLongPress = onLongPress;
       }),
       // Customized
@@ -319,7 +346,9 @@ class _RawTouchGestureDetectorRegionState
       DoubleFinerTapGestureRecognizer:
           GestureRecognizerFactoryWithHandlers<DoubleFinerTapGestureRecognizer>(
               () => DoubleFinerTapGestureRecognizer(), (instance) {
-        instance.onDoubleFinerTap = onDoubleFinerTap;
+        instance
+          ..onDoubleFinerTap = onDoubleFinerTap
+          ..onDoubleFinerTapDown = onDoubleFinerTapDown;
       }),
       CustomTouchGestureRecognizer:
           GestureRecognizerFactoryWithHandlers<CustomTouchGestureRecognizer>(
@@ -329,6 +358,7 @@ class _RawTouchGestureDetectorRegionState
         instance
           ..onOneFingerPanUpdate = onOneFingerPanUpdate
           ..onOneFingerPanEnd = onOneFingerPanEnd
+          ..onTwoFingerScaleStart = onTwoFingerScaleStart
           ..onTwoFingerScaleUpdate = onTwoFingerScaleUpdate
           ..onTwoFingerScaleEnd = onTwoFingerScaleEnd
           ..onThreeFingerVerticalDragUpdate = onThreeFingerVerticalDragUpdate;
