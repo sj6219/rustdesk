@@ -90,7 +90,7 @@ const CHARS: &[char] = &[
     'm', 'n', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
 ];
 
-pub const RENDEZVOUS_SERVERS: &[&str] = &["rs-ny.rustdesk.com", "rs-sg.rustdesk.com"];
+pub const RENDEZVOUS_SERVERS: &[&str] = &["rs-ny.rustdesk.com"];
 
 pub const RS_PUB_KEY: &str = match option_env!("RS_PUB_KEY") {
     Some(key) if !key.is_empty() => key,
@@ -214,7 +214,7 @@ pub struct Resolution {
     pub h: i32,
 }
 
-#[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct PeerConfig {
     #[serde(default, deserialize_with = "deserialize_vec_u8")]
     pub password: Vec<u8>,
@@ -230,6 +230,7 @@ pub struct PeerConfig {
         skip_serializing_if = "String::is_empty"
     )]
     pub view_style: String,
+    // Image scroll style, scrollbar or scroll auto
     #[serde(
         default = "PeerConfig::default_scroll_style",
         deserialize_with = "PeerConfig::deserialize_scroll_style",
@@ -276,6 +277,13 @@ pub struct PeerConfig {
     pub keyboard_mode: String,
     #[serde(flatten)]
     pub view_only: ViewOnly,
+    // Mouse wheel or touchpad scroll mode
+    #[serde(
+        default = "PeerConfig::default_reverse_mouse_wheel",
+        deserialize_with = "PeerConfig::deserialize_reverse_mouse_wheel",
+        skip_serializing_if = "String::is_empty"
+    )]
+    pub reverse_mouse_wheel: String,
 
     #[serde(
         default,
@@ -294,6 +302,39 @@ pub struct PeerConfig {
     pub info: PeerInfoSerde,
     #[serde(default)]
     pub transfer: TransferSerde,
+}
+
+impl Default for PeerConfig {
+    fn default() -> Self {
+        Self {
+            password: Default::default(),
+            size: Default::default(),
+            size_ft: Default::default(),
+            size_pf: Default::default(),
+            view_style: Self::default_view_style(),
+            scroll_style: Self::default_scroll_style(),
+            image_quality: Self::default_image_quality(),
+            custom_image_quality: Self::default_custom_image_quality(),
+            show_remote_cursor: Default::default(),
+            lock_after_session_end: Default::default(),
+            privacy_mode: Default::default(),
+            allow_swap_key: Default::default(),
+            port_forwards: Default::default(),
+            direct_failures: Default::default(),
+            disable_audio: Default::default(),
+            disable_clipboard: Default::default(),
+            enable_file_transfer: Default::default(),
+            show_quality_monitor: Default::default(),
+            keyboard_mode: Default::default(),
+            view_only: Default::default(),
+            reverse_mouse_wheel: Self::default_reverse_mouse_wheel(),
+            custom_resolutions: Default::default(),
+            options: Self::default_options(),
+            ui_flutter: Default::default(),
+            info: Default::default(),
+            transfer: Default::default(),
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Default, Serialize, Deserialize, Clone)]
@@ -730,19 +771,6 @@ impl Config {
     }
 
     fn get_auto_id() -> Option<String> {
-        {
-            // ~\AppData\Roaming\RustDesk\config\RustDesk.toml
-            // ~/Library/Preferences/com.carriez.RustDesk/RustDesk.toml
-            // C:\WINDOWS\ServiceProfiles\LocalService\AppData\Roaming\RustDesk\config\RustDesk.toml
-            // /var/root/Library/Preferences/com.carriez.RustDesk/RustDesk.toml
-
-            // return Some(
-            //     rand::thread_rng()
-            //         .gen_range(1_000_000_000..2_000_000_000)
-            //         .to_string(),
-            // );
-        }
-
         #[cfg(any(target_os = "android", target_os = "ios"))]
         {
             return Some(
@@ -1092,6 +1120,10 @@ impl PeerConfig {
         Default::default()
     }
 
+    pub fn exists(id: &str) -> bool {
+        Self::path(id).exists()
+    }
+
     serde_field_string!(
         default_view_style,
         deserialize_view_style,
@@ -1106,6 +1138,11 @@ impl PeerConfig {
         default_image_quality,
         deserialize_image_quality,
         UserDefaultConfig::read().get("image_quality")
+    );
+    serde_field_string!(
+        default_reverse_mouse_wheel,
+        deserialize_reverse_mouse_wheel,
+        UserDefaultConfig::read().get("reverse_mouse_wheel")
     );
 
     fn default_custom_image_quality() -> Vec<i32> {
@@ -1133,6 +1170,17 @@ impl PeerConfig {
         D: de::Deserializer<'de>,
     {
         let mut mp: HashMap<String, String> = de::Deserialize::deserialize(deserializer)?;
+        Self::insert_default_options(&mut mp);
+        Ok(mp)
+    }
+
+    fn default_options() -> HashMap<String, String> {
+        let mut mp: HashMap<String, String> = Default::default();
+        Self::insert_default_options(&mut mp);
+        return mp;
+    }
+
+    fn insert_default_options(mp: &mut HashMap<String, String>) {
         let mut key = "codec-preference";
         if !mp.contains_key(key) {
             mp.insert(key.to_owned(), UserDefaultConfig::read().get(key));
@@ -1145,7 +1193,10 @@ impl PeerConfig {
         if !mp.contains_key(key) {
             mp.insert(key.to_owned(), UserDefaultConfig::read().get(key));
         }
-        Ok(mp)
+        key = "touch-mode";
+        if !mp.contains_key(key) {
+            mp.insert(key.to_owned(), UserDefaultConfig::read().get(key));
+        }
     }
 }
 
@@ -1303,7 +1354,7 @@ impl LocalConfig {
         }
     }
 
-    pub fn get_flutter_config(k: &str) -> String {
+    pub fn get_flutter_option(k: &str) -> String {
         if let Some(v) = LOCAL_CONFIG.read().unwrap().ui_flutter.get(k) {
             v.clone()
         } else {
@@ -1311,7 +1362,7 @@ impl LocalConfig {
         }
     }
 
-    pub fn set_flutter_config(k: String, v: String) {
+    pub fn set_flutter_option(k: String, v: String) {
         let mut config = LOCAL_CONFIG.write().unwrap();
         let v2 = if v.is_empty() { None } else { Some(&v) };
         if v2 != config.ui_flutter.get(&k) {
@@ -1446,7 +1497,11 @@ impl UserDefaultConfig {
     }
 
     pub fn set(&mut self, key: String, value: String) {
-        self.options.insert(key, value);
+        if value.is_empty() {
+            self.options.remove(&key);
+        } else {
+            self.options.insert(key, value);
+        }
         self.store();
     }
 
@@ -1494,6 +1549,32 @@ pub struct AbPeer {
         skip_serializing_if = "String::is_empty"
     )]
     pub hash: String,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_string",
+        skip_serializing_if = "String::is_empty"
+    )]
+    pub username: String,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_string",
+        skip_serializing_if = "String::is_empty"
+    )]
+    pub hostname: String,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_string",
+        skip_serializing_if = "String::is_empty"
+    )]
+    pub platform: String,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_string",
+        skip_serializing_if = "String::is_empty"
+    )]
+    pub alias: String,
+    #[serde(default, deserialize_with = "deserialize_vec_string")]
+    pub tags: Vec<String>,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize, Clone)]
@@ -1506,6 +1587,14 @@ pub struct Ab {
     pub access_token: String,
     #[serde(default, deserialize_with = "deserialize_vec_abpeer")]
     pub peers: Vec<AbPeer>,
+    #[serde(default, deserialize_with = "deserialize_vec_string")]
+    pub tags: Vec<String>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_string",
+        skip_serializing_if = "String::is_empty"
+    )]
+    pub tag_colors: String,
 }
 
 impl Ab {

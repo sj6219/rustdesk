@@ -1,3 +1,5 @@
+use hbb_common::config::Config;
+
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 use crate::common::get_default_sound_input;
 use crate::{
@@ -15,19 +17,25 @@ use flutter_rust_bridge::{StreamSink, SyncReturn};
 use hbb_common::allow_err;
 use hbb_common::{
     config::{self, LocalConfig, PeerConfig, PeerInfoSerde},
-    fs, log,
+    fs, lazy_static, log,
     message_proto::KeyboardMode,
     ResultType,
 };
 use std::{
     collections::HashMap,
-    ffi::{CStr, CString},
-    os::raw::c_char,
     str::FromStr,
+    sync::{
+        atomic::{AtomicI32, Ordering},
+        Arc,
+    },
     time::SystemTime,
 };
 
 pub type SessionID = uuid::Uuid;
+
+lazy_static::lazy_static! {
+    static ref TEXTURE_RENDER_KEY: Arc<AtomicI32> = Arc::new(AtomicI32::new(0));
+}
 
 fn initialize(app_dir: &str) {
     *config::APP_DIR.write().unwrap() = app_dir.to_owned();
@@ -166,6 +174,12 @@ pub fn session_record_screen(session_id: SessionID, start: bool, width: usize, h
     }
 }
 
+pub fn session_record_status(session_id: SessionID, status: bool) {
+    if let Some(session) = SESSIONS.read().unwrap().get(&session_id) {
+        session.record_status(status);
+    }
+}
+
 pub fn session_reconnect(session_id: SessionID, force_relay: bool) {
     if let Some(session) = SESSIONS.read().unwrap().get(&session_id) {
         session.reconnect(force_relay);
@@ -183,26 +197,39 @@ pub fn session_toggle_option(session_id: SessionID, value: String) {
     }
 }
 
-pub fn session_get_flutter_config(session_id: SessionID, k: String) -> Option<String> {
+pub fn session_get_flutter_option(session_id: SessionID, k: String) -> Option<String> {
     if let Some(session) = SESSIONS.read().unwrap().get(&session_id) {
-        Some(session.get_flutter_config(k))
+        Some(session.get_flutter_option(k))
     } else {
         None
     }
 }
 
-pub fn session_set_flutter_config(session_id: SessionID, k: String, v: String) {
+pub fn session_set_flutter_option(session_id: SessionID, k: String, v: String) {
     if let Some(session) = SESSIONS.write().unwrap().get_mut(&session_id) {
-        session.save_flutter_config(k, v);
+        session.save_flutter_option(k, v);
     }
 }
 
-pub fn get_local_flutter_config(k: String) -> SyncReturn<String> {
-    SyncReturn(ui_interface::get_local_flutter_config(k))
+pub fn session_get_flutter_option_by_peer_id(id: String, k: String) -> Option<String> {
+    if let Some((_, session)) = SESSIONS.read().unwrap().iter().find(|(_, s)| s.id == id) {
+        Some(session.get_flutter_option(k))
+    } else {
+        None
+    }
 }
 
-pub fn set_local_flutter_config(k: String, v: String) {
-    ui_interface::set_local_flutter_config(k, v);
+pub fn get_next_texture_key() -> SyncReturn<i32> {
+    let k = TEXTURE_RENDER_KEY.fetch_add(1, Ordering::SeqCst) + 1;
+    SyncReturn(k)
+}
+
+pub fn get_local_flutter_option(k: String) -> SyncReturn<String> {
+    SyncReturn(ui_interface::get_local_flutter_option(k))
+}
+
+pub fn set_local_flutter_option(k: String, v: String) {
+    ui_interface::set_local_flutter_option(k, v);
 }
 
 pub fn get_local_kb_layout_type() -> SyncReturn<String> {
@@ -272,6 +299,20 @@ pub fn session_set_keyboard_mode(session_id: SessionID, value: String) {
     #[cfg(windows)]
     if _mode_updated {
         crate::keyboard::update_grab_get_key_name();
+    }
+}
+
+pub fn session_get_reverse_mouse_wheel(session_id: SessionID) -> Option<String> {
+    if let Some(session) = SESSIONS.read().unwrap().get(&session_id) {
+        Some(session.get_reverse_mouse_wheel())
+    } else {
+        None
+    }
+}
+
+pub fn session_set_reverse_mouse_wheel(session_id: SessionID, value: String) {
+    if let Some(session) = SESSIONS.write().unwrap().get_mut(&session_id) {
+        session.save_reverse_mouse_wheel(value);
     }
 }
 
@@ -357,6 +398,7 @@ pub fn session_enter_or_leave(_session_id: SessionID, _enter: bool) -> SyncRetur
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     if let Some(session) = SESSIONS.read().unwrap().get(&_session_id) {
         if _enter {
+            set_cur_session_id(_session_id);
             session.enter();
         } else {
             session.leave();
@@ -590,8 +632,8 @@ pub fn main_get_default_sound_input() -> Option<String> {
     None
 }
 
-pub fn main_get_hostname() -> SyncReturn<String> {
-    SyncReturn(get_hostname())
+pub fn main_get_login_device_info() -> SyncReturn<String> {
+    SyncReturn(get_login_device_info_json())
 }
 
 pub fn main_change_id(new_id: String) {
@@ -759,6 +801,17 @@ pub fn main_get_peer_option_sync(id: String, key: String) -> SyncReturn<String> 
     SyncReturn(get_peer_option(id, key))
 }
 
+// Sometimes we need to get the flutter option of a peer by reading the file.
+// Because the session may not be established yet.
+pub fn main_get_peer_flutter_option_sync(id: String, k: String) -> SyncReturn<String> {
+    SyncReturn(get_peer_flutter_option(id, k))
+}
+
+pub fn main_set_peer_flutter_option_sync(id: String, k: String, v: String) -> SyncReturn<()> {
+    set_peer_flutter_option(id, k, v);
+    SyncReturn(())
+}
+
 pub fn main_set_peer_option(id: String, key: String, value: String) {
     set_peer_option(id, key, value)
 }
@@ -792,6 +845,10 @@ pub fn main_forget_password(id: String) {
 
 pub fn main_peer_has_password(id: String) -> bool {
     peer_has_password(id)
+}
+
+pub fn main_peer_exists(id: String) -> bool {
+    peer_exists(&id)
 }
 
 pub fn main_load_recent_peers() {
@@ -836,10 +893,15 @@ pub fn main_load_recent_peers_sync() -> SyncReturn<String> {
 
 pub fn main_load_recent_peers_for_ab(filter: String) -> String {
     let id_filters = serde_json::from_str::<Vec<String>>(&filter).unwrap_or_default();
+    let id_filters = if id_filters.is_empty() {
+        None
+    } else {
+        Some(id_filters)
+    };
     if !config::APP_DIR.read().unwrap().is_empty() {
-        let peers: Vec<HashMap<&str, String>> = PeerConfig::peers(Some(id_filters))
+        let peers: Vec<HashMap<&str, String>> = PeerConfig::peers(id_filters)
             .drain(..)
-            .map(|(id, _, p)| peer_to_map_ab(id, p))
+            .map(|(id, _, p)| peer_to_map(id, p))
             .collect();
         return serde_json::ser::to_string(&peers).unwrap_or("".to_owned());
     }
@@ -914,15 +976,12 @@ pub fn main_remove_discovered(id: String) {
 }
 
 fn main_broadcast_message(data: &HashMap<&str, &str>) {
-    let apps = vec![
-        flutter::APP_TYPE_DESKTOP_REMOTE,
-        flutter::APP_TYPE_DESKTOP_FILE_TRANSFER,
-        flutter::APP_TYPE_DESKTOP_PORT_FORWARD,
-    ];
-
     let event = serde_json::ser::to_string(&data).unwrap_or("".to_owned());
-    for app in apps {
-        let _res = flutter::push_global_event(app, event.clone());
+    for app in flutter::get_global_event_channels() {
+        if app == flutter::APP_TYPE_MAIN || app == flutter::APP_TYPE_CM {
+            continue;
+        }
+        let _res = flutter::push_global_event(&app, event.clone());
     }
 }
 
@@ -1017,6 +1076,9 @@ pub fn main_get_last_remote_id() -> String {
 }
 
 pub fn main_get_software_update_url() -> String {
+    if get_local_option("enable-check-update".to_string()) != "N" {
+        crate::common::check_software_update();
+    }
     crate::common::SOFTWARE_UPDATE_URL.lock().unwrap().clone()
 }
 
@@ -1121,22 +1183,12 @@ pub fn main_clear_ab() {
     config::Ab::remove();
 }
 
+pub fn main_load_ab() -> String {
+    serde_json::to_string(&config::Ab::load()).unwrap_or_default()
+}
+
 pub fn session_send_pointer(session_id: SessionID, msg: String) {
-    if let Ok(m) = serde_json::from_str::<HashMap<String, serde_json::Value>>(&msg) {
-        let alt = m.get("alt").is_some();
-        let ctrl = m.get("ctrl").is_some();
-        let shift = m.get("shift").is_some();
-        let command = m.get("command").is_some();
-        if let Some(touch_event) = m.get("touch") {
-            if let Some(scale) = touch_event.get("scale") {
-                if let Some(session) = SESSIONS.read().unwrap().get(&session_id) {
-                    if let Some(scale) = scale.as_i64() {
-                        session.send_touch_scale(scale as _, alt, ctrl, shift, command);
-                    }
-                }
-            }
-        }
-    }
+    super::flutter::session_send_pointer(session_id, msg);
 }
 
 pub fn session_send_mouse(session_id: SessionID, msg: String) {
@@ -1213,6 +1265,12 @@ pub fn session_alternative_codecs(session_id: SessionID) -> String {
 pub fn session_change_prefer_codec(session_id: SessionID) {
     if let Some(session) = SESSIONS.read().unwrap().get(&session_id) {
         session.change_prefer_codec();
+    }
+}
+
+pub fn session_on_waiting_for_image_dialog_show(session_id: SessionID) {
+    if let Some(session) = SESSIONS.read().unwrap().get(&session_id) {
+        session.ui_handler.on_waiting_for_image_dialog_show();
     }
 }
 
@@ -1347,18 +1405,6 @@ pub fn main_get_build_date() -> String {
     crate::BUILD_DATE.to_string()
 }
 
-#[no_mangle]
-unsafe extern "C" fn translate(name: *const c_char, locale: *const c_char) -> *const c_char {
-    let name = CStr::from_ptr(name);
-    let locale = CStr::from_ptr(locale);
-    let res = if let (Ok(name), Ok(locale)) = (name.to_str(), locale.to_str()) {
-        crate::client::translate_locale(name.to_owned(), locale)
-    } else {
-        String::new()
-    };
-    CString::from_vec_unchecked(res.into_bytes()).into_raw()
-}
-
 fn handle_query_onlines(onlines: Vec<String>, offlines: Vec<String>) {
     let data = HashMap::from([
         ("name", "callback_query_onlines".to_owned()),
@@ -1369,6 +1415,22 @@ fn handle_query_onlines(onlines: Vec<String>, offlines: Vec<String>) {
         flutter::APP_TYPE_MAIN,
         serde_json::ser::to_string(&data).unwrap_or("".to_owned()),
     );
+}
+
+pub fn translate(name: String, locale: String) -> SyncReturn<String> {
+    SyncReturn(crate::client::translate_locale(name, &locale))
+}
+
+pub fn session_get_rgba_size(session_id: SessionID) -> SyncReturn<usize> {
+    SyncReturn(super::flutter::session_get_rgba_size(session_id))
+}
+
+pub fn session_next_rgba(session_id: SessionID) -> SyncReturn<()> {
+    SyncReturn(super::flutter::session_next_rgba(session_id))
+}
+
+pub fn session_register_texture(session_id: SessionID, ptr: usize) -> SyncReturn<()> {
+    SyncReturn(super::flutter::session_register_texture(session_id, ptr))
 }
 
 pub fn query_onlines(ids: Vec<String>) {

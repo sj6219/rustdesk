@@ -921,7 +921,7 @@ mod desktop {
         fn get_display(&mut self) {
             let display_envs = vec![GNOME_SESSION_BINARY, XFCE4_PANEL, SDDM_GREETER, PLASMA_X11];
             for diplay_env in display_envs {
-                self.display = get_env_tries("DISPLAY", &self.uid, diplay_env, 20);
+                self.display = get_env_tries("DISPLAY", &self.uid, diplay_env, 10);
                 if !self.display.is_empty() {
                     break;
                 }
@@ -984,7 +984,7 @@ mod desktop {
             // try by direct access to window manager process by name
             let display_envs = vec![GNOME_SESSION_BINARY, XFCE4_PANEL, SDDM_GREETER, PLASMA_X11];
             for diplay_env in display_envs {
-                self.xauth = get_env_tries("XAUTHORITY", &self.uid, diplay_env, 20);
+                self.xauth = get_env_tries("XAUTHORITY", &self.uid, diplay_env, 10);
                 if !self.xauth.is_empty() {
                     break;
                 }
@@ -1073,7 +1073,7 @@ mod desktop {
         }
 
         pub fn refresh(&mut self) {
-            if !self.sid.is_empty() && is_active(&self.sid) {
+            if !self.sid.is_empty() && is_active_and_seat0(&self.sid) {
                 return;
             }
 
@@ -1183,6 +1183,7 @@ pub fn uninstall_service(show_new_window: bool) -> bool {
 }
 
 pub fn install_service() -> bool {
+    let _installing = crate::platform::InstallingService::new();
     if !has_cmd("systemctl") {
         return false;
     }

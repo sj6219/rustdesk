@@ -1,4 +1,4 @@
-use crate::input::{MOUSE_BUTTON_LEFT, MOUSE_TYPE_DOWN, MOUSE_TYPE_UP};
+use crate::input::{MOUSE_BUTTON_LEFT, MOUSE_TYPE_DOWN, MOUSE_TYPE_UP, MOUSE_TYPE_WHEEL};
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 use std::{collections::HashMap, sync::atomic::AtomicBool};
 use std::{
@@ -175,6 +175,14 @@ impl<T: InvokeUiSession> Session<T> {
         self.lc.write().unwrap().save_keyboard_mode(value);
     }
 
+    pub fn get_reverse_mouse_wheel(&self) -> String {
+        self.lc.read().unwrap().reverse_mouse_wheel.clone()
+    }
+
+    pub fn save_reverse_mouse_wheel(&mut self, value: String) {
+        self.lc.write().unwrap().save_reverse_mouse_wheel(value);
+    }
+
     pub fn save_view_style(&mut self, value: String) {
         self.lc.write().unwrap().save_view_style(value);
     }
@@ -183,12 +191,12 @@ impl<T: InvokeUiSession> Session<T> {
         self.lc.write().unwrap().save_scroll_style(value);
     }
 
-    pub fn save_flutter_config(&mut self, k: String, v: String) {
+    pub fn save_flutter_option(&mut self, k: String, v: String) {
         self.lc.write().unwrap().save_ui_flutter(k, v);
     }
 
-    pub fn get_flutter_config(&self, k: String) -> String {
-        self.lc.write().unwrap().get_ui_flutter(&k)
+    pub fn get_flutter_option(&self, k: String) -> String {
+        self.lc.read().unwrap().get_ui_flutter(&k)
     }
 
     pub fn toggle_option(&mut self, name: String) {
@@ -224,6 +232,14 @@ impl<T: InvokeUiSession> Session<T> {
 
     pub fn record_screen(&self, start: bool, w: i32, h: i32) {
         self.send(Data::RecordScreen(start, w, h, self.id.clone()));
+    }
+
+    pub fn record_status(&self, status: bool) {
+        let mut misc = Misc::new();
+        misc.set_client_record_status(status);
+        let mut msg = Message::new();
+        msg.set_misc(misc);
+        self.send(Data::Message(msg));
     }
 
     pub fn save_custom_image_quality(&mut self, custom_image_quality: i32) {
@@ -648,6 +664,8 @@ impl<T: InvokeUiSession> Session<T> {
             platform_code,
             position_code: position_code as _,
             event_type,
+            #[cfg(any(target_os = "windows", target_os = "macos"))]
+            extra_data: 0,
         };
         keyboard::client::process_event(&event, Some(lock_modes));
     }
@@ -706,6 +724,65 @@ impl<T: InvokeUiSession> Session<T> {
         send_pointer_device_event(evt, alt, ctrl, shift, command, self);
     }
 
+    pub fn send_touch_pan_event(
+        &self,
+        event: &str,
+        x: i32,
+        y: i32,
+        alt: bool,
+        ctrl: bool,
+        shift: bool,
+        command: bool,
+    ) {
+        let mut touch_evt = TouchEvent::new();
+        match event {
+            "pan_start" => {
+                touch_evt.set_pan_start(TouchPanStart {
+                    x,
+                    y,
+                    ..Default::default()
+                });
+            }
+            "pan_update" => {
+                let (x, y) = self.get_scroll_xy((x, y));
+                touch_evt.set_pan_update(TouchPanUpdate {
+                    x,
+                    y,
+                    ..Default::default()
+                });
+            }
+            "pan_end" => {
+                touch_evt.set_pan_end(TouchPanEnd {
+                    x,
+                    y,
+                    ..Default::default()
+                });
+            }
+            _ => {
+                log::warn!("unknown touch pan event: {}", event);
+                return;
+            }
+        };
+        let mut evt = PointerDeviceEvent::new();
+        evt.set_touch_event(touch_evt);
+        send_pointer_device_event(evt, alt, ctrl, shift, command, self);
+    }
+
+    #[inline]
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    fn is_scroll_reverse_mode(&self) -> bool {
+        self.lc.read().unwrap().reverse_mouse_wheel.eq("Y")
+    }
+
+    #[inline]
+    fn get_scroll_xy(&self, xy: (i32, i32)) -> (i32, i32) {
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        if self.is_scroll_reverse_mode() {
+            return (-xy.0, -xy.1);
+        }
+        xy
+    }
+
     pub fn send_mouse(
         &self,
         mask: i32,
@@ -725,6 +802,12 @@ impl<T: InvokeUiSession> Session<T> {
                 command = true;
             }
         }
+
+        let (x, y) = if mask == MOUSE_TYPE_WHEEL {
+            self.get_scroll_xy((x, y))
+        } else {
+            (x, y)
+        };
 
         // #[cfg(not(any(target_os = "android", target_os = "ios")))]
         let (alt, ctrl, shift, command) =
@@ -910,34 +993,49 @@ impl<T: InvokeUiSession> Session<T> {
         }
     }
 
-    pub fn handle_peer_switch_display(&self, display: &SwitchDisplay) {
-        self.ui_handler.switch_display(display);
-
-        if self.last_change_display.lock().unwrap().is_the_same_record(
-            display.display,
-            display.width,
-            display.height,
-        ) {
-            let custom_resolution = if display.width != display.original_resolution.width
-                || display.height != display.original_resolution.height
-            {
-                Some((display.width, display.height))
-            } else {
-                None
-            };
+    fn set_custom_resolution(&self, display: &SwitchDisplay) {
+        if display.width == display.original_resolution.width
+            && display.height == display.original_resolution.height
+        {
             self.lc
                 .write()
                 .unwrap()
-                .set_custom_resolution(display.display, custom_resolution);
+                .set_custom_resolution(display.display, None);
+        } else {
+            let last_change_display = self.last_change_display.lock().unwrap();
+            if last_change_display.display == display.display {
+                let wh = if last_change_display.is_the_same_record(
+                    display.display,
+                    display.width,
+                    display.height,
+                ) {
+                    Some((display.width, display.height))
+                } else {
+                    // display origin is changed, or some other events.
+                    None
+                };
+                self.lc
+                    .write()
+                    .unwrap()
+                    .set_custom_resolution(display.display, wh);
+            }
         }
     }
 
+    #[inline]
+    pub fn handle_peer_switch_display(&self, display: &SwitchDisplay) {
+        self.ui_handler.switch_display(display);
+        self.set_custom_resolution(display);
+    }
+
+    #[inline]
     pub fn change_resolution(&self, display: i32, width: i32, height: i32) {
         *self.last_change_display.lock().unwrap() =
             ChangeDisplayRecord::new(display, width, height);
         self.do_change_resolution(width, height);
     }
 
+    #[inline]
     fn try_change_init_resolution(&self, display: i32) {
         if let Some((w, h)) = self.lc.read().unwrap().get_custom_resolution(display) {
             self.do_change_resolution(w, h);
@@ -956,10 +1054,12 @@ impl<T: InvokeUiSession> Session<T> {
         self.send(Data::Message(msg));
     }
 
+    #[inline]
     pub fn request_voice_call(&self) {
         self.send(Data::NewVoiceCall);
     }
 
+    #[inline]
     pub fn close_voice_call(&self) {
         self.send(Data::CloseVoiceCall);
     }
@@ -1191,7 +1291,7 @@ impl<T: InvokeUiSession> Session<T> {
 #[tokio::main(flavor = "current_thread")]
 pub async fn io_loop<T: InvokeUiSession>(handler: Session<T>) {
     // It is ok to call this function multiple times.
-    #[cfg(target_os ="windows")]
+    #[cfg(target_os = "windows")]
     if !handler.is_file_transfer() && !handler.is_port_forward() {
         clipboard::ContextSend::enable(true);
     }

@@ -11,15 +11,16 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_hbb/common/formatter/id_formatter.dart';
 import 'package:flutter_hbb/desktop/widgets/refresh_wrapper.dart';
 import 'package:flutter_hbb/desktop/widgets/tabbar_widget.dart';
 import 'package:flutter_hbb/main.dart';
 import 'package:flutter_hbb/models/peer_model.dart';
+import 'package:flutter_hbb/models/state_model.dart';
 import 'package:flutter_hbb/utils/multi_window_manager.dart';
 import 'package:flutter_hbb/utils/platform_channel.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
-import 'package:texture_rgba_renderer/texture_rgba_renderer.dart';
 import 'package:uni_links/uni_links.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:uuid/uuid.dart';
@@ -46,11 +47,6 @@ var isWebDesktop = false;
 var isMobile = isAndroid || isIOS;
 var version = "";
 int androidVersion = 0;
-
-/// Incriment count for textureId.
-int _textureId = 0;
-int get newTextureId => _textureId++;
-final textureRenderer = TextureRgbaRenderer();
 
 /// only available for Windows target
 int windowsBuildNumber = 0;
@@ -95,6 +91,7 @@ class IconFont {
   static const IconData roundClose = IconData(0xe6ed, fontFamily: _family2);
   static const IconData addressBook =
       IconData(0xe602, fontFamily: "AddressBook");
+  static const IconData checkbox = IconData(0xe7d6, fontFamily: "CheckBox");
 }
 
 class ColorThemeExtension extends ThemeExtension<ColorThemeExtension> {
@@ -104,6 +101,7 @@ class ColorThemeExtension extends ThemeExtension<ColorThemeExtension> {
     required this.highlight,
     required this.drag_indicator,
     required this.shadow,
+    required this.errorBannerBg,
   });
 
   final Color? border;
@@ -111,6 +109,7 @@ class ColorThemeExtension extends ThemeExtension<ColorThemeExtension> {
   final Color? highlight;
   final Color? drag_indicator;
   final Color? shadow;
+  final Color? errorBannerBg;
 
   static final light = ColorThemeExtension(
     border: Color(0xFFCCCCCC),
@@ -118,6 +117,7 @@ class ColorThemeExtension extends ThemeExtension<ColorThemeExtension> {
     highlight: Color(0xFFE5E5E5),
     drag_indicator: Colors.grey[800],
     shadow: Colors.black,
+    errorBannerBg: Color(0xFFFDEEEB),
   );
 
   static final dark = ColorThemeExtension(
@@ -126,6 +126,7 @@ class ColorThemeExtension extends ThemeExtension<ColorThemeExtension> {
     highlight: Color(0xFF3F3F3F),
     drag_indicator: Colors.grey,
     shadow: Colors.grey,
+    errorBannerBg: Color(0xFF470F2D),
   );
 
   @override
@@ -135,6 +136,7 @@ class ColorThemeExtension extends ThemeExtension<ColorThemeExtension> {
     Color? highlight,
     Color? drag_indicator,
     Color? shadow,
+    Color? errorBannerBg,
   }) {
     return ColorThemeExtension(
       border: border ?? this.border,
@@ -142,6 +144,7 @@ class ColorThemeExtension extends ThemeExtension<ColorThemeExtension> {
       highlight: highlight ?? this.highlight,
       drag_indicator: drag_indicator ?? this.drag_indicator,
       shadow: shadow ?? this.shadow,
+      errorBannerBg: errorBannerBg ?? this.errorBannerBg,
     );
   }
 
@@ -157,6 +160,7 @@ class ColorThemeExtension extends ThemeExtension<ColorThemeExtension> {
       highlight: Color.lerp(highlight, other.highlight, t),
       drag_indicator: Color.lerp(drag_indicator, other.drag_indicator, t),
       shadow: Color.lerp(shadow, other.shadow, t),
+      errorBannerBg: Color.lerp(shadow, other.errorBannerBg, t),
     );
   }
 }
@@ -223,6 +227,13 @@ class MyTheme {
     ),
   );
 
+  //tooltip
+  static TooltipThemeData tooltipTheme() {
+    return TooltipThemeData(
+      waitDuration: Duration(seconds: 1, milliseconds: 500),
+    );
+  }
+
   // Dialogs
   static const double dialogPadding = 24;
 
@@ -254,6 +265,14 @@ class MyTheme {
       ? EdgeInsets.only(left: dialogPadding)
       : EdgeInsets.only(left: dialogPadding / 3);
 
+  static ScrollbarThemeData scrollbarTheme = ScrollbarThemeData(
+    thickness: MaterialStateProperty.all(kScrollbarThickness),
+  );
+
+  static ScrollbarThemeData scrollbarThemeDark = scrollbarTheme.copyWith(
+    thumbColor: MaterialStateProperty.all(Colors.grey[500]),
+  );
+
   static ThemeData lightTheme = ThemeData(
     brightness: Brightness.light,
     hoverColor: Color.fromARGB(255, 224, 224, 224),
@@ -269,6 +288,7 @@ class MyTheme {
         ),
       ),
     ),
+    scrollbarTheme: scrollbarTheme,
     inputDecorationTheme: isDesktop
         ? InputDecorationTheme(
             fillColor: grayBg,
@@ -292,6 +312,7 @@ class MyTheme {
     tabBarTheme: const TabBarTheme(
       labelColor: Colors.black87,
     ),
+    tooltipTheme: tooltipTheme(),
     splashColor: isDesktop ? Colors.transparent : null,
     highlightColor: isDesktop ? Colors.transparent : null,
     splashFactory: isDesktop ? NoSplash.splashFactory : null,
@@ -352,6 +373,7 @@ class MyTheme {
         ),
       ),
     ),
+    scrollbarTheme: scrollbarThemeDark,
     inputDecorationTheme: isDesktop
         ? InputDecorationTheme(
             fillColor: Color(0xFF24252B),
@@ -378,9 +400,7 @@ class MyTheme {
     tabBarTheme: const TabBarTheme(
       labelColor: Colors.white70,
     ),
-    scrollbarTheme: ScrollbarThemeData(
-      thumbColor: MaterialStateProperty.all(Colors.grey[500]),
-    ),
+    tooltipTheme: tooltipTheme(),
     splashColor: isDesktop ? Colors.transparent : null,
     highlightColor: isDesktop ? Colors.transparent : null,
     splashFactory: isDesktop ? NoSplash.splashFactory : null,
@@ -549,17 +569,19 @@ closeConnection({String? id}) {
   }
 }
 
-void window_on_top(int? id) async {
+void windowOnTop(int? id) async {
   if (!isDesktop) {
     return;
   }
+  print("Bring window '$id' on top");
   if (id == null) {
-    print("Bring window on top");
     // main window
-    windowManager.restore();
-    windowManager.show();
-    windowManager.focus();
-    rustDeskWinManager.registerActiveWindow(kWindowMainId);
+    if (stateGlobal.isMinimized) {
+      await windowManager.restore();
+    }
+    await windowManager.show();
+    await windowManager.focus();
+    await rustDeskWinManager.registerActiveWindow(kWindowMainId);
   } else {
     WindowController.fromWindowId(id)
       ..focus()
@@ -606,6 +628,7 @@ class OverlayDialogManager {
   int _tagCount = 0;
 
   OverlayEntry? _mobileActionsOverlayEntry;
+  RxBool mobileActionsOverlayVisible = false.obs;
 
   void setOverlayState(OverlayKeyState overlayKeyState) {
     _overlayKeyState = overlayKeyState;
@@ -689,9 +712,12 @@ class OverlayDialogManager {
   String showLoading(String text,
       {bool clickMaskDismiss = false,
       bool showCancel = true,
-      VoidCallback? onCancel}) {
-    final tag = _tagCount.toString();
-    _tagCount++;
+      VoidCallback? onCancel,
+      String? tag}) {
+    if (tag == null) {
+      tag = _tagCount.toString();
+      _tagCount++;
+    }
     show((setState, close, context) {
       cancel() {
         dismissAll();
@@ -769,12 +795,14 @@ class OverlayDialogManager {
     });
     overlayState.insert(overlay);
     _mobileActionsOverlayEntry = overlay;
+    mobileActionsOverlayVisible.value = true;
   }
 
   void hideMobileActionsOverlay() {
     if (_mobileActionsOverlayEntry != null) {
       _mobileActionsOverlayEntry!.remove();
       _mobileActionsOverlayEntry = null;
+      mobileActionsOverlayVisible.value = false;
       return;
     }
   }
@@ -1066,6 +1094,45 @@ Color str2color(String str, [alpha = 0xFF]) {
   return Color((hash & 0xFF7FFF) | (alpha << 24));
 }
 
+Color str2color2(String str, {List<int> existing = const []}) {
+  Map<String, Color> colorMap = {
+    "red": Colors.red,
+    "green": Colors.green,
+    "blue": Colors.blue,
+    "orange": Colors.orange,
+    "purple": Colors.purple,
+    "grey": Colors.grey,
+    "cyan": Colors.cyan,
+    "lime": Colors.lime,
+    "teal": Colors.teal,
+    "pink": Colors.pink[200]!,
+    "indigo": Colors.indigo,
+    "brown": Colors.brown,
+  };
+  final color = colorMap[str.toLowerCase()];
+  if (color != null) {
+    return color.withAlpha(0xFF);
+  }
+  if (str.toLowerCase() == 'yellow') {
+    return Colors.yellow.withAlpha(0xFF);
+  }
+  var hash = 0;
+  for (var i = 0; i < str.length; i++) {
+    hash += str.codeUnitAt(i);
+  }
+  List<Color> colorList = colorMap.values.toList();
+  hash = hash % colorList.length;
+  var result = colorList[hash].withAlpha(0xFF);
+  if (existing.contains(result.value)) {
+    Color? notUsed =
+        colorList.firstWhereOrNull((e) => !existing.contains(e.value));
+    if (notUsed != null) {
+      result = notUsed;
+    }
+  }
+  return result;
+}
+
 const K = 1024;
 const M = K * K;
 const G = M * K;
@@ -1222,7 +1289,7 @@ FFI get gFFI => _globalFFI;
 
 Future<void> initGlobalFFI() async {
   debugPrint("_globalFFI init");
-  _globalFFI = FFI();
+  _globalFFI = FFI(null);
   debugPrint("_globalFFI init end");
   // after `put`, can also be globally found by Get.find<FFI>();
   Get.put(_globalFFI, permanent: true);
@@ -1243,7 +1310,7 @@ bool option2bool(String option, String value) {
       option == "stop-service" ||
       option == "direct-server" ||
       option == "stop-rendezvous-service" ||
-      option == "force-always-relay") {
+      option == kOptionForceAlwaysRelay) {
     res = value == "Y";
   } else {
     assert(false);
@@ -1260,7 +1327,7 @@ String bool2option(String option, bool b) {
       option == "stop-service" ||
       option == "direct-server" ||
       option == "stop-rendezvous-service" ||
-      option == "force-always-relay") {
+      option == kOptionForceAlwaysRelay) {
     res = b ? 'Y' : '';
   } else {
     assert(false);
@@ -1291,6 +1358,14 @@ bool mainGetLocalBoolOptionSync(String key) {
   return option2bool(key, bind.mainGetLocalOption(key: key));
 }
 
+bool mainGetPeerBoolOptionSync(String id, String key) {
+  return option2bool(key, bind.mainGetPeerOptionSync(id: id, key: key));
+}
+
+mainSetPeerBoolOptionSync(String id, String key, bool v) {
+  bind.mainSetPeerOptionSync(id: id, key: key, value: bool2option(key, v));
+}
+
 Future<bool> matchPeer(String searchText, Peer peer) async {
   if (searchText.isEmpty) {
     return true;
@@ -1302,7 +1377,7 @@ Future<bool> matchPeer(String searchText, Peer peer) async {
       peer.username.toLowerCase().contains(searchText)) {
     return true;
   }
-  final alias = await bind.mainGetPeerOption(id: peer.id, key: 'alias');
+  final alias = peer.alias;
   if (alias.isEmpty) {
     return false;
   }
@@ -1331,9 +1406,10 @@ class LastWindowPosition {
   double? offsetWidth;
   double? offsetHeight;
   bool? isMaximized;
+  bool? isFullscreen;
 
   LastWindowPosition(this.width, this.height, this.offsetWidth,
-      this.offsetHeight, this.isMaximized);
+      this.offsetHeight, this.isMaximized, this.isFullscreen);
 
   Map<String, dynamic> toJson() {
     return <String, dynamic>{
@@ -1342,6 +1418,7 @@ class LastWindowPosition {
       "offsetWidth": offsetWidth,
       "offsetHeight": offsetHeight,
       "isMaximized": isMaximized,
+      "isFullscreen": isFullscreen,
     };
   }
 
@@ -1357,7 +1434,7 @@ class LastWindowPosition {
     try {
       final m = jsonDecode(content);
       return LastWindowPosition(m["width"], m["height"], m["offsetWidth"],
-          m["offsetHeight"], m["isMaximized"]);
+          m["offsetHeight"], m["isMaximized"], m["isFullscreen"]);
     } catch (e) {
       debugPrintStack(
           label:
@@ -1378,14 +1455,28 @@ Future<void> saveWindowPosition(WindowType type, {int? windowId}) async {
   late Offset position;
   late Size sz;
   late bool isMaximized;
+  bool isFullscreen = stateGlobal.fullscreen ||
+      (Platform.isMacOS && stateGlobal.closeOnFullscreen);
+  setFrameIfMaximized() {
+    if (isMaximized) {
+      final pos = bind.getLocalFlutterOption(k: kWindowPrefix + type.name);
+      var lpos = LastWindowPosition.loadFromString(pos);
+      position = Offset(
+          lpos?.offsetWidth ?? position.dx, lpos?.offsetHeight ?? position.dy);
+      sz = Size(lpos?.width ?? sz.width, lpos?.height ?? sz.height);
+    }
+  }
+
   switch (type) {
     case WindowType.Main:
+      isMaximized = await windowManager.isMaximized();
       position = await windowManager.getPosition();
       sz = await windowManager.getSize();
-      isMaximized = await windowManager.isMaximized();
+      setFrameIfMaximized();
       break;
     default:
       final wc = WindowController.fromWindowId(windowId!);
+      isMaximized = await wc.isMaximized();
       final Rect frame;
       try {
         frame = await wc.getFrame();
@@ -1395,7 +1486,7 @@ Future<void> saveWindowPosition(WindowType type, {int? windowId}) async {
       }
       position = frame.topLeft;
       sz = frame.size;
-      isMaximized = await wc.isMaximized();
+      setFrameIfMaximized();
       break;
   }
   if (Platform.isWindows) {
@@ -1411,11 +1502,49 @@ Future<void> saveWindowPosition(WindowType type, {int? windowId}) async {
   }
 
   final pos = LastWindowPosition(
-      sz.width, sz.height, position.dx, position.dy, isMaximized);
+      sz.width, sz.height, position.dx, position.dy, isMaximized, isFullscreen);
   debugPrint(
-      "Saving frame: $windowId: ${pos.width}/${pos.height}, offset:${pos.offsetWidth}/${pos.offsetHeight}");
-  await bind.setLocalFlutterConfig(
+      "Saving frame: $windowId: ${pos.width}/${pos.height}, offset:${pos.offsetWidth}/${pos.offsetHeight}, isMaximized:${pos.isMaximized}, isFullscreen:${pos.isFullscreen}");
+
+  await bind.setLocalFlutterOption(
       k: kWindowPrefix + type.name, v: pos.toString());
+
+  if (type == WindowType.RemoteDesktop && windowId != null) {
+    await _saveSessionWindowPosition(
+        type, windowId, isMaximized, isFullscreen, pos);
+  }
+}
+
+Future _saveSessionWindowPosition(WindowType windowType, int windowId,
+    bool isMaximized, bool isFullscreen, LastWindowPosition pos) async {
+  final remoteList = await DesktopMultiWindow.invokeMethod(
+      windowId, kWindowEventGetRemoteList, null);
+  getPeerPos(String peerId) {
+    if (isMaximized) {
+      final peerPos = bind.mainGetPeerFlutterOptionSync(
+          id: peerId, k: kWindowPrefix + windowType.name);
+      var lpos = LastWindowPosition.loadFromString(peerPos);
+      return LastWindowPosition(
+              lpos?.width ?? pos.offsetWidth,
+              lpos?.height ?? pos.offsetHeight,
+              lpos?.offsetWidth ?? pos.offsetWidth,
+              lpos?.offsetHeight ?? pos.offsetHeight,
+              isMaximized,
+              isFullscreen)
+          .toString();
+    } else {
+      return pos.toString();
+    }
+  }
+
+  if (remoteList != null) {
+    for (final peerId in remoteList.split(',')) {
+      bind.mainSetPeerFlutterOptionSync(
+          id: peerId,
+          k: kWindowPrefix + windowType.name,
+          v: getPeerPos(peerId));
+    }
+  }
 }
 
 Future<Size> _adjustRestoreMainWindowSize(double? width, double? height) async {
@@ -1496,7 +1625,7 @@ Future<Offset?> _adjustRestoreMainWindowOffset(
   if ((left + minWidth) > frameRight! ||
       (top + minWidth) > frameBottom! ||
       (left + width - minWidth) < frameLeft ||
-      (top - minWidth) < frameTop!) {
+      top < frameTop!) {
     return null;
   } else {
     return Offset(left, top);
@@ -1505,7 +1634,8 @@ Future<Offset?> _adjustRestoreMainWindowOffset(
 
 /// Restore window position and size on start
 /// Note that windowId must be provided if it's subwindow
-Future<bool> restoreWindowPosition(WindowType type, {int? windowId}) async {
+Future<bool> restoreWindowPosition(WindowType type,
+    {int? windowId, String? peerId}) async {
   if (bind
       .mainGetEnv(key: "DISABLE_RUSTDESK_RESTORE_WINDOW_POSITION")
       .isNotEmpty) {
@@ -1514,50 +1644,74 @@ Future<bool> restoreWindowPosition(WindowType type, {int? windowId}) async {
   if (type != WindowType.Main && windowId == null) {
     debugPrint(
         "Error: windowId cannot be null when saving positions for sub window");
+    return false;
   }
-  final pos = bind.getLocalFlutterConfig(k: kWindowPrefix + type.name);
+
+  bool isRemotePeerPos = false;
+  String? pos;
+  // No need to check mainGetLocalBoolOptionSync(kOptionOpenNewConnInTabs)
+  // Though "open in tabs" is true and the new window restore peer position, it's ok.
+  if (type == WindowType.RemoteDesktop && windowId != null && peerId != null) {
+    // If the restore position is called by main window, and the peer id is not null
+    // then we may need to get the position by reading the peer config.
+    // Because the session may not be read at this time.
+    if (desktopType == DesktopType.main) {
+      pos = bind.mainGetPeerFlutterOptionSync(
+          id: peerId, k: kWindowPrefix + type.name);
+    } else {
+      pos = await bind.sessionGetFlutterOptionByPeerId(
+          id: peerId, k: kWindowPrefix + type.name);
+    }
+    isRemotePeerPos = pos != null;
+  }
+  pos ??= bind.getLocalFlutterOption(k: kWindowPrefix + type.name);
+
   var lpos = LastWindowPosition.loadFromString(pos);
   if (lpos == null) {
     debugPrint("no window position saved, ignoring position restoration");
     return false;
   }
+  if (type == WindowType.RemoteDesktop &&
+      !isRemotePeerPos &&
+      windowId != null) {
+    if (lpos.offsetWidth != null) {
+      lpos.offsetWidth = lpos.offsetWidth! + windowId * 20;
+    }
+    if (lpos.offsetHeight != null) {
+      lpos.offsetHeight = lpos.offsetHeight! + windowId * 20;
+    }
+  }
+
+  final size = await _adjustRestoreMainWindowSize(lpos.width, lpos.height);
+  final offset = await _adjustRestoreMainWindowOffset(
+    lpos.offsetWidth,
+    lpos.offsetHeight,
+    size.width,
+    size.height,
+  );
+  debugPrint(
+      "restore lpos: ${size.width}/${size.height}, offset:${offset?.dx}/${offset?.dy}");
 
   switch (type) {
     case WindowType.Main:
-      if (lpos.isMaximized == true) {
-        await windowManager.maximize();
-      } else {
-        final size =
-            await _adjustRestoreMainWindowSize(lpos.width, lpos.height);
-        final offset = await _adjustRestoreMainWindowOffset(
-          lpos.offsetWidth,
-          lpos.offsetHeight,
-          size.width,
-          size.height,
-        );
-        await windowManager.setSize(size);
+      restorePos() async {
         if (offset == null) {
           await windowManager.center();
         } else {
           await windowManager.setPosition(offset);
         }
       }
+      if (lpos.isMaximized == true) {
+        await restorePos();
+        await windowManager.maximize();
+      } else {
+        await windowManager.setSize(size);
+        await restorePos();
+      }
       return true;
     default:
       final wc = WindowController.fromWindowId(windowId!);
-      if (lpos.isMaximized == true) {
-        await wc.maximize();
-      } else {
-        final size =
-            await _adjustRestoreMainWindowSize(lpos.width, lpos.height);
-        final offset = await _adjustRestoreMainWindowOffset(
-          lpos.offsetWidth,
-          lpos.offsetHeight,
-          size.width,
-          size.height,
-        );
-        debugPrint(
-            "restore lpos: ${size.width}/${size.height}, offset:${offset?.dx}/${offset?.dy}");
+      restoreFrame() async {
         if (offset == null) {
           await wc.center();
         } else {
@@ -1565,6 +1719,21 @@ Future<bool> restoreWindowPosition(WindowType type, {int? windowId}) async {
               Rect.fromLTWH(offset.dx, offset.dy, size.width, size.height);
           await wc.setFrame(frame);
         }
+      }
+      if (lpos.isFullscreen == true) {
+        await restoreFrame();
+        // An duration is needed to avoid the window being restored after fullscreen.
+        Future.delayed(Duration(milliseconds: 300), () async {
+          stateGlobal.setFullscreen(true);
+        });
+      } else if (lpos.isMaximized == true) {
+        await restoreFrame();
+        // An duration is needed to avoid the window being restored after maximized.
+        Future.delayed(Duration(milliseconds: 300), () async {
+          await wc.maximize();
+        });
+      } else {
+        await restoreFrame();
       }
       break;
   }
@@ -1604,7 +1773,7 @@ StreamSubscription? listenUniLinks({handleByFlutter = true}) {
   }
 
   final sub = uriLinkStream.listen((Uri? uri) {
-    debugPrint("A uri was received: $uri.");
+    debugPrint("A uri was received: $uri. handleByFlutter $handleByFlutter");
     if (uri != null) {
       if (handleByFlutter) {
         handleUriLink(uri: uri);
@@ -1647,7 +1816,14 @@ bool handleUriLink({List<String>? cmdArgs, Uri? uri, String? uriString}) {
       args = urlLinkToCmdArgs(uri);
     }
   }
-  if (args == null) return false;
+  if (args == null) {
+    return false;
+  }
+
+  if (args.isEmpty) {
+    windowOnTop(null);
+    return true;
+  }
 
   UriLinkType? type;
   String? id;
@@ -1698,7 +1874,7 @@ bool handleUriLink({List<String>? cmdArgs, Uri? uri, String? uriString}) {
         Future.delayed(Duration.zero, () {
           rustDeskWinManager.newRemoteDesktop(id!,
               password: password,
-              switch_uuid: switchUuid,
+              switchUuid: switchUuid,
               forceRelay: forceRelay);
         });
         break;
@@ -1731,7 +1907,10 @@ bool handleUriLink({List<String>? cmdArgs, Uri? uri, String? uriString}) {
 List<String>? urlLinkToCmdArgs(Uri uri) {
   String? command;
   String? id;
-  if (uri.authority == "connection" && uri.path.startsWith("/new/")) {
+  if (uri.authority.isEmpty &&
+      uri.path.split('').every((char) => char == '/')) {
+    return [];
+  } else if (uri.authority == "connection" && uri.path.startsWith("/new/")) {
     // For compatibility
     command = '--connect';
     id = uri.path.substring("/new/".length);
@@ -1763,11 +1942,13 @@ List<String>? urlLinkToCmdArgs(Uri uri) {
   return null;
 }
 
-connectMainDesktop(String id,
-    {required bool isFileTransfer,
-    required bool isTcpTunneling,
-    required bool isRDP,
-    bool? forceRelay}) async {
+connectMainDesktop(
+  String id, {
+  required bool isFileTransfer,
+  required bool isTcpTunneling,
+  required bool isRDP,
+  bool? forceRelay,
+}) async {
   if (isFileTransfer) {
     await rustDeskWinManager.newFileTransfer(id, forceRelay: forceRelay);
   } else if (isTcpTunneling || isRDP) {
@@ -1781,11 +1962,22 @@ connectMainDesktop(String id,
 /// If [isFileTransfer], starts a session only for file transfer.
 /// If [isTcpTunneling], starts a session only for tcp tunneling.
 /// If [isRDP], starts a session only for rdp.
-connect(BuildContext context, String id,
-    {bool isFileTransfer = false,
-    bool isTcpTunneling = false,
-    bool isRDP = false}) async {
+connect(
+  BuildContext context,
+  String id, {
+  bool isFileTransfer = false,
+  bool isTcpTunneling = false,
+  bool isRDP = false,
+}) async {
   if (id == '') return;
+  if (!isDesktop || desktopType == DesktopType.main) {
+    try {
+      if (Get.isRegistered<IDTextEditingController>()) {
+        final idController = Get.find<IDTextEditingController>();
+        idController.text = formatID(id);
+      }
+    } catch (_) {}
+  }
   id = id.replaceAll(' ', '');
   final oldId = id;
   id = await bind.mainHandleRelayId(id: id);
@@ -1795,18 +1987,20 @@ connect(BuildContext context, String id,
 
   if (isDesktop) {
     if (desktopType == DesktopType.main) {
-      await connectMainDesktop(id,
-          isFileTransfer: isFileTransfer,
-          isTcpTunneling: isTcpTunneling,
-          isRDP: isRDP,
-          forceRelay: forceRelay);
+      await connectMainDesktop(
+        id,
+        isFileTransfer: isFileTransfer,
+        isTcpTunneling: isTcpTunneling,
+        isRDP: isRDP,
+        forceRelay: forceRelay,
+      );
     } else {
       await rustDeskWinManager.call(WindowType.Main, kWindowConnect, {
         'id': id,
         'isFileTransfer': isFileTransfer,
         'isTcpTunneling': isTcpTunneling,
         'isRDP': isRDP,
-        "forceRelay": forceRelay,
+        'forceRelay': forceRelay,
       });
     }
   } else {
@@ -2202,10 +2396,18 @@ void onCopyFingerprint(String value) {
   }
 }
 
+Future<bool> callMainCheckSuperUserPermission() async {
+  bool checked = await bind.mainCheckSuperUserPermission();
+  if (Platform.isMacOS) {
+    await windowManager.show();
+  }
+  return checked;
+}
+
 Future<void> start_service(bool is_start) async {
   bool checked = !bind.mainIsInstalled() ||
       !Platform.isMacOS ||
-      await bind.mainCheckSuperUserPermission();
+      await callMainCheckSuperUserPermission();
   if (checked) {
     bind.mainSetOption(key: "stop-service", value: is_start ? "" : "Y");
   }
@@ -2270,4 +2472,11 @@ Widget unreadTopRightBuilder(RxInt? count, {Widget? icon}) {
           child: unreadMessageCountBuilder(count, size: 12, fontSize: 8))
     ],
   );
+}
+
+String toCapitalized(String s) {
+  if (s.isEmpty) {
+    return s;
+  }
+  return s.substring(0, 1).toUpperCase() + s.substring(1);
 }
