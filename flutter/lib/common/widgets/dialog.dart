@@ -1,14 +1,15 @@
 import 'dart:async';
 
-import 'package:debounce_throttle/debounce_throttle.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_hbb/common/shared_state.dart';
+import 'package:flutter_hbb/common/widgets/setting_widgets.dart';
 import 'package:get/get.dart';
 
 import '../../common.dart';
 import '../../models/model.dart';
 import '../../models/platform_model.dart';
+import 'address_book.dart';
 
 void clientClose(SessionID sessionId, OverlayDialogManager dialogManager) {
   msgBox(sessionId, 'info', 'Close', 'Are you sure to close the connection?',
@@ -155,8 +156,8 @@ void changeIdDialog() {
                     }).toList(),
                   )).marginOnly(bottom: 8)
               : SizedBox.shrink(),
-          Offstage(
-              offstage: !isInProgress, child: const LinearProgressIndicator())
+          // NOT use Offstage to wrap LinearProgressIndicator
+          if (isInProgress) const LinearProgressIndicator(),
         ],
       ),
       actions: [
@@ -201,8 +202,8 @@ void changeWhiteList({Function()? callback}) async {
           const SizedBox(
             height: 4.0,
           ),
-          Offstage(
-              offstage: !isInProgress, child: const LinearProgressIndicator())
+          // NOT use Offstage to wrap LinearProgressIndicator
+          if (isInProgress) const LinearProgressIndicator(),
         ],
       ),
       actions: [
@@ -292,6 +293,53 @@ Future<String> changeDirectAccessPort(
         dialogButton("OK", onPressed: () async {
           await bind.mainSetOption(
               key: 'direct-access-port', value: controller.text);
+          close();
+        }),
+      ],
+      onCancel: close,
+    );
+  });
+  return controller.text;
+}
+
+Future<String> changeAutoDisconnectTimeout(String old) async {
+  final controller = TextEditingController(text: old);
+  await gFFI.dialogManager.show((setState, close, context) {
+    return CustomAlertDialog(
+      title: Text(translate("Timeout in minutes")),
+      content: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(height: 8.0),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                    maxLines: null,
+                    keyboardType: TextInputType.number,
+                    decoration: InputDecoration(
+                        hintText: '10',
+                        isCollapsed: true,
+                        suffix: IconButton(
+                            padding: EdgeInsets.zero,
+                            icon: const Icon(Icons.clear, size: 16),
+                            onPressed: () => controller.clear())),
+                    inputFormatters: [
+                      FilteringTextInputFormatter.allow(RegExp(
+                          r'^([0-9]|[1-9]\d|[1-9]\d{2}|[1-9]\d{3}|[1-5]\d{4}|6[0-4]\d{3}|65[0-4]\d{2}|655[0-2]\d|6553[0-5])$')),
+                    ],
+                    controller: controller,
+                    autofocus: true),
+              ),
+            ],
+          ),
+        ],
+      ),
+      actions: [
+        dialogButton("Cancel", onPressed: close, isOutline: true),
+        dialogButton("OK", onPressed: () async {
+          await bind.mainSetOption(
+              key: 'auto-disconnect-timeout', value: controller.text);
           close();
         }),
       ],
@@ -811,6 +859,8 @@ void showRequestElevationDialog(
       } else {
         bind.sessionElevateDirect(sessionId: sessionId);
       }
+      close();
+      showWaitUacDialog(sessionId, dialogManager, "wait-uac");
     }
 
     return CustomAlertDialog(
@@ -947,7 +997,9 @@ showSetOSPassword(
   Function()? closeCallback,
 ) async {
   final controller = TextEditingController();
-  osPassword ??= await bind.sessionGetOption(sessionId: sessionId, arg: 'os-password') ?? '';
+  osPassword ??=
+      await bind.sessionGetOption(sessionId: sessionId, arg: 'os-password') ??
+          '';
   var autoLogin =
       await bind.sessionGetOption(sessionId: sessionId, arg: 'auto-login') !=
           '';
@@ -957,6 +1009,7 @@ showSetOSPassword(
       close();
       if (closeCallback != null) closeCallback();
     }
+
     submit() {
       var text = controller.text.trim();
       bind.sessionPeerOption(
@@ -1219,50 +1272,9 @@ customImageQualityDialog(SessionID sessionId, String id, FFI ffi) async {
   final quality = await bind.sessionGetCustomImageQuality(sessionId: sessionId);
   qualityInitValue =
       quality != null && quality.isNotEmpty ? quality[0].toDouble() : 50.0;
-  const qualityMinValue = 10.0;
-  const qualityMaxValue = 100.0;
-  if (qualityInitValue < qualityMinValue) {
-    qualityInitValue = qualityMinValue;
+  if (qualityInitValue < 10 || qualityInitValue > 2000) {
+    qualityInitValue = 50;
   }
-  if (qualityInitValue > qualityMaxValue) {
-    qualityInitValue = qualityMaxValue;
-  }
-  final RxDouble qualitySliderValue = RxDouble(qualityInitValue);
-  final debouncerQuality = Debouncer<double>(
-    Duration(milliseconds: 1000),
-    onChanged: (double v) {
-      setCustomValues(quality: v);
-    },
-    initialValue: qualityInitValue,
-  );
-  final qualitySlider = Obx(() => Row(
-        children: [
-          Expanded(
-              flex: 3,
-              child: Slider(
-                value: qualitySliderValue.value,
-                min: qualityMinValue,
-                max: qualityMaxValue,
-                divisions: 18,
-                onChanged: (double value) {
-                  qualitySliderValue.value = value;
-                  debouncerQuality.value = value;
-                },
-              )),
-          Expanded(
-              flex: 1,
-              child: Text(
-                '${qualitySliderValue.value.round()}%',
-                style: const TextStyle(fontSize: 15),
-              )),
-          Expanded(
-              flex: 2,
-              child: Text(
-                translate('Bitrate'),
-                style: const TextStyle(fontSize: 15),
-              )),
-        ],
-      ));
   // fps
   final fpsOption =
       await bind.sessionGetOption(sessionId: sessionId, arg: 'custom-fps');
@@ -1270,54 +1282,187 @@ customImageQualityDialog(SessionID sessionId, String id, FFI ffi) async {
   if (fpsInitValue < 5 || fpsInitValue > 120) {
     fpsInitValue = 30;
   }
-  final RxDouble fpsSliderValue = RxDouble(fpsInitValue);
-  final debouncerFps = Debouncer<double>(
-    Duration(milliseconds: 1000),
-    onChanged: (double v) {
-      setCustomValues(fps: v);
-    },
-    initialValue: qualityInitValue,
-  );
   bool? direct;
   try {
     direct =
         ConnectionTypeState.find(id).direct.value == ConnectionType.strDirect;
   } catch (_) {}
-  final fpsSlider = Offstage(
-    offstage: (await bind.mainIsUsingPublicServer() && direct != true) ||
-        version_cmp(ffi.ffiModel.pi.version, '1.2.0') < 0,
-    child: Row(
-      children: [
-        Expanded(
-            flex: 3,
-            child: Obx((() => Slider(
-                  value: fpsSliderValue.value,
-                  min: 5,
-                  max: 120,
-                  divisions: 23,
-                  onChanged: (double value) {
-                    fpsSliderValue.value = value;
-                    debouncerFps.value = value;
-                  },
-                )))),
-        Expanded(
-            flex: 1,
-            child: Obx(() => Text(
-                  '${fpsSliderValue.value.round()}',
-                  style: const TextStyle(fontSize: 15),
-                ))),
-        Expanded(
-            flex: 2,
-            child: Text(
-              translate('FPS'),
-              style: const TextStyle(fontSize: 15),
-            ))
-      ],
-    ),
-  );
+  bool notShowFps = (await bind.mainIsUsingPublicServer() && direct != true) ||
+      version_cmp(ffi.ffiModel.pi.version, '1.2.0') < 0;
 
-  final content = Column(
-    children: [qualitySlider, fpsSlider],
-  );
+  final content = customImageQualityWidget(
+      initQuality: qualityInitValue,
+      initFps: fpsInitValue,
+      setQuality: (v) => setCustomValues(quality: v),
+      setFps: (v) => setCustomValues(fps: v),
+      showFps: !notShowFps);
   msgBoxCommon(ffi.dialogManager, 'Custom Image Quality', content, [btnClose]);
+}
+
+void deletePeerConfirmDialog(Function onSubmit, String title) async {
+  gFFI.dialogManager.show(
+    (setState, close, context) {
+      submit() async {
+        await onSubmit();
+        close();
+      }
+
+      return CustomAlertDialog(
+        title: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.delete_rounded,
+              color: Colors.red,
+            ),
+            Expanded(
+              child: Text(title, overflow: TextOverflow.ellipsis).paddingOnly(
+                left: 10,
+              ),
+            ),
+          ],
+        ),
+        content: SizedBox.shrink(),
+        actions: [
+          dialogButton(
+            "Cancel",
+            icon: Icon(Icons.close_rounded),
+            onPressed: close,
+            isOutline: true,
+          ),
+          dialogButton(
+            "OK",
+            icon: Icon(Icons.done_rounded),
+            onPressed: submit,
+          ),
+        ],
+        onSubmit: submit,
+        onCancel: close,
+      );
+    },
+  );
+}
+
+void editAbTagDialog(
+    List<dynamic> currentTags, Function(List<dynamic>) onSubmit) {
+  var isInProgress = false;
+
+  final tags = List.of(gFFI.abModel.tags);
+  var selectedTag = currentTags.obs;
+
+  gFFI.dialogManager.show((setState, close, context) {
+    submit() async {
+      setState(() {
+        isInProgress = true;
+      });
+      await onSubmit(selectedTag);
+      close();
+    }
+
+    return CustomAlertDialog(
+      title: Text(translate("Edit Tag")),
+      content: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 8.0),
+            child: Wrap(
+              children: tags
+                  .map((e) => AddressBookTag(
+                      name: e,
+                      tags: selectedTag,
+                      onTap: () {
+                        if (selectedTag.contains(e)) {
+                          selectedTag.remove(e);
+                        } else {
+                          selectedTag.add(e);
+                        }
+                      },
+                      showActionMenu: false))
+                  .toList(growable: false),
+            ),
+          ),
+          // NOT use Offstage to wrap LinearProgressIndicator
+          if (isInProgress) const LinearProgressIndicator(),
+        ],
+      ),
+      actions: [
+        dialogButton("Cancel", onPressed: close, isOutline: true),
+        dialogButton("OK", onPressed: submit),
+      ],
+      onSubmit: submit,
+      onCancel: close,
+    );
+  });
+}
+
+void renameDialog(
+    {required String oldName,
+    FormFieldValidator<String>? validator,
+    required ValueChanged<String> onSubmit,
+    Function? onCancel}) async {
+  RxBool isInProgress = false.obs;
+  var controller = TextEditingController(text: oldName);
+  final formKey = GlobalKey<FormState>();
+  gFFI.dialogManager.show((setState, close, context) {
+    submit() async {
+      String text = controller.text.trim();
+      if (validator != null && formKey.currentState?.validate() == false) {
+        return;
+      }
+      isInProgress.value = true;
+      onSubmit(text);
+      close();
+      isInProgress.value = false;
+    }
+
+    cancel() {
+      onCancel?.call();
+      close();
+    }
+
+    return CustomAlertDialog(
+      title: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.edit_rounded, color: MyTheme.accent),
+          Text(translate('Rename')).paddingOnly(left: 10),
+        ],
+      ),
+      content: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            child: Form(
+              key: formKey,
+              child: TextFormField(
+                controller: controller,
+                autofocus: true,
+                decoration: InputDecoration(labelText: translate('Name')),
+                validator: validator,
+              ),
+            ),
+          ),
+          // NOT use Offstage to wrap LinearProgressIndicator
+          Obx(() =>
+              isInProgress.value ? const LinearProgressIndicator() : Offstage())
+        ],
+      ),
+      actions: [
+        dialogButton(
+          "Cancel",
+          icon: Icon(Icons.close_rounded),
+          onPressed: cancel,
+          isOutline: true,
+        ),
+        dialogButton(
+          "OK",
+          icon: Icon(Icons.done_rounded),
+          onPressed: submit,
+        ),
+      ],
+      onSubmit: submit,
+      onCancel: cancel,
+    );
+  });
 }

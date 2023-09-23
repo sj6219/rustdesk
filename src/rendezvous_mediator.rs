@@ -73,12 +73,15 @@ impl RendezvousMediator {
                 allow_err!(super::lan::start_listening());
             });
         }
+        // It is ok to run xdesktop manager when the headless function is not allowed.
         #[cfg(all(target_os = "linux", feature = "linux_headless"))]
         #[cfg(not(any(feature = "flatpak", feature = "appimage")))]
         crate::platform::linux_desktop_manager::start_xdesktop();
         loop {
             Config::reset_online();
-            if Config::get_option("stop-service").is_empty() {
+            if Config::get_option("stop-service").is_empty()
+                && !crate::platform::installing_service()
+            {
                 if !nat_tested {
                     crate::test_nat_type();
                     nat_tested = true;

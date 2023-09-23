@@ -68,7 +68,6 @@ struct IpcTaskRunner<T: InvokeUiCM> {
     rx: mpsc::UnboundedReceiver<Data>,
     close: bool,
     running: bool,
-    authorized: bool,
     conn_id: i32,
     #[cfg(windows)]
     file_transfer_enabled: bool,
@@ -100,6 +99,8 @@ pub trait InvokeUiCM: Send + Clone + 'static + Sized {
     fn show_elevation(&self, show: bool);
 
     fn update_voice_call_state(&self, client: &Client);
+
+    fn file_transfer_log(&self, log: String);
 }
 
 impl<T: InvokeUiCM> Deref for ConnectionManager<T> {
@@ -162,6 +163,16 @@ impl<T: InvokeUiCM> ConnectionManager<T> {
         self.ui_handler.add_connection(&client);
     }
 
+    #[inline]
+    fn is_authorized(&self, id: i32) -> bool {
+        CLIENTS
+            .read()
+            .unwrap()
+            .get(&id)
+            .map(|c| c.authorized)
+            .unwrap_or(false)
+    }
+
     fn remove_connection(&self, id: i32, close: bool) {
         if close {
             CLIENTS.write().unwrap().remove(&id);
@@ -175,7 +186,7 @@ impl<T: InvokeUiCM> ConnectionManager<T> {
 
         #[cfg(windows)]
         {
-            ContextSend::proc(|context: &mut Box<CliprdrClientContext>| -> u32 {
+            ContextSend::proc(|context: &mut CliprdrClientContext| -> u32 {
                 empty_clipboard(context, id);
                 0
             });
@@ -316,13 +327,15 @@ impl<T: InvokeUiCM> IpcTaskRunner<T> {
 
         // for tmp use, without real conn id
         let mut write_jobs: Vec<fs::TransferJob> = Vec::new();
+        #[cfg(windows)]
+        let is_authorized = self.cm.is_authorized(self.conn_id);
 
         #[cfg(windows)]
         let rx_clip1;
         let mut rx_clip;
         let _tx_clip;
         #[cfg(windows)]
-        if self.conn_id > 0 && self.authorized {
+        if is_authorized {
             rx_clip1 = clipboard::get_rx_cliprdr_server(self.conn_id);
             rx_clip = rx_clip1.lock().await;
         } else {
@@ -346,6 +359,7 @@ impl<T: InvokeUiCM> IpcTaskRunner<T> {
                 );
             }
         }
+        let (tx_log, mut rx_log) = mpsc::unbounded_channel::<String>();
 
         self.running = false;
         loop {
@@ -361,7 +375,6 @@ impl<T: InvokeUiCM> IpcTaskRunner<T> {
                                 Data::Login{id, is_file_transfer, port_forward, peer_id, name, authorized, keyboard, clipboard, audio, file, file_transfer_enabled: _file_transfer_enabled, restart, recording, from_switch} => {
                                     log::debug!("conn_id: {}", id);
                                     self.cm.add_connection(id, is_file_transfer, port_forward, peer_id, name, authorized, keyboard, clipboard, audio, file, restart, recording, from_switch,self.tx.clone());
-                                    self.authorized = authorized;
                                     self.conn_id = id;
                                     #[cfg(windows)]
                                     {
@@ -393,11 +406,16 @@ impl<T: InvokeUiCM> IpcTaskRunner<T> {
                                     if let ipc::FS::WriteBlock { id, file_num, data: _, compressed } = fs {
                                         if let Ok(bytes) = self.stream.next_raw().await {
                                             fs = ipc::FS::WriteBlock{id, file_num, data:bytes.into(), compressed};
-                                            handle_fs(fs, &mut write_jobs, &self.tx).await;
+                                            handle_fs(fs, &mut write_jobs, &self.tx, Some(&tx_log)).await;
                                         }
                                     } else {
-                                        handle_fs(fs, &mut write_jobs, &self.tx).await;
+                                        handle_fs(fs, &mut write_jobs, &self.tx, Some(&tx_log)).await;
                                     }
+                                    let log = fs::serialize_transfer_jobs(&write_jobs);
+                                    self.cm.ui_handler.file_transfer_log(log);
+                                }
+                                Data::FileTransferLog(log) => {
+                                    self.cm.ui_handler.file_transfer_log(log);
                                 }
                                 #[cfg(not(any(target_os = "android", target_os = "ios")))]
                                 Data::ClipboardFile(_clip) => {
@@ -413,8 +431,12 @@ impl<T: InvokeUiCM> IpcTaskRunner<T> {
                                         if stop {
                                             ContextSend::set_is_stopped();
                                         } else {
+                                            if !is_authorized {
+                                                log::debug!("Clipboard message from client peer, but not authorized");
+                                                continue;
+                                            }
                                             let conn_id = self.conn_id;
-                                            ContextSend::proc(|context: &mut Box<CliprdrClientContext>| -> u32 {
+                                            ContextSend::proc(|context: &mut CliprdrClientContext| -> u32 {
                                                 clipboard::server_clip_file(context, conn_id, _clip)
                                             });
                                         }
@@ -454,16 +476,24 @@ impl<T: InvokeUiCM> IpcTaskRunner<T> {
                     }
                 }
                 Some(data) = self.rx.recv() => {
-                    if let Data::SwitchPermission{name: _name, enabled: _enabled} = &data {
-                        #[cfg(windows)]
-                        if _name == "file" {
-                            self.file_transfer_enabled = *_enabled;
-                        }
-                    }
                     if self.stream.send(&data).await.is_err() {
                         break;
                     }
-                }
+                    match &data {
+                        Data::SwitchPermission{name: _name, enabled: _enabled} => {
+                            #[cfg(windows)]
+                            if _name == "file" {
+                                self.file_transfer_enabled = *_enabled;
+                            }
+                        }
+                        Data::Authorize => {
+                            self.running = true;
+                            break;
+                        }
+                        _ => {
+                        }
+                    }
+                },
                 clip_file = rx_clip.recv() => match clip_file {
                     Some(_clip) => {
                         #[cfg(windows)]
@@ -487,6 +517,9 @@ impl<T: InvokeUiCM> IpcTaskRunner<T> {
                         //
                     }
                 },
+                Some(job_log) = rx_log.recv() => {
+                    self.cm.ui_handler.file_transfer_log(job_log);
+                }
             }
         }
     }
@@ -501,7 +534,6 @@ impl<T: InvokeUiCM> IpcTaskRunner<T> {
             rx,
             close: true,
             running: true,
-            authorized: false,
             conn_id: 0,
             #[cfg(windows)]
             file_transfer_enabled: false,
@@ -611,7 +643,7 @@ pub async fn start_listen<T: InvokeUiCM>(
                 cm.new_message(current_id, text);
             }
             Some(Data::FS(fs)) => {
-                handle_fs(fs, &mut write_jobs, &tx).await;
+                handle_fs(fs, &mut write_jobs, &tx, None).await;
             }
             Some(Data::Close) => {
                 break;
@@ -626,7 +658,14 @@ pub async fn start_listen<T: InvokeUiCM>(
 }
 
 #[cfg(not(any(target_os = "ios")))]
-async fn handle_fs(fs: ipc::FS, write_jobs: &mut Vec<fs::TransferJob>, tx: &UnboundedSender<Data>) {
+async fn handle_fs(
+    fs: ipc::FS,
+    write_jobs: &mut Vec<fs::TransferJob>,
+    tx: &UnboundedSender<Data>,
+    tx_log: Option<&UnboundedSender<String>>,
+) {
+    use hbb_common::fs::serialize_transfer_job;
+
     match fs {
         ipc::FS::ReadDir {
             dir,
@@ -653,10 +692,12 @@ async fn handle_fs(fs: ipc::FS, write_jobs: &mut Vec<fs::TransferJob>, tx: &Unbo
             file_num,
             mut files,
             overwrite_detection,
+            total_size,
+            conn_id,
         } => {
             // cm has no show_hidden context
             // dummy remote, show_hidden, is_remote
-            write_jobs.push(fs::TransferJob::new_write(
+            let mut job = fs::TransferJob::new_write(
                 id,
                 "".to_string(),
                 path,
@@ -672,11 +713,17 @@ async fn handle_fs(fs: ipc::FS, write_jobs: &mut Vec<fs::TransferJob>, tx: &Unbo
                     })
                     .collect(),
                 overwrite_detection,
-            ));
+            );
+            job.total_size = total_size;
+            job.conn_id = conn_id;
+            write_jobs.push(job);
         }
         ipc::FS::CancelWrite { id } => {
             if let Some(job) = fs::get_job(id, write_jobs) {
                 job.remove_download_file();
+                tx_log.map(|tx: &UnboundedSender<String>| {
+                    tx.send(serialize_transfer_job(job, false, true, ""))
+                });
                 fs::remove_job(id, write_jobs);
             }
         }
@@ -684,11 +731,13 @@ async fn handle_fs(fs: ipc::FS, write_jobs: &mut Vec<fs::TransferJob>, tx: &Unbo
             if let Some(job) = fs::get_job(id, write_jobs) {
                 job.modify_time();
                 send_raw(fs::new_done(id, file_num), tx);
+                tx_log.map(|tx| tx.send(serialize_transfer_job(job, true, false, "")));
                 fs::remove_job(id, write_jobs);
             }
         }
         ipc::FS::WriteError { id, file_num, err } => {
             if let Some(job) = fs::get_job(id, write_jobs) {
+                tx_log.map(|tx| tx.send(serialize_transfer_job(job, false, false, &err)));
                 send_raw(fs::new_error(job.id(), err, file_num), tx);
                 fs::remove_job(job.id(), write_jobs);
             }

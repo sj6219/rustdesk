@@ -1,4 +1,6 @@
-import 'dart:io';
+import 'dart:convert';
+import 'package:flutter/material.dart';
+import 'package:flutter_hbb/consts.dart';
 
 import 'package:flutter_hbb/models/peer_model.dart';
 
@@ -47,11 +49,18 @@ class UserPayload {
     };
     return map;
   }
+
+  Map<String, dynamic> toGroupCacheJson() {
+    final Map<String, dynamic> map = {
+      'name': name,
+    };
+    return map;
+  }
 }
 
 class PeerPayload {
   String id = '';
-  String info = '';
+  Map<String, dynamic> info = {};
   int? status;
   String user = '';
   String user_name = '';
@@ -59,24 +68,45 @@ class PeerPayload {
 
   PeerPayload.fromJson(Map<String, dynamic> json)
       : id = json['id'] ?? '',
-        info = json['info'] ?? '',
+        info = (json['info'] is Map<String, dynamic>) ? json['info'] : {},
         status = json['status'],
         user = json['user'] ?? '',
         user_name = json['user_name'] ?? '',
         note = json['note'] ?? '';
 
   static Peer toPeer(PeerPayload p) {
-    return Peer.fromJson({"id": p.id, "username": p.user_name});
+    return Peer.fromJson({
+      "id": p.id,
+      'loginName': p.user_name,
+      "username": p.info['username'] ?? '',
+      "platform": _platform(p.info['os']),
+      "hostname": p.info['device_name'],
+    });
   }
-}
 
-class DeviceInfo {
-  static Map<String, dynamic> toJson() {
-    final Map<String, dynamic> data = <String, dynamic>{};
-    data['os'] = Platform.operatingSystem;
-    data['type'] = "client";
-    data['name'] = bind.mainGetHostname();
-    return data;
+  static String? _platform(dynamic field) {
+    if (field == null) {
+      return null;
+    }
+    final fieldStr = field.toString();
+    List<String> list = fieldStr.split(' / ');
+    if (list.isEmpty) return null;
+    final os = list[0];
+    switch (os.toLowerCase()) {
+      case 'windows':
+        return kPeerPlatformWindows;
+      case 'linux':
+        return kPeerPlatformLinux;
+      case 'macos':
+        return kPeerPlatformMacOS;
+      case 'android':
+        return kPeerPlatformAndroid;
+      default:
+        if (fieldStr.toLowerCase().contains('linux')) {
+          return kPeerPlatformLinux;
+        }
+        return null;
+    }
   }
 }
 
@@ -88,7 +118,6 @@ class LoginRequest {
   bool? autoLogin;
   String? type;
   String? verificationCode;
-  Map<String, dynamic> deviceInfo = DeviceInfo.toJson();
 
   LoginRequest(
       {this.username,
@@ -109,6 +138,13 @@ class LoginRequest {
     if (type != null) data['type'] = type;
     if (verificationCode != null) {
       data['verificationCode'] = verificationCode;
+    }
+
+    Map<String, dynamic> deviceInfo = {};
+    try {
+      deviceInfo = jsonDecode(bind.mainGetLoginDeviceInfo());
+    } catch (e) {
+      debugPrint('Failed to decode get device info: $e');
     }
     data['deviceInfo'] = deviceInfo;
     return data;

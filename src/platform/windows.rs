@@ -954,6 +954,7 @@ fn get_after_install(exe: &str) -> String {
     reg add HKEY_CLASSES_ROOT\\{ext}\\shell\\open /f
     reg add HKEY_CLASSES_ROOT\\{ext}\\shell\\open\\command /f
     reg add HKEY_CLASSES_ROOT\\{ext}\\shell\\open\\command /f /ve /t REG_SZ /d \"\\\"{exe}\\\" \\\"%%1\\\"\"
+    netsh advfirewall firewall add rule name=\"{app_name} Service\" dir=out action=allow program=\"{exe}\" enable=yes
     netsh advfirewall firewall add rule name=\"{app_name} Service\" dir=in action=allow program=\"{exe}\" enable=yes
     {create_service}
     reg add HKEY_LOCAL_MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System /f /v SoftwareSASGeneration /t REG_DWORD /d 1
@@ -1066,12 +1067,10 @@ if exist \"{tmp_path}\\{app_name} Tray.lnk\" del /f /q \"{tmp_path}\\{app_name} 
     };
 
     // potential bug here: if run_cmd cancelled, but config file is changed.
-    if let Ok(lic) = crate::platform::windows::get_license_from_exe_name() {
-        if !lic.host.is_empty() {
-            Config::set_option("key".into(), lic.key);
-            Config::set_option("custom-rendezvous-server".into(), lic.host);
-            Config::set_option("api-server".into(), lic.api);
-        }
+    if let Some(lic) = get_license() {
+        Config::set_option("key".into(), lic.key);
+        Config::set_option("custom-rendezvous-server".into(), lic.host);
+        Config::set_option("api-server".into(), lic.api);
     }
 
     let cmds = format!(
@@ -1270,9 +1269,15 @@ pub fn toggle_blank_screen(v: bool) {
     }
 }
 
-pub fn block_input(v: bool) -> bool {
+pub fn block_input(v: bool) -> (bool, String) {
     let v = if v { TRUE } else { FALSE };
-    unsafe { BlockInput(v) == TRUE }
+    unsafe {
+        if BlockInput(v) == TRUE {
+            (true, "".to_owned())
+        } else {
+            (false, format!("Error code: {}", GetLastError()))
+        }
+    }
 }
 
 pub fn add_recent_document(path: &str) {
@@ -2168,6 +2173,7 @@ pub fn uninstall_service(show_new_window: bool) -> bool {
 
 pub fn install_service() -> bool {
     log::info!("Installing service...");
+    let _installing = crate::platform::InstallingService::new();
     let (_, _, _, exe) = get_install_info();
     let tmp_path = std::env::temp_dir().to_string_lossy().to_string();
     let tray_shortcut = get_tray_shortcut(&exe, &tmp_path).unwrap_or_default();
@@ -2340,4 +2346,20 @@ pub fn alloc_console() {
     unsafe {
         alloc_console_and_redirect();
     }
+}
+
+fn get_license() -> Option<License> {
+    let mut lic: License = Default::default();
+    if let Ok(tmp) = get_license_from_exe_name() {
+        lic = tmp;
+    } else {
+        // for back compatibility from migrating from <= 1.2.1 to 1.2.2
+        lic.key = get_reg("Key");
+        lic.host = get_reg("Host");
+        lic.api = get_reg("Api");
+    }
+    if lic.key.is_empty() || lic.host.is_empty() {
+        return None;
+    }
+    Some(lic)
 }

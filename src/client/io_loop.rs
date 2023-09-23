@@ -56,6 +56,7 @@ pub struct Remote<T: InvokeUiSession> {
     remove_jobs: HashMap<i32, RemoveJob>,
     timer: Interval,
     last_update_jobs_status: (Instant, HashMap<i32, u64>),
+    is_connected: bool,
     first_frame: bool,
     #[cfg(windows)]
     client_conn_id: i32, // used for file clipboard
@@ -90,6 +91,7 @@ impl<T: InvokeUiSession> Remote<T> {
             remove_jobs: Default::default(),
             timer: time::interval(SEC30),
             last_update_jobs_status: (Instant::now(), Default::default()),
+            is_connected: false,
             first_frame: false,
             #[cfg(windows)]
             client_conn_id: 0,
@@ -196,28 +198,7 @@ impl<T: InvokeUiSession> Remote<T> {
                         }
                         _msg = rx_clip_client.recv() => {
                             #[cfg(windows)]
-                            match _msg {
-                                Some(clip) => match clip {
-                                    clipboard::ClipboardFile::NotifyCallback{r#type, title, text} => {
-                                        self.handler.msgbox(&r#type, &title, &text, "");
-                                    }
-                                    _ => {
-                                        let is_stopping_allowed = clip.is_stopping_allowed();
-                                        let server_file_transfer_enabled = *self.handler.server_file_transfer_enabled.read().unwrap();
-                                        let file_transfer_enabled = self.handler.lc.read().unwrap().enable_file_transfer.v;
-                                        let stop = is_stopping_allowed && !(server_file_transfer_enabled && file_transfer_enabled);
-                                        log::debug!("Process clipboard message from system, stop: {}, is_stopping_allowed: {}, server_file_transfer_enabled: {}, file_transfer_enabled: {}", stop, is_stopping_allowed, server_file_transfer_enabled, file_transfer_enabled);
-                                        if stop {
-                                            ContextSend::set_is_stopped();
-                                        } else {
-                                            allow_err!(peer.send(&crate::clipboard_file::clip_2_msg(clip)).await);
-                                        }
-                                    }
-                                }
-                                None => {
-                                    // unreachable!()
-                                }
-                            }
+                            self.handle_local_clipboard_msg(&mut peer, _msg).await;
                         }
                         _ = self.timer.tick() => {
                             if last_recv_time.elapsed() >= SEC30 {
@@ -271,10 +252,48 @@ impl<T: InvokeUiSession> Remote<T> {
         #[cfg(windows)]
         {
             let conn_id = self.client_conn_id;
-            ContextSend::proc(|context: &mut Box<CliprdrClientContext>| -> u32 {
+            ContextSend::proc(|context: &mut CliprdrClientContext| -> u32 {
                 empty_clipboard(context, conn_id);
                 0
             });
+        }
+    }
+
+    #[cfg(windows)]
+    async fn handle_local_clipboard_msg(
+        &self,
+        peer: &mut crate::client::FramedStream,
+        msg: Option<clipboard::ClipboardFile>,
+    ) {
+        match msg {
+            Some(clip) => match clip {
+                clipboard::ClipboardFile::NotifyCallback {
+                    r#type,
+                    title,
+                    text,
+                } => {
+                    self.handler.msgbox(&r#type, &title, &text, "");
+                }
+                _ => {
+                    let is_stopping_allowed = clip.is_stopping_allowed();
+                    let server_file_transfer_enabled =
+                        *self.handler.server_file_transfer_enabled.read().unwrap();
+                    let file_transfer_enabled =
+                        self.handler.lc.read().unwrap().enable_file_transfer.v;
+                    let stop = is_stopping_allowed
+                        && (!self.is_connected
+                            || !(server_file_transfer_enabled && file_transfer_enabled));
+                    log::debug!("Process clipboard message from system, stop: {}, is_stopping_allowed: {}, server_file_transfer_enabled: {}, file_transfer_enabled: {}", stop, is_stopping_allowed, server_file_transfer_enabled, file_transfer_enabled);
+                    if stop {
+                        ContextSend::set_is_stopped();
+                    } else {
+                        allow_err!(peer.send(&crate::clipboard_file::clip_2_msg(clip)).await);
+                    }
+                }
+            },
+            None => {
+                // unreachable!()
+            }
         }
     }
 
@@ -465,9 +484,13 @@ impl<T: InvokeUiSession> Remote<T> {
                                 // peer is not windows, need transform \ to /
                                 fs::transform_windows_path(&mut files);
                             }
+                            let total_size = job.total_size();
                             self.read_jobs.push(job);
                             self.timer = time::interval(MILLI1);
-                            allow_err!(peer.send(&fs::new_receive(id, to, file_num, files)).await);
+                            allow_err!(
+                                peer.send(&fs::new_receive(id, to, file_num, files, total_size))
+                                    .await
+                            );
                         }
                     }
                 }
@@ -550,7 +573,8 @@ impl<T: InvokeUiSession> Remote<T> {
                                 id,
                                 job.path.to_string_lossy().to_string(),
                                 job.file_num,
-                                job.files.clone()
+                                job.files.clone(),
+                                job.total_size(),
                             ))
                             .await
                         );
@@ -833,8 +857,10 @@ impl<T: InvokeUiSession> Remote<T> {
             transfer_metas.write_jobs.push(json_str);
         }
         log::info!("meta: {:?}", transfer_metas);
-        config.transfer = transfer_metas;
-        self.handler.save_config(config);
+        if config.transfer != transfer_metas {
+            config.transfer = transfer_metas;
+            self.handler.save_config(config);
+        }
         true
     }
 
@@ -1035,6 +1061,8 @@ impl<T: InvokeUiSession> Remote<T> {
                         if self.handler.is_file_transfer() {
                             self.handler.load_last_jobs();
                         }
+
+                        self.is_connected = true;
                     }
                     _ => {}
                 },
@@ -1462,6 +1490,7 @@ impl<T: InvokeUiSession> Remote<T> {
             Some(back_notification::Union::BlockInputState(state)) => {
                 self.handle_back_msg_block_input(
                     state.enum_value_or(back_notification::BlockInputState::BlkStateUnknown),
+                    notification.details,
                 )
                 .await;
             }
@@ -1469,6 +1498,7 @@ impl<T: InvokeUiSession> Remote<T> {
                 if !self
                     .handle_back_msg_privacy_mode(
                         state.enum_value_or(back_notification::PrivacyModeState::PrvStateUnknown),
+                        notification.details,
                     )
                     .await
                 {
@@ -1485,22 +1515,42 @@ impl<T: InvokeUiSession> Remote<T> {
         self.handler.update_block_input_state(on);
     }
 
-    async fn handle_back_msg_block_input(&mut self, state: back_notification::BlockInputState) {
+    async fn handle_back_msg_block_input(
+        &mut self,
+        state: back_notification::BlockInputState,
+        details: String,
+    ) {
         match state {
             back_notification::BlockInputState::BlkOnSucceeded => {
                 self.update_block_input_state(true);
             }
             back_notification::BlockInputState::BlkOnFailed => {
-                self.handler
-                    .msgbox("custom-error", "Block user input", "Failed", "");
+                self.handler.msgbox(
+                    "custom-error",
+                    "Block user input",
+                    if details.is_empty() {
+                        "Failed"
+                    } else {
+                        &details
+                    },
+                    "",
+                );
                 self.update_block_input_state(false);
             }
             back_notification::BlockInputState::BlkOffSucceeded => {
                 self.update_block_input_state(false);
             }
             back_notification::BlockInputState::BlkOffFailed => {
-                self.handler
-                    .msgbox("custom-error", "Unblock user input", "Failed", "");
+                self.handler.msgbox(
+                    "custom-error",
+                    "Unblock user input",
+                    if details.is_empty() {
+                        "Failed"
+                    } else {
+                        &details
+                    },
+                    "",
+                );
             }
             _ => {}
         }
@@ -1518,6 +1568,7 @@ impl<T: InvokeUiSession> Remote<T> {
     async fn handle_back_msg_privacy_mode(
         &mut self,
         state: back_notification::PrivacyModeState,
+        details: String,
     ) -> bool {
         match state {
             back_notification::PrivacyModeState::PrvOnByOther => {
@@ -1550,8 +1601,16 @@ impl<T: InvokeUiSession> Remote<T> {
                 self.update_privacy_mode(false);
             }
             back_notification::PrivacyModeState::PrvOnFailed => {
-                self.handler
-                    .msgbox("custom-error", "Privacy mode", "Failed", "");
+                self.handler.msgbox(
+                    "custom-error",
+                    "Privacy mode",
+                    if details.is_empty() {
+                        "Failed"
+                    } else {
+                        &details
+                    },
+                    "",
+                );
                 self.update_privacy_mode(false);
             }
             back_notification::PrivacyModeState::PrvOffSucceeded => {
@@ -1565,8 +1624,16 @@ impl<T: InvokeUiSession> Remote<T> {
                 self.update_privacy_mode(false);
             }
             back_notification::PrivacyModeState::PrvOffFailed => {
-                self.handler
-                    .msgbox("custom-error", "Privacy mode", "Failed to turn off", "");
+                self.handler.msgbox(
+                    "custom-error",
+                    "Privacy mode",
+                    if details.is_empty() {
+                        "Failed to turn off"
+                    } else {
+                        &details
+                    },
+                    "",
+                );
             }
             back_notification::PrivacyModeState::PrvOffUnknown => {
                 self.handler
@@ -1608,7 +1675,7 @@ impl<T: InvokeUiSession> Remote<T> {
                 "Process clipboard message from server peer, stop: {}, is_stopping_allowed: {}, file_transfer_enabled: {}",
                 stop, is_stopping_allowed, file_transfer_enabled);
             if !stop {
-                ContextSend::proc(|context: &mut Box<CliprdrClientContext>| -> u32 {
+                ContextSend::proc(|context: &mut CliprdrClientContext| -> u32 {
                     clipboard::server_clip_file(context, self.client_conn_id, clip)
                 });
             }
