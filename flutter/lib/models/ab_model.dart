@@ -6,7 +6,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_hbb/common/widgets/peers_view.dart';
 import 'package:flutter_hbb/models/model.dart';
 import 'package:flutter_hbb/models/peer_model.dart';
-import 'package:flutter_hbb/models/peer_tab_model.dart';
 import 'package:flutter_hbb/models/platform_model.dart';
 import 'package:get/get.dart';
 import 'package:bot_toast/bot_toast.dart';
@@ -105,9 +104,6 @@ class AbModel {
       if (!quiet) {
         pullError.value =
             '${translate('pull_ab_failed_tip')}: ${translate(err.toString())}';
-        if (gFFI.peerTabModel.currentTab != PeerTabIndex.ab.index) {
-          BotToast.showText(contentColor: Colors.red, text: pullError.value);
-        }
       }
     } finally {
       abLoading.value = false;
@@ -481,7 +477,7 @@ class AbModel {
     }
   }
 
-  loadCache() async {
+  Future<void> loadCache() async {
     try {
       if (_cacheLoadOnceFlag || abLoading.value || initialized) return;
       _cacheLoadOnceFlag = true;
