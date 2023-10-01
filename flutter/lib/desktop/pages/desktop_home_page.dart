@@ -48,6 +48,7 @@ class _DesktopHomePageState extends State<DesktopHomePage>
   var watchIsInputMonitoring = false;
   var watchIsCanRecordAudio = false;
   Timer? _updateTimer;
+  bool isCardClosed = false;
 
   @override
   Widget build(BuildContext context) {
@@ -185,11 +186,13 @@ class _DesktopHomePageState extends State<DesktopHomePage>
           backgroundColor: hover.value
               ? Theme.of(context).scaffoldBackgroundColor
               : Theme.of(context).colorScheme.background,
-          child: Icon(
-            Icons.more_vert_outlined,
-            size: 20,
-            color: hover.value ? textColor : textColor?.withOpacity(0.5),
-          ),
+          child: Tooltip(
+            message: translate('Settings'),
+            child: Icon(
+              Icons.more_vert_outlined,
+              size: 20,
+              color: hover.value ? textColor : textColor?.withOpacity(0.5),
+            )),
         ),
       ),
       onHover: (value) => hover.value = value,
@@ -252,23 +255,28 @@ class _DesktopHomePageState extends State<DesktopHomePage>
                         onPressed: () => bind.mainUpdateTemporaryPassword(),
                         child: Obx(() => RotatedBox(
                             quarterTurns: 2,
-                            child: Icon(
-                              Icons.refresh,
-                              color: refreshHover.value
-                                  ? textColor
-                                  : Color(0xFFDDDDDD),
-                              size: 22,
-                            ))),
+                            child: Tooltip(
+                              message: translate('Refresh Password'),
+                              child: Icon(
+                                Icons.refresh,
+                                color: refreshHover.value
+                                    ? textColor
+                                    : Color(0xFFDDDDDD),
+                                size: 22,
+                              ))
+                            )),
                         onHover: (value) => refreshHover.value = value,
                       ).marginOnly(right: 8, top: 4),
                       InkWell(
                         child: Obx(
-                          () => Icon(
-                            Icons.edit,
-                            color:
-                                editHover.value ? textColor : Color(0xFFDDDDDD),
-                            size: 22,
-                          ).marginOnly(right: 8, top: 4),
+                          () => Tooltip(
+                            message: translate('Change Password'),
+                            child: Icon(
+                              Icons.edit,
+                              color:
+                                  editHover.value ? textColor : Color(0xFFDDDDDD),
+                              size: 22,
+                            )).marginOnly(right: 8, top: 4),
                         ),
                         onTap: () => DesktopSettingPage.switch2page(1),
                         onHover: (value) => editHover.value = value,
@@ -314,14 +322,15 @@ class _DesktopHomePageState extends State<DesktopHomePage>
   }
 
   Future<Widget> buildHelpCards() async {
-    if (updateUrl.isNotEmpty) {
+    if (updateUrl.isNotEmpty && !isCardClosed) {
       return buildInstallCard(
           "Status",
           "There is a newer version of ${bind.mainGetAppNameSync()} ${bind.mainGetNewVersion()} available.",
           "Click to download", () async {
         final Uri url = Uri.parse('https://rustdesk.com/download');
         await launchUrl(url);
-      });
+      },
+      closeButton: true);
     }
     if (systemError.isNotEmpty) {
       return buildInstallCard("", systemError, "", () {});
@@ -387,11 +396,20 @@ class _DesktopHomePageState extends State<DesktopHomePage>
 
   Widget buildInstallCard(String title, String content, String btnText,
       GestureTapCallback onPressed,
-      {String? help, String? link}) {
-    return Container(
-      margin: EdgeInsets.only(top: 20),
-      child: Container(
-          decoration: BoxDecoration(
+      {String? help, String? link, bool? closeButton}) {
+
+    void closeCard() {
+      setState(() {
+        isCardClosed = true;
+      });
+    }
+
+    return Stack(
+      children: [
+        Container(
+          margin: EdgeInsets.only(top: 20),
+          child: Container(
+            decoration: BoxDecoration(
               gradient: LinearGradient(
             begin: Alignment.centerLeft,
             end: Alignment.centerRight,
@@ -460,19 +478,33 @@ class _DesktopHomePageState extends State<DesktopHomePage>
                                   )).marginOnly(top: 6)),
                         ]
                       : <Widget>[]))),
+        ),
+        if (closeButton != null && closeButton == true)
+        Positioned(
+          top: 18,
+          right: 0,
+          child: IconButton(
+            icon: Icon(
+              Icons.close,
+              color: Colors.white,
+              size: 20,
+            ),
+            onPressed: closeCard,
+          ),
+        ),
+      ],
     );
   }
 
   @override
   void initState() {
     super.initState();
+    Timer(const Duration(seconds: 1), () async {
+      updateUrl = await bind.mainGetSoftwareUpdateUrl();
+      if (updateUrl.isNotEmpty) setState(() {});
+    });
     _updateTimer = periodic_immediate(const Duration(seconds: 1), () async {
       await gFFI.serverModel.fetchID();
-      final url = await bind.mainGetSoftwareUpdateUrl();
-      if (updateUrl != url) {
-        updateUrl = url;
-        setState(() {});
-      }
       final error = await bind.mainGetError();
       if (systemError != error) {
         systemError = error;

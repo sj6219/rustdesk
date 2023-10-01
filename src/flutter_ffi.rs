@@ -21,8 +21,6 @@ use hbb_common::{
 };
 use std::{
     collections::HashMap,
-    ffi::{CStr, CString},
-    os::raw::c_char,
     str::FromStr,
     sync::{
         atomic::{AtomicI32, Ordering},
@@ -293,12 +291,26 @@ pub fn session_get_keyboard_mode(session_id: SessionID) -> Option<String> {
 pub fn session_set_keyboard_mode(session_id: SessionID, value: String) {
     let mut _mode_updated = false;
     if let Some(session) = SESSIONS.write().unwrap().get_mut(&session_id) {
-        session.save_keyboard_mode(value);
+        session.save_keyboard_mode(value.clone());
         _mode_updated = true;
     }
     #[cfg(windows)]
     if _mode_updated {
-        crate::keyboard::update_grab_get_key_name();
+        crate::keyboard::update_grab_get_key_name(&value);
+    }
+}
+
+pub fn session_get_reverse_mouse_wheel(session_id: SessionID) -> Option<String> {
+    if let Some(session) = SESSIONS.read().unwrap().get(&session_id) {
+        Some(session.get_reverse_mouse_wheel())
+    } else {
+        None
+    }
+}
+
+pub fn session_set_reverse_mouse_wheel(session_id: SessionID, value: String) {
+    if let Some(session) = SESSIONS.write().unwrap().get_mut(&session_id) {
+        session.save_reverse_mouse_wheel(value);
     }
 }
 
@@ -364,7 +376,9 @@ pub fn session_handle_flutter_key_event(
     down_or_up: bool,
 ) {
     if let Some(session) = SESSIONS.read().unwrap().get(&session_id) {
+        let keyboard_mode = session.get_keyboard_mode();
         session.handle_flutter_key_event(
+            &keyboard_mode,
             &name,
             platform_code,
             position_code,
@@ -383,11 +397,12 @@ pub fn session_handle_flutter_key_event(
 pub fn session_enter_or_leave(_session_id: SessionID, _enter: bool) -> SyncReturn<()> {
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     if let Some(session) = SESSIONS.read().unwrap().get(&_session_id) {
+        let keyboard_mode = session.get_keyboard_mode();
         if _enter {
-            set_cur_session_id(_session_id);
-            session.enter();
+            set_cur_session_id_(_session_id, &keyboard_mode);
+            session.enter(keyboard_mode);
         } else {
-            session.leave();
+            session.leave(keyboard_mode);
         }
     }
     SyncReturn(())
@@ -597,14 +612,6 @@ pub fn session_change_resolution(session_id: SessionID, display: i32, width: i32
     }
 }
 
-pub fn session_ready_to_new_window(session_id: SessionID) {
-    #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    if let Some(session) = SESSIONS.write().unwrap().get_mut(&session_id) {
-        session.restore_flutter_cache();
-        session.refresh_video();
-    }
-}
-
 pub fn session_set_size(_session_id: SessionID, _width: usize, _height: usize) {
     #[cfg(feature = "flutter_texture_render")]
     if let Some(session) = SESSIONS.write().unwrap().get_mut(&_session_id) {
@@ -722,9 +729,9 @@ pub fn main_store_fav(favs: Vec<String>) {
     store_fav(favs)
 }
 
-pub fn main_get_peer(id: String) -> String {
+pub fn main_get_peer_sync(id: String) -> SyncReturn<String> {
     let conf = get_peer(id);
-    serde_json::to_string(&conf).unwrap_or("".to_string())
+    SyncReturn(serde_json::to_string(&conf).unwrap_or("".to_string()))
 }
 
 pub fn main_get_lan_peers() -> String {
@@ -816,11 +823,6 @@ pub fn main_set_peer_option_sync(id: String, key: String, value: String) -> Sync
 }
 
 pub fn main_set_peer_alias(id: String, alias: String) {
-    main_broadcast_message(&HashMap::from([
-        ("name", "alias"),
-        ("id", &id),
-        ("alias", &alias),
-    ]));
     set_peer_option(id, "alias".to_owned(), alias)
 }
 
@@ -839,6 +841,10 @@ pub fn main_forget_password(id: String) {
 
 pub fn main_peer_has_password(id: String) -> bool {
     peer_has_password(id)
+}
+
+pub fn main_peer_exists(id: String) -> bool {
+    peer_exists(&id)
 }
 
 pub fn main_load_recent_peers() {
@@ -883,10 +889,15 @@ pub fn main_load_recent_peers_sync() -> SyncReturn<String> {
 
 pub fn main_load_recent_peers_for_ab(filter: String) -> String {
     let id_filters = serde_json::from_str::<Vec<String>>(&filter).unwrap_or_default();
+    let id_filters = if id_filters.is_empty() {
+        None
+    } else {
+        Some(id_filters)
+    };
     if !config::APP_DIR.read().unwrap().is_empty() {
-        let peers: Vec<HashMap<&str, String>> = PeerConfig::peers(Some(id_filters))
+        let peers: Vec<HashMap<&str, String>> = PeerConfig::peers(id_filters)
             .drain(..)
-            .map(|(id, _, p)| peer_to_map_ab(id, p))
+            .map(|(id, _, p)| peer_to_map(id, p))
             .collect();
         return serde_json::ser::to_string(&peers).unwrap_or("".to_owned());
     }
@@ -1061,6 +1072,9 @@ pub fn main_get_last_remote_id() -> String {
 }
 
 pub fn main_get_software_update_url() -> String {
+    if get_local_option("enable-check-update".to_string()) != "N" {
+        crate::common::check_software_update();
+    }
     crate::common::SOFTWARE_UPDATE_URL.lock().unwrap().clone()
 }
 
@@ -1169,22 +1183,26 @@ pub fn main_load_ab() -> String {
     serde_json::to_string(&config::Ab::load()).unwrap_or_default()
 }
 
-pub fn session_send_pointer(session_id: SessionID, msg: String) {
-    if let Ok(m) = serde_json::from_str::<HashMap<String, serde_json::Value>>(&msg) {
-        let alt = m.get("alt").is_some();
-        let ctrl = m.get("ctrl").is_some();
-        let shift = m.get("shift").is_some();
-        let command = m.get("command").is_some();
-        if let Some(touch_event) = m.get("touch") {
-            if let Some(scale) = touch_event.get("scale") {
-                if let Some(session) = SESSIONS.read().unwrap().get(&session_id) {
-                    if let Some(scale) = scale.as_i64() {
-                        session.send_touch_scale(scale as _, alt, ctrl, shift, command);
-                    }
-                }
-            }
-        }
+pub fn main_save_group(json: String) {
+    if json.len() > 1024 {
+        std::thread::spawn(|| {
+            config::Group::store(json);
+        });
+    } else {
+        config::Group::store(json);
     }
+}
+
+pub fn main_clear_group() {
+    config::Group::remove();
+}
+
+pub fn main_load_group() -> String {
+    serde_json::to_string(&config::Group::load()).unwrap_or_default()
+}
+
+pub fn session_send_pointer(session_id: SessionID, msg: String) {
+    super::flutter::session_send_pointer(session_id, msg);
 }
 
 pub fn session_send_mouse(session_id: SessionID, msg: String) {
@@ -1401,18 +1419,6 @@ pub fn main_get_build_date() -> String {
     crate::BUILD_DATE.to_string()
 }
 
-#[no_mangle]
-unsafe extern "C" fn translate(name: *const c_char, locale: *const c_char) -> *const c_char {
-    let name = CStr::from_ptr(name);
-    let locale = CStr::from_ptr(locale);
-    let res = if let (Ok(name), Ok(locale)) = (name.to_str(), locale.to_str()) {
-        crate::client::translate_locale(name.to_owned(), locale)
-    } else {
-        String::new()
-    };
-    CString::from_vec_unchecked(res.into_bytes()).into_raw()
-}
-
 fn handle_query_onlines(onlines: Vec<String>, offlines: Vec<String>) {
     let data = HashMap::from([
         ("name", "callback_query_onlines".to_owned()),
@@ -1423,6 +1429,22 @@ fn handle_query_onlines(onlines: Vec<String>, offlines: Vec<String>) {
         flutter::APP_TYPE_MAIN,
         serde_json::ser::to_string(&data).unwrap_or("".to_owned()),
     );
+}
+
+pub fn translate(name: String, locale: String) -> SyncReturn<String> {
+    SyncReturn(crate::client::translate_locale(name, &locale))
+}
+
+pub fn session_get_rgba_size(session_id: SessionID) -> SyncReturn<usize> {
+    SyncReturn(super::flutter::session_get_rgba_size(session_id))
+}
+
+pub fn session_next_rgba(session_id: SessionID) -> SyncReturn<()> {
+    SyncReturn(super::flutter::session_next_rgba(session_id))
+}
+
+pub fn session_register_texture(session_id: SessionID, ptr: usize) -> SyncReturn<()> {
+    SyncReturn(super::flutter::session_register_texture(session_id, ptr))
 }
 
 pub fn query_onlines(ids: Vec<String>) {
@@ -1501,9 +1523,15 @@ pub fn main_update_me() -> SyncReturn<bool> {
 }
 
 pub fn set_cur_session_id(session_id: SessionID) {
+    if let Some(session) = SESSIONS.read().unwrap().get(&session_id) {
+        set_cur_session_id_(session_id, &session.get_keyboard_mode())
+    }
+}
+
+fn set_cur_session_id_(session_id: SessionID, keyboard_mode: &str) {
     super::flutter::set_cur_session_id(session_id);
     #[cfg(windows)]
-    crate::keyboard::update_grab_get_key_name();
+    crate::keyboard::update_grab_get_key_name(keyboard_mode);
 }
 
 pub fn install_show_run_without_install() -> SyncReturn<bool> {

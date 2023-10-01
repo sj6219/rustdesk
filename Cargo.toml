@@ -1,6 +1,6 @@
 [package]
 name = "rustdesk"
-version = "1.2.2"
+version = "1.2.3"
 authors = ["rustdesk <info@rustdesk.com>"]
 edition = "2021"
 build= "build.rs"
@@ -99,6 +99,7 @@ virtual_display = { path = "libs/virtual_display", optional = true }
 impersonate_system = { git = "https://github.com/21pages/impersonate-system" }
 shared_memory = "0.12"
 shutdown_hooks = "0.1"
+tauri-winrt-notification = "0.1.2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc = "0.2"
@@ -113,7 +114,7 @@ objc_id = "0.1"
 
 [target.'cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))'.dependencies]
 tray-icon = { git = "https://github.com/rustdesk-org/tray-icon" }
-tao = { git = "https://github.com/rustdesk-org/tao", branch = "muda" }
+tao = { git = "https://github.com/rustdesk-org/tao", branch = "dev" }
 image = "0.24"
 
 [target.'cfg(any(target_os = "macos", target_os = "linux"))'.dependencies]
