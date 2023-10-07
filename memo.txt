@@ -79,7 +79,7 @@ sudo apt install gcc-multilib
 #ios
 flutter/ios/Runnder.xcworkspace/View/Navigators/Project:Runnder/targets:Runner/Signing & Capability/Teams
 pushd flutter && flutter pub get && popd
-~/.cargo/bin/flutter_rust_bridge_codegen --rust-input ./src/flutter_ffi.rs --dart-output ./flutter/lib/generated_bridge.dart
+~/.cargo/bin/flutter_rust_bridge_codegen --rust-input ./src/flutter_ffi.rs --dart-output ./flutter/lib/generated_bridge.dart --c-output ./flutter/ios/Runner/bridge_generated.h
 cargo build --features flutter --target aarch64-apple-ios --lib --release
 pushd flutter; flutter build ios --release; popd
 xcode/Window/Devices and Simulators/INSTALLED APPS
