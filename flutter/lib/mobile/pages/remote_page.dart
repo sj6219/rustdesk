@@ -421,9 +421,8 @@ class _RemotePageState extends State<RemotePage> {
     );
   }
 
-  // to-do: Check if peer is ios.
-  bool get isPeerMobile => kPeerPlatformAndroid == gFFI.ffiModel.pi.platform;
-  bool get showCursorPaint => !isPeerMobile && !gFFI.canvasModel.cursorEmbedded;
+  bool get showCursorPaint =>
+      !gFFI.ffiModel.isPeerAndroid && !gFFI.canvasModel.cursorEmbedded;
 
   Widget getBodyForMobile() {
     final keyboardIsVisible = keyboardVisibilityController.isVisible;
@@ -741,8 +740,8 @@ class CursorPaint extends StatelessWidget {
     return CustomPaint(
       painter: ImagePainter(
           image: m.image ?? preDefaultCursor.image,
-          x: m.x * s - hotx * s + c.x,
-          y: m.y * s - hoty * s + c.y - adjust,
+          x: m.x * s - hotx + c.x,
+          y: m.y * s - hoty + c.y - adjust,
           scale: 1),
     );
   }
