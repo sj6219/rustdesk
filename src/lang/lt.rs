@@ -295,7 +295,6 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Overwrite", "Perrašyti"),
         ("This file exists, skip or overwrite this file?", "Šis failas egzistuoja, praleisti arba perrašyti šį failą?"),
         ("Quit", "Išeiti"),
-        ("doc_mac_permission", "https://rustdesk.com/docs/en/manual/mac/"),
         ("Help", "Pagalba"),
         ("Failed", "Nepavyko"),
         ("Succeeded", "Pavyko"),
@@ -366,7 +365,6 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Audio Input Device", "Garso įvestis"),
         ("Use IP Whitelisting", "Naudoti patikimą IP sąrašą"),
         ("Network", "Tinklas"),
-        ("Enable RDP", "Įgalinti RDP"),
         ("Pin Toolbar", ""),
         ("Unpin Toolbar", ""),
         ("Recording", "Įrašymas"),
@@ -557,5 +555,8 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Check for software update on startup", ""),
         ("upgrade_rustdesk_server_pro_to_{}_tip", ""),
         ("pull_group_failed_tip", ""),
+        ("Filter by intersection", ""),
+        ("Remove wallpaper during incoming sessions", ""),
+        ("Test", ""),
     ].iter().cloned().collect();
 }

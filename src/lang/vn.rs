@@ -295,7 +295,6 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Overwrite", "Ghi đè"),
         ("This file exists, skip or overwrite this file?", "Tệp tin này đã tồn tại, bạn có muốn bỏ qua hay ghi đè lên tệp tin này?"),
         ("Quit", "Thoát"),
-        ("doc_mac_permission", "https://rustdesk.com/docs/en/manual/mac/#enable-permissions"),
         ("Help", "Trợ giúp"),
         ("Failed", "Thất bại"),
         ("Succeeded", "Thành công"),
@@ -366,7 +365,6 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Audio Input Device", "Thiết bị âm thanh đầu vào"),
         ("Use IP Whitelisting", "Dùng danh sách các IP cho phép"),
         ("Network", "Mạng"),
-        ("Enable RDP", "Bật RDP"),
         ("Pin Toolbar", "Ghim thanh công cụ"),
         ("Unpin Toolbar", "Bỏ ghim thanh công cụ"),
         ("Recording", "Đang ghi hình"),
@@ -557,5 +555,8 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Check for software update on startup", ""),
         ("upgrade_rustdesk_server_pro_to_{}_tip", ""),
         ("pull_group_failed_tip", ""),
+        ("Filter by intersection", ""),
+        ("Remove wallpaper during incoming sessions", ""),
+        ("Test", ""),
     ].iter().cloned().collect();
 }

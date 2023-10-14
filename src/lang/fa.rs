@@ -295,7 +295,6 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Overwrite", "بازنویسی"),
         ("This file exists, skip or overwrite this file?", "این فایل وجود دارد، از فایل رد شود یا آن را بازنویسی کند؟"),
         ("Quit", "خروج"),
-        ("doc_mac_permission", "https://rustdesk.com/docs/en/manual/mac/#enable-permissions"),
         ("Help", "راهنما"),
         ("Failed", "ناموفق"),
         ("Succeeded", "موفقیت آمیز"),
@@ -366,7 +365,6 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Audio Input Device", "منبع صدا"),
         ("Use IP Whitelisting", "های مجاز IP استفاده از"),
         ("Network", "شبکه"),
-        ("Enable RDP", "RDP فعال شدن"),
         ("Pin Toolbar", "سجاق کردن نوار ابزار"),
         ("Unpin Toolbar", "خروج از حالت سجاق نوار ابزار"),
         ("Recording", "در حال ضبط"),
@@ -557,5 +555,8 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Check for software update on startup", ""),
         ("upgrade_rustdesk_server_pro_to_{}_tip", ""),
         ("pull_group_failed_tip", ""),
+        ("Filter by intersection", ""),
+        ("Remove wallpaper during incoming sessions", ""),
+        ("Test", ""),
     ].iter().cloned().collect();
 }

@@ -295,7 +295,6 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Overwrite", "Überschreiben"),
         ("This file exists, skip or overwrite this file?", "Diese Datei existiert; überspringen oder überschreiben?"),
         ("Quit", "Beenden"),
-        ("doc_mac_permission", "https://rustdesk.com/docs/de/manual/mac/#berechtigungen-aktivieren"),
         ("Help", "Hilfe"),
         ("Failed", "Fehlgeschlagen"),
         ("Succeeded", "Erfolgreich"),
@@ -366,7 +365,6 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Audio Input Device", "Audioeingabegerät"),
         ("Use IP Whitelisting", "IP-Whitelist verwenden"),
         ("Network", "Netzwerk"),
-        ("Enable RDP", "RDP aktivieren"),
         ("Pin Toolbar", "Symbolleiste anpinnen"),
         ("Unpin Toolbar", "Symbolleiste lösen"),
         ("Recording", "Aufnahme"),
@@ -557,5 +555,8 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Check for software update on startup", "Beim Start auf Softwareaktualisierung prüfen"),
         ("upgrade_rustdesk_server_pro_to_{}_tip", "Bitte aktualisieren Sie RustDesk Server Pro auf die Version {} oder neuer!"),
         ("pull_group_failed_tip", "Aktualisierung der Gruppe fehlgeschlagen"),
+        ("Remove wallpaper during incoming sessions", ""),
+        ("Test", ""),
+        ("Filter by intersection", "Nach Schnittpunkt filtern")
     ].iter().cloned().collect();
 }
