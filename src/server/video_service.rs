@@ -833,7 +833,7 @@ fn start_uac_elevation_check() {
 }
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
-fn get_wake_lock() -> crate::platform::WakeLock {
+pub fn get_wake_lock() -> crate::platform::WakeLock {
     let (display, idle, sleep) = if cfg!(windows) {
         (true, false, false)
     } else if cfg!(linux) {
