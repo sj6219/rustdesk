@@ -1305,13 +1305,10 @@ impl Connection {
     #[inline]
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     fn input_key(&self, msg: KeyEvent, press: bool) {
-<<<<<<< HEAD
-        //..m!!!!!!2.2
-        //..w!!!!!!2.2
-=======
         // to-do: if is the legacy mode, and the key is function key "LockScreen".
         // Switch to the primary display.
->>>>>>> master
+        //..m!!!!!!2.2
+        //..w!!!!!!2.2
         self.tx_input.send(MessageInput::Key((msg, press))).ok();
     }
 

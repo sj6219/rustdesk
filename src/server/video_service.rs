@@ -400,46 +400,9 @@ fn get_capturer(
     })
 }
 
-<<<<<<< HEAD
-fn check_displays_new() -> Option<Vec<Display>> {
-    let displays = try_get_displays().ok()?;
-    let last_sync_displays = &*LAST_SYNC_DISPLAYS.read().unwrap();
-    if displays.len() != last_sync_displays.len() {
-        // No need to check if the resolutions are changed by third process.
-        Some(displays)
-    } else {
-        None
-    }
-}
-
-fn check_get_displays_changed_msg() -> Option<Message> {
-    let displays = check_displays_new()?;
-    // Display to DisplayInfo
-    let (current, displays) = get_displays_2(&displays);
-    let mut pi = PeerInfo {
-        ..Default::default()
-    };
-    pi.displays = displays.clone();
-    pi.current_display = current as _;
-    let mut msg_out = Message::new();
-    msg_out.set_peer_info(pi);
-    *LAST_SYNC_DISPLAYS.write().unwrap() = displays;
-    Some(msg_out)
-}
-
-#[cfg(all(windows, feature = "virtual_display_driver"))]
-pub fn try_plug_out_virtual_display() {
-    let _res = virtual_display_manager::plug_out_headless();
-}
-
-fn run(sp: GenericService) -> ResultType<()> {
-    //.. #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    //.. let _wake_lock = get_wake_lock();
-=======
 fn run(vs: VideoService) -> ResultType<()> {
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     let _wake_lock = get_wake_lock();
->>>>>>> master
 
     // Wayland only support one video capturer for now. It is ok to call ensure_inited() here.
     //

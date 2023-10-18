@@ -21,12 +21,6 @@ mod cm;
 pub mod inline;
 pub mod remote;
 
-<<<<<<< HEAD
-
-
-pub type Children = Arc<Mutex<(bool, HashMap<(String, String), Child>)>>;
-=======
->>>>>>> master
 #[allow(dead_code)]
 type Status = (i32, bool, i64, String);
 
