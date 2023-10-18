@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -275,7 +276,9 @@ class _RemotePageState extends State<RemotePage> {
                           return Offstage();
                         }(),
                   _bottomWidget(),
-                  gFFI.ffiModel.pi.isSet.isFalse ? emptyOverlay(MyTheme.canvasColor) : Offstage(),
+                  gFFI.ffiModel.pi.isSet.isFalse
+                      ? emptyOverlay(MyTheme.canvasColor)
+                      : Offstage(),
                 ],
               )),
           body: Overlay(
@@ -316,12 +319,17 @@ class _RemotePageState extends State<RemotePage> {
   Widget getRawPointerAndKeyBody(Widget child) {
     final keyboard = gFFI.ffiModel.permissions['keyboard'] != false;
     return RawPointerMouseRegion(
-        cursor: keyboard ? SystemMouseCursors.none : MouseCursor.defer,
-        inputModel: inputModel,
-        child: RawKeyFocusScope(
-            focusNode: _physicalFocusNode,
-            inputModel: inputModel,
-            child: child));
+      cursor: keyboard ? SystemMouseCursors.none : MouseCursor.defer,
+      inputModel: inputModel,
+      // Disable RawKeyFocusScope before the connecting is established.
+      // The "Delete" key on the soft keyboard may be grabbed when inputting the password dialog.
+      child: gFFI.ffiModel.pi.isSet.isTrue
+          ? RawKeyFocusScope(
+              focusNode: _physicalFocusNode,
+              inputModel: inputModel,
+              child: child)
+          : child,
+    );
   }
 
   Widget getBottomAppBar(bool keyboard) {
@@ -414,6 +422,9 @@ class _RemotePageState extends State<RemotePage> {
     );
   }
 
+  bool get showCursorPaint =>
+      !gFFI.ffiModel.isPeerAndroid && !gFFI.canvasModel.cursorEmbedded;
+
   Widget getBodyForMobile() {
     final keyboardIsVisible = keyboardVisibilityController.isVisible;
     return Container(
@@ -446,7 +457,7 @@ class _RemotePageState extends State<RemotePage> {
                     ),
             ),
           ];
-          if (!gFFI.canvasModel.cursorEmbedded) {
+          if (showCursorPaint) {
             paints.add(CursorPaint());
           }
           return paints;
@@ -455,7 +466,7 @@ class _RemotePageState extends State<RemotePage> {
 
   Widget getBodyForDesktopWithListener(bool keyboard) {
     var paints = <Widget>[ImagePaint()];
-    if (!gFFI.canvasModel.cursorEmbedded) {
+    if (showCursorPaint) {
       final cursor = bind.sessionGetToggleOptionSync(
           sessionId: sessionId, arg: 'show-remote-cursor');
       if (keyboard || cursor) {
@@ -730,8 +741,8 @@ class CursorPaint extends StatelessWidget {
     return CustomPaint(
       painter: ImagePainter(
           image: m.image ?? preDefaultCursor.image,
-          x: m.x * s - hotx * s + c.x,
-          y: m.y * s - hoty * s + c.y - adjust,
+          x: m.x * s - hotx + c.x,
+          y: m.y * s - hoty + c.y - adjust,
           scale: 1),
     );
   }
@@ -745,14 +756,14 @@ void showOptions(
   if (image != null) {
     displays.add(Padding(padding: const EdgeInsets.only(top: 8), child: image));
   }
-  if (pi.displays.length > 1) {
+  if (pi.displays.length > 1 && pi.currentDisplay != kAllDisplayValue) {
     final cur = pi.currentDisplay;
     final children = <Widget>[];
     for (var i = 0; i < pi.displays.length; ++i) {
       children.add(InkWell(
           onTap: () {
             if (i == cur) return;
-            bind.sessionSwitchDisplay(sessionId: gFFI.sessionId, value: i);
+            bind.sessionSwitchDisplay(sessionId: gFFI.sessionId, value: Int32List.fromList([i]));
             gFFI.dialogManager.dismissAll();
           },
           child: Ink(
