@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:dynamic_layouts/dynamic_layouts.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_hbb/common/formatter/id_formatter.dart';
@@ -157,23 +159,31 @@ class _AddressBookState extends State<AddressBook> {
       } else {
         tags = gFFI.abModel.tags;
       }
-      return DynamicGridView.builder(
-          gridDelegate: SliverGridDelegateWithWrapping(
-              mainAxisSpacing: 0, crossAxisSpacing: 0),
+      tagBuilder(String e) {
+        return AddressBookTag(
+            name: e,
+            tags: gFFI.abModel.selectedTags,
+            onTap: () {
+              if (gFFI.abModel.selectedTags.contains(e)) {
+                gFFI.abModel.selectedTags.remove(e);
+              } else {
+                gFFI.abModel.selectedTags.add(e);
+              }
+            });
+      }
+
+      final gridView = DynamicGridView.builder(
+          shrinkWrap: isMobile,
+          gridDelegate: SliverGridDelegateWithWrapping(),
           itemCount: tags.length,
           itemBuilder: (BuildContext context, int index) {
             final e = tags[index];
-            return AddressBookTag(
-                name: e,
-                tags: gFFI.abModel.selectedTags,
-                onTap: () {
-                  if (gFFI.abModel.selectedTags.contains(e)) {
-                    gFFI.abModel.selectedTags.remove(e);
-                  } else {
-                    gFFI.abModel.selectedTags.add(e);
-                  }
-                });
+            return tagBuilder(e);
           });
+      final maxHeight = max(MediaQuery.of(context).size.height / 6, 100.0);
+      return isDesktop
+          ? gridView
+          : LimitedBox(maxHeight: maxHeight, child: gridView);
     });
   }
 
@@ -219,6 +229,22 @@ class _AddressBookState extends State<AddressBook> {
     );
   }
 
+  @protected
+  MenuEntryBase<String> filterMenuItem() {
+    return MenuEntrySwitch<String>(
+      switchType: SwitchType.scheckbox,
+      text: translate('Filter by intersection'),
+      getter: () async {
+        return filterAbTagByIntersection();
+      },
+      setter: (bool v) async {
+        bind.mainSetLocalOption(key: filterAbTagOption, value: v ? 'Y' : '');
+        gFFI.abModel.filterByIntersection.value = v;
+      },
+      dismissOnClicked: true,
+    );
+  }
+
   void _showMenu(RelativeRect pos) {
     final items = [
       getEntry(translate("Add ID"), abAddId),
@@ -226,6 +252,7 @@ class _AddressBookState extends State<AddressBook> {
       getEntry(translate("Unselect all tags"), gFFI.abModel.unsetSelectedTags),
       sortMenuItem(),
       syncMenuItem(),
+      filterMenuItem(),
     ];
 
     mod_menu.showMenu(

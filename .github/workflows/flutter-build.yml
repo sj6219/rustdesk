@@ -22,7 +22,7 @@ env:
   # vcpkg version: 2023.04.15
   # for multiarch gcc compatibility
   VCPKG_COMMIT_ID: "501db0f17ef6df184fcdbfbe0f87cde2313b6ab1"
-  VERSION: "1.2.3"
+  VERSION: "1.2.4"
   NDK_VERSION: "r25c"
   #signing keys env variable checks
   ANDROID_SIGNING_KEY: '${{ secrets.ANDROID_SIGNING_KEY }}'
@@ -1614,8 +1614,8 @@ jobs:
   #           apt install -y flatpak flatpak-builder cmake g++ gcc git curl wget nasm yasm libgtk-3-dev git
   #           # flatpak deps
   #           flatpak --user remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
-  #           flatpak --user install -y flathub org.freedesktop.Platform/${{ matrix.job.arch }}/21.08
-  #           flatpak --user install -y flathub org.freedesktop.Sdk/${{ matrix.job.arch }}/21.08
+  #           flatpak --user install -y flathub org.freedesktop.Platform/${{ matrix.job.arch }}/23.08
+  #           flatpak --user install -y flathub org.freedesktop.Sdk/${{ matrix.job.arch }}/23.08
   #           # package
   #           pushd flatpak
   #           git clone https://github.com/flathub/shared-modules.git --depth=1
@@ -1677,8 +1677,8 @@ jobs:
             apt install -y flatpak flatpak-builder cmake g++ gcc git curl wget nasm yasm libgtk-3-dev git
             # flatpak deps
             flatpak --user remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
-            flatpak --user install -y flathub org.freedesktop.Platform/${{ matrix.job.arch }}/21.08
-            flatpak --user install -y flathub org.freedesktop.Sdk/${{ matrix.job.arch }}/21.08
+            flatpak --user install -y flathub org.freedesktop.Platform/${{ matrix.job.arch }}/23.08
+            flatpak --user install -y flathub org.freedesktop.Sdk/${{ matrix.job.arch }}/23.08
             # package
             pushd flatpak
             git clone https://github.com/flathub/shared-modules.git --depth=1
