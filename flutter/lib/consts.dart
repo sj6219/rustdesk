@@ -3,10 +3,13 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_hbb/common.dart';
 import 'package:flutter_hbb/models/state_model.dart';
+import 'package:get/get.dart';
 
 const double kDesktopRemoteTabBarHeight = 28.0;
 const int kInvalidWindowId = -1;
 const int kMainWindowId = 0;
+
+const kAllDisplayValue = -1;
 
 const String kPeerPlatformWindows = "Windows";
 const String kPeerPlatformLinux = "Linux";
@@ -27,6 +30,7 @@ const String kAppTypeDesktopPortForward = "port forward";
 
 const String kWindowMainWindowOnTop = "main_window_on_top";
 const String kWindowGetWindowInfo = "get_window_info";
+const String kWindowGetScreenList = "get_screen_list";
 const String kWindowDisableGrabKeyboard = "disable_grab_keyboard";
 const String kWindowActionRebuild = "rebuild";
 const String kWindowEventHide = "hide";
@@ -37,11 +41,13 @@ const String kWindowEventNewRemoteDesktop = "new_remote_desktop";
 const String kWindowEventNewFileTransfer = "new_file_transfer";
 const String kWindowEventNewPortForward = "new_port_forward";
 const String kWindowEventActiveSession = "active_session";
+const String kWindowEventActiveDisplaySession = "active_display_session";
 const String kWindowEventGetRemoteList = "get_remote_list";
 const String kWindowEventGetSessionIdList = "get_session_id_list";
 
 const String kWindowEventMoveTabToNewWindow = "move_tab_to_new_window";
 const String kWindowEventGetCachedSessionData = "get_cached_session_data";
+const String kWindowEventOpenMonitorSession = "open_monitor_session";
 
 const String kOptionOpenNewConnInTabs = "enable-open-new-connections-in-tabs";
 const String kOptionOpenInTabs = "allow-open-in-tabs";
@@ -59,6 +65,10 @@ const int kWindowMainId = 0;
 
 const String kPointerEventKindTouch = "touch";
 const String kPointerEventKindMouse = "mouse";
+
+const String kKeyShowDisplaysAsIndividualWindows = 'displays_as_individual_windows';
+const String kKeyUseAllMyDisplaysForTheRemoteSession = 'use_all_my_displays_for_the_remote_session';
+const String kKeyShowMonitorsToolbar = 'show_monitors_toolbar';
 
 // the executable name of the portable version
 const String kEnvPortableExecutable = "RUSTDESK_APPNAME";
@@ -79,7 +89,7 @@ const double kDesktopFileTransferHeaderHeight = 25.0;
 
 EdgeInsets get kDragToResizeAreaPadding =>
     !kUseCompatibleUiMode && Platform.isLinux
-        ? stateGlobal.fullscreen || stateGlobal.isMaximized.value
+        ? stateGlobal.fullscreen.isTrue || stateGlobal.isMaximized.value
             ? EdgeInsets.zero
             : EdgeInsets.all(5.0)
         : EdgeInsets.zero;

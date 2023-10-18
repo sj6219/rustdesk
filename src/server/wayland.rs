@@ -142,9 +142,12 @@ pub(super) async fn check_init() -> ResultType<()> {
         if *CAP_DISPLAY_INFO.read().unwrap() == 0 {
             let mut lock = CAP_DISPLAY_INFO.write().unwrap();
             if *lock == 0 {
-                let all = Display::all()?;
+                let mut all = Display::all()?;
                 let num = all.len();
-                let (primary, mut displays) = super::video_service::get_displays_2(&all);
+                let primary = super::display_service::get_primary_2(&all);
+                let current = primary;
+                super::display_service::check_update_displays(&all);
+                let mut displays = super::display_service::get_sync_displays();
                 for display in displays.iter_mut() {
                     display.cursor_embedded = is_cursor_embedded();
                 }
@@ -154,12 +157,11 @@ pub(super) async fn check_init() -> ResultType<()> {
                     rects.push((d.origin(), d.width(), d.height()));
                 }
 
-                let (ndisplay, current, display) =
-                    super::video_service::get_current_display_2(all)?;
+                let display = all.remove(current);
                 let (origin, width, height) = (display.origin(), display.width(), display.height());
                 log::debug!(
                     "#displays={}, current={}, origin: {:?}, width={}, height={}, cpus={}/{}",
-                    ndisplay,
+                    num,
                     current,
                     &origin,
                     width,
@@ -172,12 +174,15 @@ pub(super) async fn check_init() -> ResultType<()> {
                     Some(result) if !result.is_empty() => {
                         let resolution: Vec<&str> = result.split(" ").collect();
                         let w: i32 = resolution[0].parse().unwrap_or(origin.0 + width as i32);
-                        let h: i32 = resolution[2].trim_end_matches(",").parse().unwrap_or(origin.1 + height as i32);
+                        let h: i32 = resolution[2]
+                            .trim_end_matches(",")
+                            .parse()
+                            .unwrap_or(origin.1 + height as i32);
                         (w, h)
                     }
-                    _ => (origin.0 + width as i32, origin.1 + height as i32)
+                    _ => (origin.0 + width as i32, origin.1 + height as i32),
                 };
-            
+
                 minx = 0;
                 maxx = max_width;
                 miny = 0;
@@ -213,16 +218,14 @@ pub(super) async fn check_init() -> ResultType<()> {
     Ok(())
 }
 
-pub(super) async fn get_displays() -> ResultType<(usize, Vec<DisplayInfo>)> {
+pub(super) async fn get_displays() -> ResultType<Vec<DisplayInfo>> {
     check_init().await?;
     let addr = *CAP_DISPLAY_INFO.read().unwrap();
     if addr != 0 {
         let cap_display_info: *const CapDisplayInfo = addr as _;
         unsafe {
             let cap_display_info = &*cap_display_info;
-            let primary = cap_display_info.primary;
-            let displays = cap_display_info.displays.clone();
-            Ok((primary, displays))
+            Ok(cap_display_info.displays.clone())
         }
     } else {
         bail!("Failed to get capturer display info");
