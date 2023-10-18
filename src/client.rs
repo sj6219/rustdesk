@@ -1877,16 +1877,7 @@ where
         loop {
             if let Ok(data) = video_receiver.recv() {
                 match data {
-<<<<<<< HEAD
                     //..w::::::+5.3
-                    MediaData::VideoFrame(_) | MediaData::VideoQueue => {
-                        let vf = if let MediaData::VideoFrame(vf) = data {
-                            *vf
-                        } else {
-                            if let Some(vf) = video_queue.pop() {
-                                vf
-                            } else {
-=======
                     MediaData::VideoFrame(_) | MediaData::VideoQueue(_) => {
                         let vf = match data {
                             MediaData::VideoFrame(vf) => *vf,
@@ -1905,7 +1896,6 @@ where
                             }
                             _ => {
                                 // unreachable!();
->>>>>>> master
                                 continue;
                             }
                         };

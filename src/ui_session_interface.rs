@@ -1499,14 +1499,6 @@ pub async fn io_loop<T: InvokeUiSession>(handler: Session<T>, round: u32) {
     let frame_count_map: Arc<RwLock<HashMap<usize, usize>>> = Default::default();
     let frame_count_map_cl = frame_count_map.clone();
     let ui_handler = handler.ui_handler.clone();
-<<<<<<< HEAD
-    let (video_sender, audio_sender, video_queue, decode_fps) =
-        start_video_audio_threads(move |data: &mut scrap::ImageRgb| {
-            frame_count_cl.fetch_add(1, Ordering::Relaxed);
-            //..m::::::+5.4
-            ui_handler.on_rgba(data);
-        });
-=======
     let (video_sender, audio_sender, video_queue_map, decode_fps_map) = start_video_audio_threads(
         handler.clone(),
         move |display: usize, data: &mut scrap::ImageRgb| {
@@ -1514,10 +1506,10 @@ pub async fn io_loop<T: InvokeUiSession>(handler: Session<T>, round: u32) {
             let count = write_lock.get(&display).unwrap_or(&0) + 1;
             write_lock.insert(display, count);
             drop(write_lock);
+            //..m::::::+5.4
             ui_handler.on_rgba(display, data);
         },
     );
->>>>>>> master
 
     let mut remote = Remote::new(
         handler,

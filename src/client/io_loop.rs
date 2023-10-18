@@ -1035,10 +1035,7 @@ impl<T: InvokeUiSession> Remote<T> {
                             ..Default::default()
                         })
                     };
-<<<<<<< HEAD
                     //..w::::::+5.2
-=======
-
                     let display = vf.display as usize;
                     let mut video_queue_write = self.video_queue_map.write().unwrap();
                     if !video_queue_write.contains_key(&display) {
@@ -1047,7 +1044,6 @@ impl<T: InvokeUiSession> Remote<T> {
                             ArrayQueue::<VideoFrame>::new(crate::client::VIDEO_QUEUE_SIZE),
                         );
                     }
->>>>>>> master
                     if Self::contains_key_frame(&vf) {
                         if let Some(video_queue) = video_queue_write.get_mut(&display) {
                             while let Some(_) = video_queue.pop() {}
