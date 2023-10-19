@@ -1399,6 +1399,7 @@ impl<T: InvokeUiSession> Session<T> {
 pub async fn io_loop<T: InvokeUiSession>(handler: Session<T>, round: u32) {
     // It is ok to call this function multiple times.
 
+    //..
     #[cfg(not(feature = "flutter"))]
     let _wake_lock = crate::server::video_service::get_wake_lock();
 
