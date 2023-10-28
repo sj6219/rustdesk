@@ -565,5 +565,12 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Open in new window", "Buka di jendela baru"),
         ("Show displays as individual windows", "Tampilkan dengan jendela terpisah"),
         ("Use all my displays for the remote session", "Gunakan semua layar untuk sesi remote"),
+        ("selinux_tip", ""),
+        ("Change view", "Sesuaikan tampilan"),
+        ("Big tiles", ""),
+        ("Small tiles", ""),
+        ("List", ""),
+        ("Virtual display", "Tampilan virtual"),
+        ("Plug out all", ""),
     ].iter().cloned().collect();
 }

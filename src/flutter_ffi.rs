@@ -210,6 +210,7 @@ pub fn session_reconnect(session_id: SessionID, force_relay: bool) {
     if let Some(session) = sessions::get_session_by_session_id(&session_id) {
         session.reconnect(force_relay);
     }
+    session_on_waiting_for_image_dialog_show(session_id);
 }
 
 pub fn session_toggle_option(session_id: SessionID, value: String) {
@@ -1400,6 +1401,12 @@ pub fn session_on_waiting_for_image_dialog_show(session_id: SessionID) {
     super::flutter::session_on_waiting_for_image_dialog_show(session_id);
 }
 
+pub fn session_toggle_virtual_display(session_id: SessionID, index: i32, on: bool) {
+    if let Some(session) = sessions::get_session_by_session_id(&session_id) {
+        session.toggle_virtual_display(index, on);
+    }
+}
+
 pub fn main_set_home_dir(_home: String) {
     #[cfg(any(target_os = "android", target_os = "ios"))]
     {
@@ -1584,7 +1591,7 @@ pub fn main_is_installed() -> SyncReturn<bool> {
 
 pub fn main_start_grab_keyboard() -> SyncReturn<bool> {
     #[cfg(target_os = "linux")]
-    if !*crate::common::IS_X11 {
+    if !crate::platform::linux::is_x11() {
         return SyncReturn(false);
     }
     crate::keyboard::client::start_grab_loop();
@@ -1933,6 +1940,17 @@ pub fn plugin_install(_id: String, _b: bool) {
 
 pub fn is_support_multi_ui_session(version: String) -> SyncReturn<bool> {
     SyncReturn(crate::common::is_support_multi_ui_session(&version))
+}
+
+pub fn is_selinux_enforcing() -> SyncReturn<bool> {
+    #[cfg(target_os = "linux")]
+    {
+        SyncReturn(crate::platform::linux::is_selinux_enforcing())
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        SyncReturn(false)
+    }
 }
 
 #[cfg(target_os = "android")]
