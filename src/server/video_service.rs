@@ -18,8 +18,6 @@
 // to-do:
 // https://slhck.info/video/2017/03/01/rate-control.html
 
-#[cfg(target_os = "linux")]
-use super::display_service::IS_X11;
 use super::{
     display_service::{check_display_changed, get_display_info},
     service::ServiceTmpl,
@@ -28,6 +26,8 @@ use super::{
 };
 #[cfg(target_os = "linux")]
 use crate::common::SimpleCallOnReturn;
+#[cfg(target_os = "linux")]
+use crate::platform::linux::is_x11;
 #[cfg(windows)]
 use crate::{platform::windows::is_process_consent_running, privacy_win_mag};
 use hbb_common::{
@@ -46,8 +46,6 @@ use scrap::{
     vpxcodec::{VpxEncoderConfig, VpxVideoCodecId},
     CodecName, Display, TraitCapturer,
 };
-#[cfg(target_os = "linux")]
-use std::sync::atomic::Ordering;
 #[cfg(windows)]
 use std::sync::Once;
 use std::{
@@ -257,7 +255,7 @@ pub fn test_create_capturer(
 ) -> String {
     let test_begin = Instant::now();
     loop {
-        let err = match try_get_displays() {
+        let err = match Display::all() {
             Ok(mut displays) => {
                 if displays.len() <= display_idx {
                     anyhow!(
@@ -273,7 +271,7 @@ pub fn test_create_capturer(
                     }
                 }
             }
-            Err(e) => e,
+            Err(e) => e.into(),
         };
         if test_begin.elapsed().as_millis() >= timeout_millis as _ {
             return err.to_string();
@@ -329,12 +327,12 @@ fn get_capturer(
 ) -> ResultType<CapturerInfo> {
     #[cfg(target_os = "linux")]
     {
-        if !IS_X11.load(Ordering::SeqCst) {
+        if !is_x11() {
             return super::wayland::get_capturer();
         }
     }
 
-    let mut displays = try_get_displays()?;
+    let mut displays = Display::all()?;
     let ndisplay = displays.len();
     if ndisplay <= current {
         bail!(
@@ -436,8 +434,7 @@ fn run(vs: VideoService) -> ResultType<()> {
     log::info!("init quality={:?}, abr enabled:{}", quality, abr);
     let codec_name = Encoder::negotiated_codec();
     let recorder = get_recorder(c.width, c.height, &codec_name);
-    let last_recording =
-        (recorder.lock().unwrap().is_some() || video_qos.record()) && codec_name != CodecName::AV1;
+    let last_recording = recorder.lock().unwrap().is_some() || video_qos.record();
     drop(video_qos);
     let encoder_cfg = get_encoder_config(&c, quality, last_recording);
 
@@ -479,8 +476,7 @@ fn run(vs: VideoService) -> ResultType<()> {
             allow_err!(encoder.set_quality(quality));
             video_qos.store_bitrate(encoder.bitrate());
         }
-        let recording = (recorder.lock().unwrap().is_some() || video_qos.record())
-            && codec_name != CodecName::AV1;
+        let recording = recorder.lock().unwrap().is_some() || video_qos.record();
         if recording != last_recording {
             bail!("SWITCH");
         }
@@ -573,7 +569,7 @@ fn run(vs: VideoService) -> ResultType<()> {
                 #[cfg(target_os = "linux")]
                 {
                     would_block_count += 1;
-                    if !IS_X11.load(Ordering::SeqCst) {
+                    if !is_x11() {
                         if would_block_count >= 100 {
                             // to-do: Unknown reason for WouldBlock 100 times (seconds = 100 * 1 / fps)
                             // https://github.com/rustdesk/rustdesk/blob/63e6b2f8ab51743e77a151e2b7ff18816f5fa2fb/libs/scrap/src/common/wayland.rs#L81
@@ -754,7 +750,7 @@ fn handle_one_frame(
 
 pub fn is_inited_msg() -> Option<Message> {
     #[cfg(target_os = "linux")]
-    if !IS_X11.load(Ordering::SeqCst) {
+    if !is_x11() {
         return super::wayland::is_inited();
     }
     None
@@ -764,52 +760,6 @@ pub fn is_inited_msg() -> Option<Message> {
 pub fn refresh() {
     #[cfg(target_os = "android")]
     Display::refresh_size();
-}
-
-#[inline]
-#[cfg(not(all(windows, feature = "virtual_display_driver")))]
-fn try_get_displays() -> ResultType<Vec<Display>> {
-    Ok(Display::all()?)
-}
-
-#[inline]
-#[cfg(all(windows, feature = "virtual_display_driver"))]
-fn no_displays(displays: &Vec<Display>) -> bool {
-    let display_len = displays.len();
-    if display_len == 0 {
-        true
-    } else if display_len == 1 {
-        let display = &displays[0];
-        let dummy_display_side_max_size = 800;
-        if display.width() > dummy_display_side_max_size
-            || display.height() > dummy_display_side_max_size
-        {
-            return false;
-        }
-        let any_real = crate::platform::resolutions(&display.name())
-            .iter()
-            .any(|r| {
-                (r.height as usize) > dummy_display_side_max_size
-                    || (r.width as usize) > dummy_display_side_max_size
-            });
-        !any_real
-    } else {
-        false
-    }
-}
-
-#[cfg(all(windows, feature = "virtual_display_driver"))]
-fn try_get_displays() -> ResultType<Vec<Display>> {
-    // let mut displays = Display::all()?;
-    // if no_displays(&displays) {
-    //     log::debug!("no displays, create virtual display");
-    //     if let Err(e) = virtual_display_manager::plug_in_headless() {
-    //         log::error!("plug in headless failed {}", e);
-    //     } else {
-    //         displays = Display::all()?;
-    //     }
-    // }
-    Ok(Display::all()?)
 }
 
 #[cfg(windows)]
