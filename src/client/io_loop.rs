@@ -1354,7 +1354,6 @@ impl<T: InvokeUiSession> Remote<T> {
                     }
                     Some(misc::Union::CloseReason(c)) => {
                         self.handler.msgbox("error", "Connection Error", &c, "");
-                        std::process::exit(0); //..
                         return false;
                     }
                     Some(misc::Union::BackNotification(notification)) => {
@@ -1536,6 +1535,7 @@ impl<T: InvokeUiSession> Remote<T> {
                 }
                 Some(message::Union::PeerInfo(pi)) => {
                     self.handler.set_displays(&pi.displays);
+                    self.handler.set_platform_additions(&pi.platform_additions);
                 }
                 _ => {}
             }
