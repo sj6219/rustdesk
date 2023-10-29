@@ -399,8 +399,9 @@ fn get_capturer(
 }
 
 fn run(vs: VideoService) -> ResultType<()> {
-    #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    let _wake_lock = get_wake_lock();
+
+    //.. #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    //let _wake_lock = get_wake_lock();
 
     // Wayland only support one video capturer for now. It is ok to call ensure_inited() here.
     //

@@ -1354,11 +1354,6 @@ impl<T: InvokeUiSession> Remote<T> {
                     }
                     Some(misc::Union::CloseReason(c)) => {
                         self.handler.msgbox("error", "Connection Error", &c, "");
-                        
-                        //..
-                        #[cfg(not(feature = "flutter"))]
-                        std::process::exit(0); 
-
                         return false;
                     }
                     Some(misc::Union::BackNotification(notification)) => {
