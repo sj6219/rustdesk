@@ -1,11 +1,13 @@
 use super::{input_service::*, *};
-#[cfg(windows)]
+#[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
 use crate::clipboard_file::*;
 #[cfg(not(target_os = "ios"))]
 use crate::common::update_clipboard;
 #[cfg(all(target_os = "linux", feature = "linux_headless"))]
 #[cfg(not(any(feature = "flatpak", feature = "appimage")))]
 use crate::platform::linux_desktop_manager;
+#[cfg(any(target_os = "windows", target_os = "linux"))]
+use crate::platform::WallPaperRemover;
 #[cfg(windows)]
 use crate::portable_service::client as portable_client;
 use crate::{
@@ -13,7 +15,7 @@ use crate::{
         new_voice_call_request, new_voice_call_response, start_audio_thread, MediaData, MediaSender,
     },
     common::{get_default_sound_input, set_sound_input},
-    video_service,
+    display_service, video_service,
 };
 #[cfg(any(target_os = "android", target_os = "ios"))]
 use crate::{common::DEVICE_NAME, flutter::connection_manager::start_channel};
@@ -51,16 +53,23 @@ use std::{
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 use system_shutdown;
 
+#[cfg(all(windows, feature = "virtual_display_driver"))]
+use crate::virtual_display_manager;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 use std::collections::HashSet;
-
 pub type Sender = mpsc::UnboundedSender<(Instant, Arc<Message>)>;
 
 lazy_static::lazy_static! {
     static ref LOGIN_FAILURES: Arc::<Mutex<HashMap<String, (i32, i32, i32)>>> = Default::default();
     static ref SESSIONS: Arc::<Mutex<HashMap<String, Session>>> = Default::default();
     static ref ALIVE_CONNS: Arc::<Mutex<Vec<i32>>> = Default::default();
+    static ref AUTHED_CONNS: Arc::<Mutex<Vec<(i32, AuthConnType)>>> = Default::default();
     static ref SWITCH_SIDES_UUID: Arc::<Mutex<HashMap<String, (Instant, uuid::Uuid)>>> = Default::default();
+}
+
+#[cfg(any(target_os = "windows", target_os = "linux"))]
+lazy_static::lazy_static! {
+    static ref WALLPAPER_REMOVER: Arc<Mutex<Option<WallPaperRemover>>> = Default::default();
 }
 pub static CLICK_TIME: AtomicI64 = AtomicI64::new(0);
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -143,8 +152,16 @@ struct StartCmIpcPara {
     tx_cm_stream_ready: mpsc::Sender<()>,
 }
 
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum AuthConnType {
+    Remote,
+    FileTransfer,
+    PortForward,
+}
+
 pub struct Connection {
     inner: ConnInner,
+    display_idx: usize,
     stream: super::Stream,
     server: super::ServerPtrWeak,
     hash: Hash,
@@ -175,7 +192,7 @@ pub struct Connection {
     // by peer
     disable_audio: bool,
     // by peer
-    #[cfg(windows)]
+    #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
     enable_file_transfer: bool,
     // by peer
     audio_sender: Option<MediaSender>,
@@ -205,6 +222,7 @@ pub struct Connection {
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     start_cm_ipc_para: Option<StartCmIpcPara>,
     auto_disconnect_timer: Option<(Instant, u64)>,
+    authed_conn_id: Option<self::raii::AuthedConnID>,
 }
 
 impl ConnInner {
@@ -287,6 +305,7 @@ impl Connection {
                 tx: Some(tx),
                 tx_video: Some(tx_video),
             },
+            display_idx: *display_service::PRIMARY_DISPLAY_IDX,
             stream,
             server,
             hash,
@@ -311,7 +330,7 @@ impl Connection {
             show_remote_cursor: false,
             ip: "".to_owned(),
             disable_audio: false,
-            #[cfg(windows)]
+            #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
             enable_file_transfer: false,
             disable_clipboard: false,
             disable_keyboard: false,
@@ -345,6 +364,7 @@ impl Connection {
                 tx_cm_stream_ready,
             }),
             auto_disconnect_timer: None,
+            authed_conn_id: None,
         };
         let addr = hbb_common::try_into_v4(addr);
         if !conn.on_open(addr).await {
@@ -459,7 +479,7 @@ impl Connection {
                         ipc::Data::RawMessage(bytes) => {
                             allow_err!(conn.stream.send_raw(bytes).await);
                         }
-                        #[cfg(windows)]
+                        #[cfg(any(target_os="windows", target_os="linux", target_os = "macos"))]
                         ipc::Data::ClipboardFile(clip) => {
                             allow_err!(conn.stream.send(&clip_2_msg(clip)).await);
                         }
@@ -592,6 +612,9 @@ impl Connection {
                                 _ => {},
                             }
                         }
+                        Some(message::Union::PeerInfo(..)) => {
+                            conn.refresh_video_display(None);
+                        }
                         _ => {}
                     }
                     if let Err(err) = conn.stream.send(msg).await {
@@ -647,7 +670,6 @@ impl Connection {
             conn.lr.my_id.clone(),
         );
         video_service::notify_video_frame_fetched(id, None);
-        scrap::codec::Encoder::update(id, scrap::codec::EncodingUpdate::Remove);
         if conn.authorized {
             password::update_temporary_password();
         }
@@ -981,13 +1003,17 @@ impl Connection {
         if self.authorized {
             return;
         }
-        let conn_type = if self.file_transfer.is_some() {
-            1
+        let (conn_type, auth_conn_type) = if self.file_transfer.is_some() {
+            (1, AuthConnType::FileTransfer)
         } else if self.port_forward_socket.is_some() {
-            2
+            (2, AuthConnType::PortForward)
         } else {
-            0
+            (0, AuthConnType::Remote)
         };
+        self.authed_conn_id = Some(self::raii::AuthedConnID::new(
+            self.inner.id(),
+            auth_conn_type,
+        ));
         self.post_conn_audit(
             json!({"peer": ((&self.lr.my_id, &self.lr.my_name)), "type": conn_type}),
         );
@@ -1010,9 +1036,10 @@ impl Connection {
             pi.hostname = DEVICE_NAME.lock().unwrap().clone();
             pi.platform = "Android".into();
         }
+        #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+        let mut platform_additions = serde_json::Map::new();
         #[cfg(target_os = "linux")]
         {
-            let mut platform_additions = serde_json::Map::new();
             if crate::platform::current_is_wayland() {
                 platform_additions.insert("is_wayland".into(), json!(true));
             }
@@ -1023,10 +1050,36 @@ impl Connection {
                     platform_additions.insert("headless".into(), json!(true));
                 }
             }
-            if !platform_additions.is_empty() {
-                pi.platform_additions =
-                    serde_json::to_string(&platform_additions).unwrap_or("".into());
+        }
+        #[cfg(target_os = "windows")]
+        {
+            platform_additions.insert(
+                "is_installed".into(),
+                json!(crate::platform::is_installed()),
+            );
+            #[cfg(feature = "virtual_display_driver")]
+            if crate::platform::is_installed() {
+                let virtual_displays = virtual_display_manager::get_virtual_displays();
+                if !virtual_displays.is_empty() {
+                    platform_additions.insert("virtual_displays".into(), json!(&virtual_displays));
+                }
             }
+        }
+
+        #[cfg(any(
+            target_os = "windows",
+            all(
+                any(target_os = "linux", target_os = "macos"),
+                feature = "unix-file-copy-paste"
+            )
+        ))]
+        {
+            platform_additions.insert("has_file_clipboard".into(), json!(true));
+        }
+
+        #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+        if !platform_additions.is_empty() {
+            pi.platform_additions = serde_json::to_string(&platform_additions).unwrap_or("".into());
         }
 
         pi.encoding = Some(scrap::codec::Encoder::supported_encoding()).into();
@@ -1082,19 +1135,20 @@ impl Connection {
         pi.username = username;
         pi.sas_enabled = sas_enabled;
         pi.features = Some(Features {
-            privacy_mode: video_service::is_privacy_mode_supported(),
+            privacy_mode: display_service::is_privacy_mode_supported(),
             ..Default::default()
         })
         .into();
-        // `try_reset_current_display` is needed because `get_displays` may change the current display,
-        // which may cause the mismatch of current display and the current display name.
-        #[cfg(not(any(target_os = "android", target_os = "ios")))]
-        video_service::try_reset_current_display();
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         {
             pi.resolutions = Some(SupportedResolutions {
-                resolutions: video_service::get_current_display()
-                    .map(|(_, _, d)| crate::platform::resolutions(&d.name()))
+                resolutions: display_service::try_get_displays()
+                    .map(|displays| {
+                        displays
+                            .get(self.display_idx)
+                            .map(|d| crate::platform::resolutions(&d.name()))
+                            .unwrap_or(vec![])
+                    })
                     .unwrap_or(vec![]),
                 ..Default::default()
             })
@@ -1110,18 +1164,20 @@ impl Connection {
                 self.send(msg_out).await;
             }
 
-            match super::video_service::get_displays().await {
+            match super::display_service::update_get_sync_displays().await {
                 Err(err) => {
                     res.set_error(format!("{}", err));
                 }
-                Ok((current, displays)) => {
+                Ok(displays) => {
+                    // For compatibility with old versions, we need to send the displays to the peer.
+                    // But the displays may be updated later, before creating the video capturer.
                     pi.displays = displays.clone();
-                    pi.current_display = current as _;
+                    pi.current_display = self.display_idx as _;
                     res.set_peer_info(pi);
                     sub_service = true;
-                    *super::video_service::LAST_SYNC_DISPLAYS.write().unwrap() = displays;
                 }
             }
+            self.on_remote_authorized();
         }
         let mut msg_out = Message::new();
         //..a::::::4.2
@@ -1163,6 +1219,30 @@ impl Connection {
         }
     }
 
+    fn on_remote_authorized(&self) {
+        use std::sync::Once;
+        static _ONCE: Once = Once::new();
+        self.update_codec_on_login();
+        #[cfg(any(target_os = "windows", target_os = "linux"))]
+        if !Config::get_option("allow-remove-wallpaper").is_empty() {
+            // multi connections set once
+            let mut wallpaper = WALLPAPER_REMOVER.lock().unwrap();
+            if wallpaper.is_none() {
+                match crate::platform::WallPaperRemover::new() {
+                    Ok(remover) => {
+                        *wallpaper = Some(remover);
+                        _ONCE.call_once(|| {
+                            shutdown_hooks::add_shutdown_hook(shutdown_hook);
+                        });
+                    }
+                    Err(e) => {
+                        log::info!("create wallpaper remover failed:{:?}", e);
+                    }
+                }
+            }
+        }
+    }
+
     fn peer_keyboard_enabled(&self) -> bool {
         self.keyboard && !self.disable_keyboard
     }
@@ -1175,7 +1255,7 @@ impl Connection {
         self.audio && !self.disable_audio
     }
 
-    #[cfg(windows)]
+    #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
     fn file_transfer_enabled(&self) -> bool {
         self.file && self.enable_file_transfer
     }
@@ -1253,6 +1333,8 @@ impl Connection {
     #[inline]
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     fn input_key(&self, msg: KeyEvent, press: bool) {
+        // to-do: if is the legacy mode, and the key is function key "LockScreen".
+        // Switch to the primary display.
         //..m!!!!!!2.2
         //..w!!!!!!2.2
         self.tx_input.send(MessageInput::Key((msg, press))).ok();
@@ -1341,8 +1423,8 @@ impl Connection {
         return Config::get_option(enable_prefix_option).is_empty();
     }
 
-    fn update_codec_on_login(&self, lr: &LoginRequest) {
-        if let Some(o) = lr.option.as_ref() {
+    fn update_codec_on_login(&self) {
+        if let Some(o) = self.lr.clone().option.as_ref() {
             if let Some(q) = o.supported_decoding.clone().take() {
                 scrap::codec::Encoder::update(
                     self.inner.id(),
@@ -1366,9 +1448,6 @@ impl Connection {
         self.lr = lr.clone();
         if let Some(o) = lr.option.as_ref() {
             self.options_in_login = Some(o.clone());
-        }
-        if lr.union.is_none() {
-            self.update_codec_on_login(&lr);
         }
         self.video_ack_required = lr.video_ack_required;
     }
@@ -1415,22 +1494,16 @@ impl Connection {
                     self.file_transfer = Some((ft.dir, ft.show_hidden));
                 }
                 Some(login_request::Union::PortForward(mut pf)) => {
+                    if !Connection::permission("enable-tunnel") {
+                        self.send_login_error("No permission of IP tunneling").await;
+                        sleep(1.).await;
+                        return false;
+                    }
                     let mut is_rdp = false;
                     if pf.host == "RDP" && pf.port == 0 {
                         pf.host = "localhost".to_owned();
                         pf.port = 3389;
                         is_rdp = true;
-                    }
-                    if is_rdp && !Connection::permission("enable-rdp")
-                        || !is_rdp && !Connection::permission("enable-tunnel")
-                    {
-                        if is_rdp {
-                            self.send_login_error("No permission of RDP").await;
-                        } else {
-                            self.send_login_error("No permission of IP tunneling").await;
-                        }
-                        sleep(1.).await;
-                        return false;
                     }
                     if pf.host.is_empty() {
                         pf.host = "localhost".to_owned();
@@ -1761,8 +1834,9 @@ impl Connection {
                 }
                 Some(message::Union::Cliprdr(_clip)) =>
                 {
-                    #[cfg(windows)]
+                    #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
                     if let Some(clip) = msg_2_clip(_clip) {
+                        log::debug!("got clipfile from client peer");
                         self.send_to_cm(ipc::Data::ClipboardFile(clip))
                     }
                 }
@@ -1926,15 +2000,17 @@ impl Connection {
                 },
                 Some(message::Union::Misc(misc)) => match misc.union {
                     Some(misc::Union::SwitchDisplay(s)) => {
-                        video_service::switch_display(s.display).await;
-                        #[cfg(not(any(target_os = "android", target_os = "ios")))]
-                        if s.width != 0 && s.height != 0 {
-                            self.change_resolution(&Resolution {
-                                width: s.width,
-                                height: s.height,
-                                ..Default::default()
-                            });
-                        }
+                        self.handle_switch_display(s).await;
+                    }
+                    Some(misc::Union::CaptureDisplays(displays)) => {
+                        let add = displays.add.iter().map(|d| *d as usize).collect::<Vec<_>>();
+                        let sub = displays.sub.iter().map(|d| *d as usize).collect::<Vec<_>>();
+                        let set = displays.set.iter().map(|d| *d as usize).collect::<Vec<_>>();
+                        self.capture_displays(&add, &sub, &set).await;
+                    }
+                    #[cfg(all(windows, feature = "virtual_display_driver"))]
+                    Some(misc::Union::ToggleVirtualDisplay(t)) => {
+                        self.toggle_virtual_display(t).await;
                     }
                     Some(misc::Union::ChatMessage(c)) => {
                         self.send_to_cm(ipc::Data::ChatMessage { text: c.text });
@@ -1946,8 +2022,14 @@ impl Connection {
                     }
                     Some(misc::Union::RefreshVideo(r)) => {
                         if r {
-                            super::video_service::refresh();
+                            // Refresh all videos.
+                            // Compatibility with old versions and sciter(remote).
+                            self.refresh_video_display(None);
                         }
+                        self.update_auto_disconnect_timer();
+                    }
+                    Some(misc::Union::RefreshVideoDisplay(display)) => {
+                        self.refresh_video_display(Some(display as usize));
                         self.update_auto_disconnect_timer();
                     }
                     Some(misc::Union::VideoReceived(_)) => {
@@ -2065,6 +2147,80 @@ impl Connection {
         true
     }
 
+    fn refresh_video_display(&self, display: Option<usize>) {
+        video_service::refresh();
+        self.server.upgrade().map(|s| {
+            s.read().unwrap().set_video_service_opt(
+                display,
+                video_service::OPTION_REFRESH,
+                super::service::SERVICE_OPTION_VALUE_TRUE,
+            );
+        });
+    }
+
+    async fn handle_switch_display(&mut self, s: SwitchDisplay) {
+        #[cfg(windows)]
+        if portable_client::running()
+            && *CONN_COUNT.lock().unwrap() > 1
+            && s.display != (*display_service::PRIMARY_DISPLAY_IDX as i32)
+        {
+            log::info!("Switch to non-primary display is not supported in the elevated mode when there are multiple connections.");
+            let mut msg_out = Message::new();
+            let res = MessageBox {
+                msgtype: "nook-nocancel-hasclose".to_owned(),
+                title: "Prompt".to_owned(),
+                text: "switch_display_elevated_connections_tip".to_owned(),
+                link: "".to_owned(),
+                ..Default::default()
+            };
+            msg_out.set_message_box(res);
+            self.send(msg_out).await;
+            return;
+        }
+
+        let display_idx = s.display as usize;
+        if self.display_idx != display_idx {
+            if let Some(server) = self.server.upgrade() {
+                self.switch_display_to(display_idx, server.clone());
+
+                #[cfg(not(any(target_os = "android", target_os = "ios")))]
+                if s.width != 0 && s.height != 0 {
+                    self.change_resolution(&Resolution {
+                        width: s.width,
+                        height: s.height,
+                        ..Default::default()
+                    });
+                }
+            }
+
+            // Send display changed message.
+            // 1. For compatibility with old versions ( < 1.2.4 ).
+            // 2. Sciter version.
+            // 3. Update `SupportedResolutions`.
+            if let Some(msg_out) = video_service::make_display_changed_msg(self.display_idx, None) {
+                self.send(msg_out).await;
+            }
+        }
+    }
+
+    fn switch_display_to(&mut self, display_idx: usize, server: Arc<RwLock<Server>>) {
+        let new_service_name = video_service::get_service_name(display_idx);
+        let old_service_name = video_service::get_service_name(self.display_idx);
+        let mut lock = server.write().unwrap();
+        if display_idx != *display_service::PRIMARY_DISPLAY_IDX {
+            if !lock.contains(&new_service_name) {
+                lock.add_service(Box::new(video_service::new(display_idx)));
+            }
+        }
+        // For versions greater than 1.2.4, a `CaptureDisplays` message will be sent immediately.
+        // Unnecessary capturers will be removed then.
+        if !crate::common::is_support_multi_ui_session(&self.lr.version) {
+            lock.subscribe(&old_service_name, self.inner.clone(), false);
+        }
+        lock.subscribe(&new_service_name, self.inner.clone(), true);
+        self.display_idx = display_idx;
+    }
+
     #[cfg(windows)]
     async fn handle_elevation_request(&mut self, para: portable_client::StartPara) {
         let mut err;
@@ -2087,36 +2243,83 @@ impl Connection {
         self.update_auto_disconnect_timer();
     }
 
+    async fn capture_displays(&mut self, add: &[usize], sub: &[usize], set: &[usize]) {
+        if let Some(sever) = self.server.upgrade() {
+            let mut lock = sever.write().unwrap();
+            for display in add.iter() {
+                let service_name = video_service::get_service_name(*display);
+                if !lock.contains(&service_name) {
+                    lock.add_service(Box::new(video_service::new(*display)));
+                }
+            }
+            for display in set.iter() {
+                let service_name = video_service::get_service_name(*display);
+                if !lock.contains(&service_name) {
+                    lock.add_service(Box::new(video_service::new(*display)));
+                }
+            }
+            if !add.is_empty() {
+                lock.capture_displays(self.inner.clone(), add, true, false);
+            } else if !sub.is_empty() {
+                lock.capture_displays(self.inner.clone(), sub, false, true);
+            } else {
+                lock.capture_displays(self.inner.clone(), set, true, true);
+            }
+            drop(lock);
+        }
+    }
+
+    #[cfg(all(windows, feature = "virtual_display_driver"))]
+    async fn toggle_virtual_display(&mut self, t: ToggleVirtualDisplay) {
+        if t.on {
+            if let Err(e) = virtual_display_manager::plug_in_index_modes(t.display as _, Vec::new())
+            {
+                log::error!("Failed to plug in virtual display: {}", e);
+            }
+        } else {
+            let indices = if t.display == -1 {
+                virtual_display_manager::get_virtual_displays()
+            } else {
+                vec![t.display as _]
+            };
+            if let Err(e) = virtual_display_manager::plug_out_peer_request(&indices) {
+                log::error!("Failed to plug out virtual display {:?}: {}", &indices, e);
+            }
+        }
+    }
+
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     fn change_resolution(&mut self, r: &Resolution) {
         if self.keyboard {
-            if let Ok((_, _, display)) = video_service::get_current_display() {
-                let name = display.name();
-                #[cfg(all(windows, feature = "virtual_display_driver"))]
-                if let Some(_ok) =
-                    crate::virtual_display_manager::change_resolution_if_is_virtual_display(
+            if let Ok(displays) = display_service::try_get_displays() {
+                if let Some(display) = displays.get(self.display_idx) {
+                    let name = display.name();
+                    #[cfg(all(windows, feature = "virtual_display_driver"))]
+                    if let Some(_ok) =
+                        virtual_display_manager::change_resolution_if_is_virtual_display(
+                            &name,
+                            r.width as _,
+                            r.height as _,
+                        )
+                    {
+                        return;
+                    }
+                    display_service::set_last_changed_resolution(
                         &name,
-                        r.width as _,
-                        r.height as _,
-                    )
-                {
-                    return;
-                }
-                video_service::set_last_changed_resolution(
-                    &name,
-                    (display.width() as _, display.height() as _),
-                    (r.width, r.height),
-                );
-                if let Err(e) =
-                    crate::platform::change_resolution(&name, r.width as _, r.height as _)
-                {
-                    log::error!(
-                        "Failed to change resolution '{}' to ({},{}):{:?}",
-                        &name,
-                        r.width,
-                        r.height,
-                        e
+                        (display.width() as _, display.height() as _),
+                        (r.width, r.height),
                     );
+                    if let Err(e) =
+                        crate::platform::change_resolution(&name, r.width as _, r.height as _)
+                    {
+                        log::error!(
+                            "Failed to change resolution '{}' to ({},{}):{:?}",
+                            &name,
+                            r.width,
+                            r.height,
+                            e
+                        );
+                    }
                 }
             }
         }
@@ -2220,7 +2423,7 @@ impl Connection {
                 }
             }
         }
-        #[cfg(windows)]
+        #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
         if let Ok(q) = o.enable_file_transfer.enum_value() {
             if q != BoolOption::NotSet {
                 self.enable_file_transfer = q == BoolOption::Yes;
@@ -2262,7 +2465,7 @@ impl Connection {
             if self.keyboard {
                 match q {
                     BoolOption::Yes => {
-                        let msg_out = if !video_service::is_privacy_mode_supported() {
+                        let msg_out = if !display_service::is_privacy_mode_supported() {
                             crate::common::make_privacy_mode_msg_with_details(
                                 back_notification::PrivacyModeState::PrvNotSupported,
                                 "Unsupported. 1 Multi-screen is not supported. 2 Please confirm the license is activated.".to_string(),
@@ -2270,8 +2473,11 @@ impl Connection {
                         } else {
                             match privacy_mode::turn_on_privacy(self.inner.id) {
                                 Ok(true) => {
-                                    let err_msg =
-                                        video_service::test_create_capturer(self.inner.id, 5_000);
+                                    let err_msg = video_service::test_create_capturer(
+                                        self.inner.id,
+                                        self.display_idx,
+                                        5_000,
+                                    );
                                     if err_msg.is_empty() {
                                         video_service::set_privacy_mode_conn_id(self.inner.id);
                                         crate::common::make_privacy_mode_msg(
@@ -2307,7 +2513,7 @@ impl Connection {
                         self.send(msg_out).await;
                     }
                     BoolOption::No => {
-                        let msg_out = if !video_service::is_privacy_mode_supported() {
+                        let msg_out = if !display_service::is_privacy_mode_supported() {
                             crate::common::make_privacy_mode_msg_with_details(
                                 back_notification::PrivacyModeState::PrvNotSupported,
                                 "Unsupported. 1 Multi-screen is not supported. 2 Please confirm the license is activated.".to_string(),
@@ -2542,7 +2748,11 @@ async fn start_ipc(
                 #[cfg(target_os = "linux")]
                 {
                     log::debug!("Start cm");
-                    res = crate::platform::run_as_user(args.clone(), user.clone());
+                    res = crate::platform::run_as_user(
+                        args.clone(),
+                        user.clone(),
+                        None::<(&str, &str)>,
+                    );
                 }
                 if res.is_ok() {
                     break;
@@ -2756,6 +2966,11 @@ impl LinuxHeadlessHandle {
     }
 }
 
+#[cfg(any(target_os = "windows", target_os = "linux"))]
+extern "C" fn shutdown_hook() {
+    *WALLPAPER_REMOVER.lock().unwrap() = None;
+}
+
 mod raii {
     use super::*;
     pub struct ConnectionID(i32);
@@ -2771,22 +2986,41 @@ mod raii {
         fn drop(&mut self) {
             let mut active_conns_lock = ALIVE_CONNS.lock().unwrap();
             active_conns_lock.retain(|&c| c != self.0);
-            #[cfg(not(any(target_os = "android", target_os = "ios")))]
-            if active_conns_lock.is_empty() {
-                video_service::reset_resolutions();
-            }
-            #[cfg(all(windows, feature = "virtual_display_driver"))]
-            if active_conns_lock.is_empty() {
-                video_service::try_plug_out_virtual_display();
-            }
-            #[cfg(all(windows))]
-            if active_conns_lock.is_empty() {
-                crate::privacy_win_mag::stop();
-            }
             video_service::VIDEO_QOS
                 .lock()
                 .unwrap()
                 .on_connection_close(self.0);
+        }
+    }
+
+    pub struct AuthedConnID(i32, AuthConnType);
+
+    impl AuthedConnID {
+        pub fn new(id: i32, conn_type: AuthConnType) -> Self {
+            AUTHED_CONNS.lock().unwrap().push((id, conn_type));
+            Self(id, conn_type)
+        }
+    }
+
+    impl Drop for AuthedConnID {
+        fn drop(&mut self) {
+            if self.1 == AuthConnType::Remote {
+                scrap::codec::Encoder::update(self.0, scrap::codec::EncodingUpdate::Remove);
+            }
+            let mut lock = AUTHED_CONNS.lock().unwrap();
+            lock.retain(|&c| c.0 != self.0);
+            if lock.iter().filter(|c| c.1 == AuthConnType::Remote).count() == 0 {
+                #[cfg(any(target_os = "windows", target_os = "linux"))]
+                {
+                    *WALLPAPER_REMOVER.lock().unwrap() = None;
+                }
+                #[cfg(not(any(target_os = "android", target_os = "ios")))]
+                display_service::reset_resolutions();
+                #[cfg(all(windows, feature = "virtual_display_driver"))]
+                let _ = virtual_display_manager::reset_all();
+                #[cfg(all(windows))]
+                crate::privacy_win_mag::stop();
+            }
         }
     }
 }
