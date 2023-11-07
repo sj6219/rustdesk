@@ -6,8 +6,8 @@ pushd ./libs/portable
 pip3 install -r requirements.txt
 python3 ./generate.py -f ../../Release/ -o . -e ../../Release/rustdesk.exe
 popd
-cp ./target/release/rustdesk-portable-packer.exe ./rustdesk-1.2.3-aarch64-windows-sciter-install.exe
-mv ./rustdesk-1.2.3-aarch64-windows-sciter-install.exe ./rustdesk-1.2.3-x64-windows-sciter-install.exe -Force
+cp ./target/release/rustdesk-portable-packer.exe ./rustdesk-1.2.4-aarch64-windows-sciter-install.exe
+mv ./rustdesk-1.2.4-aarch64-windows-sciter-install.exe ./rustdesk-1.2.4-x64-windows-sciter-install.exe -Force
 
 Push-Location flutter ; flutter pub get ; Pop-Location
 ~/.cargo/bin/flutter_rust_bridge_codegen --rust-input ./src/flutter_ffi.rs --dart-output ./flutter/lib/generated_bridge.dart
