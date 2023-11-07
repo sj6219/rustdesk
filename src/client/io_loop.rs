@@ -128,7 +128,7 @@ impl<T: InvokeUiSession> Remote<T> {
         //..m::::::1.1
         //..a::::::1.1
         match Client::start(
-            &self.handler.id,
+            &self.handler.get_id(),
             key,
             token,
             conn_type,
@@ -165,7 +165,7 @@ impl<T: InvokeUiSession> Remote<T> {
                     if !is_conn_not_default {
                         log::debug!("get cliprdr client for conn_id {}", self.client_conn_id);
                         (self.client_conn_id, rx_clip_client_lock) =
-                            clipboard::get_rx_cliprdr_client(&self.handler.id);
+                            clipboard::get_rx_cliprdr_client(&self.handler.get_id());
                     };
                 }
                 #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
@@ -198,7 +198,7 @@ impl<T: InvokeUiSession> Remote<T> {
                             } else {
                                 if self.handler.is_restarting_remote_device() {
                                     log::info!("Restart remote device");
-                                    self.handler.msgbox("restarting", "Restarting Remote Device", "remote_restarting_tip", "");
+                                    self.handler.msgbox("restarting", "Restarting remote device", "remote_restarting_tip", "");
                                 } else {
                                     log::info!("Reset by the peer");
                                     self.handler.msgbox("error", "Connection Error", "Reset by the peer", "");
@@ -267,7 +267,7 @@ impl<T: InvokeUiSession> Remote<T> {
                         }
                     }
                 }
-                log::debug!("Exit io_loop of id={}", self.handler.id);
+                log::debug!("Exit io_loop of id={}", self.handler.get_id());
                 // Stop client audio server.
                 if let Some(s) = self.stop_voice_call_sender.take() {
                     s.send(()).ok();
@@ -287,7 +287,7 @@ impl<T: InvokeUiSession> Remote<T> {
 
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         if _set_disconnected_ok {
-            Client::try_stop_clipboard(&self.handler.id);
+            Client::try_stop_clipboard(&self.handler.get_id());
         }
 
         #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
@@ -1123,7 +1123,7 @@ impl<T: InvokeUiSession> Remote<T> {
                             #[cfg(not(any(target_os = "android", target_os = "ios")))]
                             crate::plugin::handle_listen_event(
                                 crate::plugin::EVENT_ON_CONN_CLIENT.to_owned(),
-                                self.handler.id.clone(),
+                                self.handler.get_id(),
                             )
                         }
 
@@ -1351,6 +1351,9 @@ impl<T: InvokeUiSession> Remote<T> {
                             Ok(Permission::Recording) => {
                                 self.handler.set_permission("recording", p.enabled);
                             }
+                            Ok(Permission::BlockInput) => {
+                                self.handler.set_permission("block_input", p.enabled);
+                            }
                             _ => {}
                         }
                     }
@@ -1466,14 +1469,14 @@ impl<T: InvokeUiSession> Remote<T> {
                     }
                     Some(misc::Union::SwitchBack(_)) => {
                         #[cfg(feature = "flutter")]
-                        self.handler.switch_back(&self.handler.id);
+                        self.handler.switch_back(&self.handler.get_id());
                     }
                     #[cfg(all(feature = "flutter", feature = "plugin_framework"))]
                     #[cfg(not(any(target_os = "android", target_os = "ios")))]
                     Some(misc::Union::PluginRequest(p)) => {
                         allow_err!(crate::plugin::handle_server_event(
                             &p.id,
-                            &self.handler.id,
+                            &self.handler.get_id(),
                             &p.content
                         ));
                         // to-do: show message box on UI when error occurs?
