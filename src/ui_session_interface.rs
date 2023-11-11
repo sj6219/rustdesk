@@ -1436,6 +1436,10 @@ impl<T: InvokeUiSession> Session<T> {
 
 #[tokio::main(flavor = "current_thread")]
 pub async fn io_loop<T: InvokeUiSession>(handler: Session<T>, round: u32) {
+    //..
+    #[cfg(not(feature = "flutter"))]
+    let _wake_lock = crate::server::video_service::get_wake_lock();
+
     // It is ok to call this function multiple times.
     #[cfg(any(
         target_os = "windows",
