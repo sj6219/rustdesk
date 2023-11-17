@@ -8,7 +8,7 @@ import 'package:flutter_custom_cursor/cursor_manager.dart'
     as custom_cursor_manager;
 import 'package:get/get.dart';
 import 'package:provider/provider.dart';
-import 'package:wakelock/wakelock.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:flutter_custom_cursor/flutter_custom_cursor.dart';
 import 'package:flutter_improved_scrolling/flutter_improved_scrolling.dart';
 
@@ -17,6 +17,7 @@ import '../../common/widgets/overlay.dart';
 import '../../common/widgets/remote_input.dart';
 import '../../common.dart';
 import '../../common/widgets/dialog.dart';
+import '../../common/widgets/toolbar.dart';
 import '../../models/model.dart';
 import '../../models/desktop_render_texture.dart';
 import '../../models/platform_model.dart';
@@ -80,7 +81,7 @@ class _RemotePageState extends State<RemotePage>
   late RxBool _keyboardEnabled;
   final Map<int, RenderTexture> _renderTextures = {};
 
-  final _blockableOverlayState = BlockableOverlayState();
+  var _blockableOverlayState = BlockableOverlayState();
 
   final FocusNode _rawKeyFocusNode = FocusNode(debugLabel: "rawkeyFocusNode");
 
@@ -123,7 +124,7 @@ class _RemotePageState extends State<RemotePage>
           .showLoading(translate('Connecting...'), onCancel: closeConnection);
     });
     if (!Platform.isLinux) {
-      Wakelock.enable();
+      WakelockPlus.enable();
     }
 
     _ffi.ffiModel.updateEventListener(sessionId, widget.id);
@@ -183,7 +184,7 @@ class _RemotePageState extends State<RemotePage>
       _isWindowBlur = false;
     }
     if (!Platform.isLinux) {
-      Wakelock.enable();
+      WakelockPlus.enable();
     }
   }
 
@@ -192,7 +193,7 @@ class _RemotePageState extends State<RemotePage>
   void onWindowMaximize() {
     super.onWindowMaximize();
     if (!Platform.isLinux) {
-      Wakelock.enable();
+      WakelockPlus.enable();
     }
   }
 
@@ -200,7 +201,7 @@ class _RemotePageState extends State<RemotePage>
   void onWindowMinimize() {
     super.onWindowMinimize();
     if (!Platform.isLinux) {
-      Wakelock.disable();
+      WakelockPlus.disable();
     }
   }
 
@@ -228,7 +229,7 @@ class _RemotePageState extends State<RemotePage>
           overlays: SystemUiOverlay.values);
     }
     if (!Platform.isLinux) {
-      await Wakelock.disable();
+      await WakelockPlus.disable();
     }
     await Get.delete<FFI>(tag: widget.id);
     removeSharedStates(widget.id);
@@ -253,9 +254,9 @@ class _RemotePageState extends State<RemotePage>
           onEnterOrLeaveImageCleaner: () => _onEnterOrLeaveImage4Toolbar = null,
           setRemoteState: setState,
         );
-    return Scaffold(
-      backgroundColor: Theme.of(context).colorScheme.background,
-      body: Stack(
+
+    bodyWidget() {
+      return Stack(
         children: [
           Container(
               color: Colors.black,
@@ -281,26 +282,55 @@ class _RemotePageState extends State<RemotePage>
                   },
                   inputModel: _ffi.inputModel,
                   child: getBodyForDesktop(context))),
-          Obx(() => Stack(
-                children: [
-                  _ffi.ffiModel.pi.isSet.isTrue &&
-                          _ffi.ffiModel.waitForFirstImage.isTrue
-                      ? emptyOverlay()
-                      : () {
-                          _ffi.ffiModel.tryShowAndroidActionsOverlay();
-                          return Offstage();
-                        }(),
-                  // Use Overlay to enable rebuild every time on menu button click.
-                  _ffi.ffiModel.pi.isSet.isTrue
-                      ? Overlay(initialEntries: [
-                          OverlayEntry(builder: remoteToolbar)
-                        ])
-                      : remoteToolbar(context),
-                  _ffi.ffiModel.pi.isSet.isFalse ? emptyOverlay() : Offstage(),
-                ],
-              )),
+          Stack(
+            children: [
+              _ffi.ffiModel.pi.isSet.isTrue &&
+                      _ffi.ffiModel.waitForFirstImage.isTrue
+                  ? emptyOverlay()
+                  : () {
+                      _ffi.ffiModel.tryShowAndroidActionsOverlay();
+                      return Offstage();
+                    }(),
+              // Use Overlay to enable rebuild every time on menu button click.
+              _ffi.ffiModel.pi.isSet.isTrue
+                  ? Overlay(
+                      initialEntries: [OverlayEntry(builder: remoteToolbar)])
+                  : remoteToolbar(context),
+              _ffi.ffiModel.pi.isSet.isFalse ? emptyOverlay() : Offstage(),
+            ],
+          ),
         ],
-      ),
+      );
+    }
+
+    return Scaffold(
+      backgroundColor: Theme.of(context).colorScheme.background,
+      body: Obx(() {
+        final imageReady = _ffi.ffiModel.pi.isSet.isTrue &&
+            _ffi.ffiModel.waitForFirstImage.isFalse;
+        if (imageReady) {
+          // If the privacy mode(disable physical displays) is switched,
+          // we should not dismiss the dialog immediately.
+          if (DateTime.now().difference(togglePrivacyModeTime) >
+              const Duration(milliseconds: 3000)) {
+            // `dismissAll()` is to ensure that the state is clean.
+            // It's ok to call dismissAll() here.
+            _ffi.dialogManager.dismissAll();
+            // Recreate the block state to refresh the state.
+            _blockableOverlayState = BlockableOverlayState();
+            _blockableOverlayState.applyFfi(_ffi);
+          }
+          // Block the whole `bodyWidget()` when dialog shows.
+          return BlockableOverlay(
+            underlying: bodyWidget(),
+            state: _blockableOverlayState,
+          );
+        } else {
+          // `_blockableOverlayState` is not recreated here.
+          // The toolbar's block state won't work properly when reconnecting, but that's okay.
+          return bodyWidget();
+        }
+      }),
     );
   }
 
@@ -677,7 +707,8 @@ class _ImagePaintState extends State<ImagePaint> {
     } else {
       final key = cache.updateGetKey(scale);
       if (!cursor.cachedKeys.contains(key)) {
-        debugPrint("Register custom cursor with key $key (${cache.hotx},${cache.hoty})");
+        debugPrint(
+            "Register custom cursor with key $key (${cache.hotx},${cache.hoty})");
         // [Safety]
         // It's ok to call async registerCursor in current synchronous context,
         // because activating the cursor is also an async call and will always

@@ -958,7 +958,8 @@ class CustomAlertDialog extends StatelessWidget {
 
 void msgBox(SessionID sessionId, String type, String title, String text,
     String link, OverlayDialogManager dialogManager,
-    {bool? hasCancel, ReconnectHandle? reconnect}) {
+    {bool? hasCancel, ReconnectHandle? reconnect, int? reconnectTimeout}) {
+
   dialogManager.dismissAll();
   List<Widget> buttons = [];
   bool hasOk = false;
@@ -998,22 +999,21 @@ void msgBox(SessionID sessionId, String type, String title, String text,
           dialogManager.dismissAll();
         }));
   }
-  if (reconnect != null && title == "Connection Error") {
+  if (reconnect != null &&
+      title == "Connection Error" &&
+      reconnectTimeout != null) {
     // `enabled` is used to disable the dialog button once the button is clicked.
     final enabled = true.obs;
-    final button = Obx(
-      () => dialogButton(
-        'Reconnect',
-        isOutline: true,
-        onPressed: enabled.isTrue
-            ? () {
-                // Disable the button
-                enabled.value = false;
-                reconnect(dialogManager, sessionId, false);
-              }
-            : null,
-      ),
-    );
+    final button = Obx(() => _ReconnectCountDownButton(
+          second: reconnectTimeout,
+          onPressed: enabled.isTrue
+              ? () {
+                  // Disable the button
+                  enabled.value = false;
+                  reconnect(dialogManager, sessionId, false);
+                }
+              : null,
+        ));
     buttons.insert(0, button);
   }
   if (link.isNotEmpty) {
@@ -1495,7 +1495,7 @@ Future<void> saveWindowPosition(WindowType type, {int? windowId}) async {
   late Size sz;
   late bool isMaximized;
   bool isFullscreen = stateGlobal.fullscreen.isTrue ||
-      (Platform.isMacOS && stateGlobal.closeOnFullscreen);
+      (Platform.isMacOS && stateGlobal.closeOnFullscreen == true);
   setFrameIfMaximized() {
     if (isMaximized) {
       final pos = bind.getLocalFlutterOption(k: kWindowPrefix + type.name);
@@ -1673,8 +1673,10 @@ Future<Offset?> _adjustRestoreMainWindowOffset(
 
 /// Restore window position and size on start
 /// Note that windowId must be provided if it's subwindow
+//
+// display is used to set the offset of the window in individual display mode.
 Future<bool> restoreWindowPosition(WindowType type,
-    {int? windowId, String? peerId}) async {
+    {int? windowId, String? peerId, int? display}) async {
   if (bind
       .mainGetEnv(key: "DISABLE_RUSTDESK_RESTORE_WINDOW_POSITION")
       .isNotEmpty) {
@@ -1710,14 +1712,22 @@ Future<bool> restoreWindowPosition(WindowType type,
     debugPrint("no window position saved, ignoring position restoration");
     return false;
   }
-  if (type == WindowType.RemoteDesktop &&
-      !isRemotePeerPos &&
-      windowId != null) {
-    if (lpos.offsetWidth != null) {
-      lpos.offsetWidth = lpos.offsetWidth! + windowId * 20;
+  if (type == WindowType.RemoteDesktop) {
+    if (!isRemotePeerPos && windowId != null) {
+      if (lpos.offsetWidth != null) {
+        lpos.offsetWidth = lpos.offsetWidth! + windowId * kNewWindowOffset;
+      }
+      if (lpos.offsetHeight != null) {
+        lpos.offsetHeight = lpos.offsetHeight! + windowId * kNewWindowOffset;
+      }
     }
-    if (lpos.offsetHeight != null) {
-      lpos.offsetHeight = lpos.offsetHeight! + windowId * 20;
+    if (display != null) {
+      if (lpos.offsetWidth != null) {
+        lpos.offsetWidth = lpos.offsetWidth! + display * kNewWindowOffset;
+      }
+      if (lpos.offsetHeight != null) {
+        lpos.offsetHeight = lpos.offsetHeight! + display * kNewWindowOffset;
+      }
     }
   }
 
@@ -1946,6 +1956,7 @@ bool handleUriLink({List<String>? cmdArgs, Uri? uri, String? uriString}) {
 List<String>? urlLinkToCmdArgs(Uri uri) {
   String? command;
   String? id;
+  final options = ["connect", "play", "file-transfer", "port-forward", "rdp"];
   if (uri.authority.isEmpty &&
       uri.path.split('').every((char) => char == '/')) {
     return [];
@@ -1953,16 +1964,31 @@ List<String>? urlLinkToCmdArgs(Uri uri) {
     // For compatibility
     command = '--connect';
     id = uri.path.substring("/new/".length);
-  } else if (['connect', "play", 'file-transfer', 'port-forward', 'rdp']
-      .contains(uri.authority)) {
+  } else if (options.contains(uri.authority)) {
+    final optionIndex = options.indexOf(uri.authority);
     command = '--${uri.authority}';
     if (uri.path.length > 1) {
       id = uri.path.substring(1);
+    }
+    if (isMobile && id != null) {
+      if (optionIndex == 0 || optionIndex == 1) {
+        connect(Get.context!, id);
+      } else if (optionIndex == 2) {
+        connect(Get.context!, id, isFileTransfer: true);
+      }
+      return null;
     }
   } else if (uri.authority.length > 2 && uri.path.length <= 1) {
     // rustdesk://<connect-id>
     command = '--connect';
     id = uri.authority;
+  }
+
+  if (isMobile) {
+    if (id != null) {
+      connect(Get.context!, id);
+      return null;
+    }
   }
 
   List<String> args = List.empty(growable: true);
@@ -2014,6 +2040,10 @@ connect(
       if (Get.isRegistered<IDTextEditingController>()) {
         final idController = Get.find<IDTextEditingController>();
         idController.text = formatID(id);
+      }
+      if (Get.isRegistered<TextEditingController>()) {
+        final fieldTextEditingController = Get.find<TextEditingController>();
+        fieldTextEditingController.text = formatID(id);
       }
     } catch (_) {}
   }
@@ -2734,4 +2764,57 @@ parseParamScreenRect(Map<String, dynamic> params) {
     screenRect = Rect.fromLTRB(l, t, r, b);
   }
   return screenRect;
+}
+
+class _ReconnectCountDownButton extends StatefulWidget {
+  _ReconnectCountDownButton({
+    Key? key,
+    required this.second,
+    required this.onPressed,
+  }) : super(key: key);
+  final VoidCallback? onPressed;
+  final int second;
+
+  @override
+  State<_ReconnectCountDownButton> createState() =>
+      _ReconnectCountDownButtonState();
+}
+
+class _ReconnectCountDownButtonState extends State<_ReconnectCountDownButton> {
+  late int _countdownSeconds = widget.second;
+
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _startCountdownTimer();
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  void _startCountdownTimer() {
+    _timer = Timer.periodic(Duration(seconds: 1), (timer) {
+      if (_countdownSeconds <= 0) {
+        timer.cancel();
+      } else {
+        setState(() {
+          _countdownSeconds--;
+        });
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return dialogButton(
+      '${translate('Reconnect')} (${_countdownSeconds}s)',
+      onPressed: widget.onPressed,
+      isOutline: true,
+    );
+  }
 }

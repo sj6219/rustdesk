@@ -17,6 +17,11 @@ message YUV {
   int32 stride = 2;
 }
 
+enum Chroma {
+  I420 = 0;
+  I444 = 1;
+}
+
 message VideoFrame {
   oneof union {
     EncodedVideoFrames vp9s = 6;
@@ -83,11 +88,20 @@ message Features {
   bool privacy_mode = 1;
 }
 
+message CodecAbility {
+  bool vp8 = 1;
+  bool vp9 = 2;
+  bool av1 = 3;
+  bool h264 = 4;
+  bool h265 = 5;
+}
+
 message SupportedEncoding {
   bool h264 = 1;
   bool h265 = 2;
   bool vp8 = 3;
   bool av1 = 4;
+  CodecAbility i444 = 5;
 }
 
 message PeerInfo {
@@ -102,6 +116,7 @@ message PeerInfo {
   SupportedEncoding encoding = 10;
   SupportedResolutions resolutions = 11;
   // Use JSON's key-value format which is friendly for peer to handle.
+  // NOTE: Only support one-level dictionaries (for peer to update), and the key is of type string.
   string platform_additions = 12;
 }
 
@@ -498,6 +513,16 @@ message CaptureDisplays {
   repeated int32 set = 3;
 }
 
+message ToggleVirtualDisplay {
+  int32 display = 1;
+  bool on = 2;
+}
+
+message TogglePrivacyMode {
+  string impl_key = 1;
+  bool on = 2;
+}
+
 message PermissionInfo {
   enum Permission {
     Keyboard = 0;
@@ -506,6 +531,7 @@ message PermissionInfo {
     File = 4;
     Restart = 5;
     Recording = 6;
+    BlockInput = 7;
   }
 
   Permission permission = 1;
@@ -535,6 +561,8 @@ message SupportedDecoding {
   PreferCodec prefer = 4;
   int32 ability_vp8 = 5;
   int32 ability_av1 = 6;
+  CodecAbility i444 = 7;
+  Chroma prefer_chroma = 8;
 }
 
 message OptionMessage {
@@ -633,6 +661,8 @@ message BackNotification {
   }
   // Supplementary message, for "PrvOnFailed" and "PrvOffFailed"
   string details = 3;
+  // The key of the implementation
+  string impl_key = 4;
 }
 
 message ElevationRequestWithLogon {
@@ -692,11 +722,13 @@ message Misc {
     Resolution change_resolution = 24;
     PluginRequest plugin_request = 25;
     PluginFailure plugin_failure = 26;
-    uint32 full_speed_fps = 27;
+    uint32 full_speed_fps = 27; // deprecated
     uint32 auto_adjust_fps = 28;
     bool client_record_status = 29;
     CaptureDisplays capture_displays = 30;
     int32 refresh_video_display = 31;
+    ToggleVirtualDisplay toggle_virtual_display = 32;
+    TogglePrivacyMode toggle_privacy_mode = 33;
   }
 }
 

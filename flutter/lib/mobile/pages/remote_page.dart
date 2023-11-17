@@ -11,7 +11,7 @@ import 'package:flutter_hbb/models/chat_model.dart';
 import 'package:flutter_keyboard_visibility/flutter_keyboard_visibility.dart';
 import 'package:get/get.dart';
 import 'package:provider/provider.dart';
-import 'package:wakelock/wakelock.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../../common.dart';
 import '../../common/widgets/overlay.dart';
@@ -21,6 +21,7 @@ import '../../models/input_model.dart';
 import '../../models/model.dart';
 import '../../models/platform_model.dart';
 import '../../utils/image.dart';
+import '../widgets/dialog.dart';
 
 final initText = '1' * 1024;
 
@@ -60,7 +61,7 @@ class _RemotePageState extends State<RemotePage> {
       gFFI.dialogManager
           .showLoading(translate('Connecting...'), onCancel: closeConnection);
     });
-    Wakelock.enable();
+    WakelockPlus.enable();
     _physicalFocusNode.requestFocus();
     gFFI.ffiModel.updateEventListener(sessionId, widget.id);
     gFFI.inputModel.listenToMouse(true);
@@ -88,7 +89,7 @@ class _RemotePageState extends State<RemotePage> {
     gFFI.dialogManager.dismissAll();
     await SystemChrome.setEnabledSystemUIMode(SystemUiMode.manual,
         overlays: SystemUiOverlay.values);
-    await Wakelock.disable();
+    await WakelockPlus.disable();
     await keyboardSubscription.cancel();
     removeSharedStates(widget.id);
   }
@@ -235,7 +236,7 @@ class _RemotePageState extends State<RemotePage> {
         clientClose(sessionId, gFFI.dialogManager);
         return false;
       },
-      child: getRawPointerAndKeyBody(Scaffold(
+      child: Scaffold(
           // workaround for https://github.com/rustdesk/rustdesk/issues/3131
           floatingActionButtonLocation: keyboardIsVisible
               ? FABLocation(FloatingActionButtonLocation.endFloat, 0, -35)
@@ -281,7 +282,7 @@ class _RemotePageState extends State<RemotePage> {
                       : Offstage(),
                 ],
               )),
-          body: Overlay(
+          body: getRawPointerAndKeyBody(Overlay(
             initialEntries: [
               OverlayEntry(builder: (context) {
                 return Container(
@@ -365,6 +366,10 @@ class _RemotePageState extends State<RemotePage> {
                       : gFFI.ffiModel.isPeerAndroid
                           ? [
                               IconButton(
+                                  color: Colors.white,
+                                  icon: Icon(Icons.keyboard),
+                                  onPressed: openKeyboard),
+                              IconButton(
                                 color: Colors.white,
                                 icon: const Icon(Icons.build),
                                 onPressed: () => gFFI.dialogManager
@@ -443,7 +448,11 @@ class _RemotePageState extends State<RemotePage> {
               height: 0,
               child: !_showEdit
                   ? Container()
-                  : TextFormField(
+                  // A container wrapper is needed here on some android devices for flutter 3.13.9, otherwise the focusNode will not work.
+                  // But for flutter 3.10.*, the container wrapper is not needed.
+                  // It maybe the flutter compatibility issue.
+                  : Container(
+                      child: TextFormField(
                       textInputAction: TextInputAction.newline,
                       autocorrect: false,
                       enableSuggestions: false,
@@ -454,7 +463,7 @@ class _RemotePageState extends State<RemotePage> {
                       // trick way to make backspace work always
                       keyboardType: TextInputType.multiline,
                       onChanged: handleSoftKeyboardInput,
-                    ),
+                    )),
             ),
           ];
           if (showCursorPaint) {
@@ -763,7 +772,9 @@ void showOptions(
       children.add(InkWell(
           onTap: () {
             if (i == cur) return;
-            bind.sessionSwitchDisplay(sessionId: gFFI.sessionId, value: Int32List.fromList([i]));
+            gFFI.recordingModel.onClose();
+            bind.sessionSwitchDisplay(
+                sessionId: gFFI.sessionId, value: Int32List.fromList([i]));
             gFFI.dialogManager.dismissAll();
           },
           child: Ink(
@@ -800,6 +811,16 @@ void showOptions(
   List<TRadioMenu<String>> codecRadios = await toolbarCodec(context, id, gFFI);
   List<TToggleMenu> displayToggles =
       await toolbarDisplayToggle(context, id, gFFI);
+
+  List<TToggleMenu> privacyModeList = [];
+  // privacy mode
+  final privacyModeState = PrivacyModeState.find(id);
+  if (gFFI.ffiModel.keyboard && gFFI.ffiModel.pi.features.privacyMode) {
+    privacyModeList = toolbarPrivacyMode(privacyModeState, context, id, gFFI);
+    if (privacyModeList.length == 1) {
+      displayToggles.add(privacyModeList[0]);
+    }
+  }
 
   dialogManager.show((setState, close, context) {
     var viewStyle =
@@ -843,10 +864,21 @@ void showOptions(
             title: e.value.child)))
         .toList();
 
+    Widget privacyModeWidget = Offstage();
+    if (privacyModeList.length > 1) {
+      privacyModeWidget = ListTile(
+        contentPadding: EdgeInsets.zero,
+        visualDensity: VisualDensity.compact,
+        title: Text(translate('Privacy mode')),
+        onTap: () => setPrivacyModeDialog(
+            dialogManager, privacyModeList, privacyModeState),
+      );
+    }
+
     return CustomAlertDialog(
       content: Column(
           mainAxisSize: MainAxisSize.min,
-          children: displays + radios + toggles),
+          children: displays + radios + toggles + [privacyModeWidget]),
     );
   }, clickMaskDismiss: true, backDismiss: true);
 }

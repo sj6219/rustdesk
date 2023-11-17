@@ -1,18 +1,19 @@
 use super::*;
+#[cfg(target_os = "linux")]
+use crate::platform::linux::is_x11;
 #[cfg(all(windows, feature = "virtual_display_driver"))]
 use crate::virtual_display_manager;
 #[cfg(windows)]
 use hbb_common::get_version_number;
 use hbb_common::protobuf::MessageField;
 use scrap::Display;
-#[cfg(target_os = "linux")]
-use std::sync::atomic::{AtomicBool, Ordering};
 
 // https://github.com/rustdesk/rustdesk/discussions/6042, avoiding dbus call
-#[cfg(target_os = "linux")]
-pub(super) static IS_X11: AtomicBool = AtomicBool::new(false);
 
 pub const NAME: &'static str = "display";
+
+#[cfg(all(windows, feature = "virtual_display_driver"))]
+const DUMMY_DISPLAY_SIDE_MAX_SIZE: usize = 1024;
 
 struct ChangedResolution {
     original: (i32, i32),
@@ -71,7 +72,7 @@ pub(super) fn check_display_changed(
     #[cfg(target_os = "linux")]
     {
         // wayland do not support changing display for now
-        if !IS_X11.load(Ordering::SeqCst) {
+        if !is_x11() {
             return None;
         }
     }
@@ -137,12 +138,10 @@ pub fn capture_cursor_embedded() -> bool {
 }
 
 #[inline]
-pub fn is_privacy_mode_supported() -> bool {
-    #[cfg(windows)]
+#[cfg(windows)]
+pub fn is_privacy_mode_mag_supported() -> bool {
     return *IS_CAPTURER_MAGNIFIER_SUPPORTED
         && get_version_number(&crate::VERSION) > get_version_number("1.1.9");
-    #[cfg(not(windows))]
-    return false;
 }
 
 pub fn new() -> GenericService {
@@ -156,6 +155,20 @@ fn displays_to_msg(displays: Vec<DisplayInfo>) -> Message {
         ..Default::default()
     };
     pi.displays = displays.clone();
+
+    #[cfg(all(windows, feature = "virtual_display_driver"))]
+    if crate::platform::is_installed() {
+        let virtual_displays = crate::virtual_display_manager::get_virtual_displays();
+        if !virtual_displays.is_empty() {
+            let mut platform_additions = serde_json::Map::new();
+            platform_additions.insert(
+                "virtual_displays".into(),
+                serde_json::json!(&virtual_displays),
+            );
+            pi.platform_additions = serde_json::to_string(&platform_additions).unwrap_or("".into());
+        }
+    }
+
     // current_display should not be used in server.
     // It is set to 0 for compatibility with old clients.
     pi.current_display = 0;
@@ -170,17 +183,7 @@ fn check_get_displays_changed_msg() -> Option<Message> {
     Some(displays_to_msg(displays))
 }
 
-#[cfg(all(windows, feature = "virtual_display_driver"))]
-pub fn try_plug_out_virtual_display() {
-    let _res = virtual_display_manager::plug_out_headless();
-}
-
 fn run(sp: EmptyExtraFieldService) -> ResultType<()> {
-    #[cfg(target_os = "linux")]
-    {
-        IS_X11.store(scrap::is_x11(), Ordering::SeqCst);
-    }
-
     while sp.ok() {
         sp.snapshot(|sps| {
             if sps.has_subscribes() {
@@ -274,7 +277,7 @@ pub(super) fn check_update_displays(all: &Vec<Display>) {
 
 pub fn is_inited_msg() -> Option<Message> {
     #[cfg(target_os = "linux")]
-    if !IS_X11.load(Ordering::SeqCst) {
+    if !is_x11() {
         return super::wayland::is_inited();
     }
     None
@@ -283,7 +286,7 @@ pub fn is_inited_msg() -> Option<Message> {
 pub async fn update_get_sync_displays() -> ResultType<Vec<DisplayInfo>> {
     #[cfg(target_os = "linux")]
     {
-        if !IS_X11.load(Ordering::SeqCst) {
+        if !is_x11() {
             return super::wayland::get_displays().await;
         }
     }
@@ -295,7 +298,7 @@ pub async fn update_get_sync_displays() -> ResultType<Vec<DisplayInfo>> {
 pub fn get_primary() -> usize {
     #[cfg(target_os = "linux")]
     {
-        if !IS_X11.load(Ordering::SeqCst) {
+        if !is_x11() {
             return match super::wayland::get_primary() {
                 Ok(n) => n,
                 Err(_) => 0,
@@ -319,9 +322,18 @@ fn no_displays(displays: &Vec<Display>) -> bool {
         true
     } else if display_len == 1 {
         let display = &displays[0];
-        let dummy_display_side_max_size = 800;
-        display.width() <= dummy_display_side_max_size
-            && display.height() <= dummy_display_side_max_size
+        if display.width() > DUMMY_DISPLAY_SIDE_MAX_SIZE
+            || display.height() > DUMMY_DISPLAY_SIDE_MAX_SIZE
+        {
+            return false;
+        }
+        let any_real = crate::platform::resolutions(&display.name())
+            .iter()
+            .any(|r| {
+                (r.height as usize) > DUMMY_DISPLAY_SIDE_MAX_SIZE
+                    || (r.width as usize) > DUMMY_DISPLAY_SIDE_MAX_SIZE
+            });
+        !any_real
     } else {
         false
     }
@@ -336,7 +348,7 @@ pub fn try_get_displays() -> ResultType<Vec<Display>> {
 #[cfg(all(windows, feature = "virtual_display_driver"))]
 pub fn try_get_displays() -> ResultType<Vec<Display>> {
     let mut displays = Display::all()?;
-    if no_displays(&displays) {
+    if crate::platform::is_installed() && no_displays(&displays) {
         log::debug!("no displays, create virtual display");
         if let Err(e) = virtual_display_manager::plug_in_headless() {
             log::error!("plug in headless failed {}", e);
