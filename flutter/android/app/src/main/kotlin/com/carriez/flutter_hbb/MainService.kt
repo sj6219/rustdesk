@@ -230,6 +230,7 @@ class MainService : Service() /* , ClipboardManager.OnPrimaryClipChangedListener
     override fun onCreate() {
         super.onCreate()
         Log.d(logTag,"MainService onCreate")
+        init(this)
         HandlerThread("Service", Process.THREAD_PRIORITY_BACKGROUND).apply {
             start()
             serviceLooper = looper
@@ -334,7 +335,6 @@ class MainService : Service() /* , ClipboardManager.OnPrimaryClipChangedListener
                 mediaProjection =
                     mediaProjectionManager.getMediaProjection(Activity.RESULT_OK, it)
                 checkMediaPermission()
-                init(this)
                 _isReady = true
             } ?: let {
                 Log.d(logTag, "getParcelableExtra intent null, invoke requestMediaProjection")
