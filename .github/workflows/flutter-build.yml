@@ -78,12 +78,11 @@ jobs:
           mv -Force windows-x64-release/*  C:/hostedtoolcache/windows/flutter/stable-${{ env.FLUTTER_VERSION }}-x64/bin/cache/artifacts/engine/windows-x64-release/
 
       - name: Install Rust toolchain
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@v1
         with:
           toolchain: stable
-          target: ${{ matrix.job.target }}
-          override: true
-          profile: minimal # minimal component installation (ie, no documentation)
+          targets: ${{ matrix.job.target }}
+          components: ''
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -128,7 +127,7 @@ jobs:
 
       - name: Sign rustdesk files
         uses: GermanBluefox/code-sign-action@v7
-        if: env.UPLOAD_ARTIFACT == 'true'
+        if: false # env.UPLOAD_ARTIFACT == 'true'
         with:
           certificate: '${{ secrets.WINDOWS_PFX_BASE64 }}'
           password: '${{ secrets.WINDOWS_PFX_PASSWORD }}'
@@ -149,7 +148,7 @@ jobs:
 
       - name: Sign rustdesk self-extracted file
         uses: GermanBluefox/code-sign-action@v7
-        if: env.UPLOAD_ARTIFACT == 'true'
+        if: false #env.UPLOAD_ARTIFACT == 'true'
         with:
           certificate: '${{ secrets.WINDOWS_PFX_BASE64 }}'
           password: '${{ secrets.WINDOWS_PFX_PASSWORD }}'
@@ -198,12 +197,11 @@ jobs:
           version: ${{ env.LLVM_VERSION }}
 
       - name: Install Rust toolchain
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@v1
         with:
           toolchain: nightly-${{ matrix.job.target }}
-          target: ${{ matrix.job.target }}
-          override: true
-          profile: minimal # minimal component installation (ie, no documentation)
+          targets: ${{ matrix.job.target }}
+          components: ''
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -251,7 +249,7 @@ jobs:
 
       - name: Sign rustdesk files
         uses: GermanBluefox/code-sign-action@v7
-        if: env.UPLOAD_ARTIFACT == 'true'
+        if: false #env.UPLOAD_ARTIFACT == 'true'
         with:
           certificate: '${{ secrets.WINDOWS_PFX_BASE64 }}'
           password: '${{ secrets.WINDOWS_PFX_PASSWORD }}'
@@ -272,6 +270,7 @@ jobs:
 
       - name: Sign rustdesk self-extracted file
         uses: GermanBluefox/code-sign-action@v7
+        if: false #env.UPLOAD_ARTIFACT == 'true'
         with:
           certificate: '${{ secrets.WINDOWS_PFX_BASE64 }}'
           password: '${{ secrets.WINDOWS_PFX_PASSWORD }}'
@@ -348,7 +347,7 @@ jobs:
 
       - name: Install build runtime
         run: |
-          brew install llvm create-dmg nasm yasm cmake gcc wget ninja pkg-config
+          brew install llvm create-dmg nasm cmake gcc wget ninja pkg-config
 
       - name: Install flutter
         uses: subosito/flutter-action@v2
@@ -357,12 +356,11 @@ jobs:
           flutter-version: ${{ env.FLUTTER_VERSION }}
 
       - name: Install Rust toolchain
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@v1
         with:
           toolchain: stable
-          target: ${{ matrix.job.target }}
-          override: true
-          profile: minimal # minimal component installation (ie, no documentation)
+          targets: ${{ matrix.job.target }}
+          components: ''
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -400,7 +398,7 @@ jobs:
           ./build.py --flutter ${{ matrix.job.extra-build-args }}
 
       - name: Codesign app and create signed dmg
-        if: env.MACOS_P12_BASE64 != null
+        if: env.MACOS_P12_BASE64 != null && env.UPLOAD_ARTIFACT == 'true'
         run: |
           # Patch create-dmg to give more attempts to unmount image
           CREATE_DMG="$(command -v create-dmg)"
@@ -418,6 +416,7 @@ jobs:
           rcodesign notary-submit --api-key-path ${{ github.workspace }}/rustdesk.json  --staple rustdesk-${{ env.VERSION }}.dmg
 
       - name: Rename rustdesk
+        if: env.UPLOAD_ARTIFACT == 'true'
         run: |
           for name in rustdesk*??.dmg; do
               mv "$name" "${name%%.dmg}-${{ matrix.job.arch }}.dmg"
@@ -459,7 +458,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          brew install nasm yasm
+          brew install nasm
       - name: Checkout source code
         uses: actions/checkout@v3
       - name: Install flutter
@@ -479,12 +478,11 @@ jobs:
         shell: bash
 
       - name: Install Rust toolchain
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@v1
         with:
           toolchain: stable
-          target: ${{ matrix.job.target }}
-          override: true
-          profile: minimal # minimal component installation (ie, no documentation)
+          targets: ${{ matrix.job.target }}
+          components: ''
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -592,8 +590,7 @@ jobs:
                openjdk-11-jdk-headless \
                pkg-config \
                tree \
-               wget \
-               yasm
+               wget
 
       - name: Checkout source code
         uses: actions/checkout@v3
@@ -633,11 +630,10 @@ jobs:
           path: ./
 
       - name: Install Rust toolchain
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@v1
         with:
           toolchain: stable
-          override: true
-          profile: minimal # minimal component installation (ie, no documentation)
+          components: ''
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -782,7 +778,7 @@ jobs:
           sudo rm -rf /usr/local/lib/android
           sudo rm -rf /usr/share/dotnet
           sudo apt-get update -y
-          sudo apt-get install -y nasm qemu-user-static yasm
+          sudo apt-get install -y nasm qemu-user-static
 
       - name: Checkout source code
         uses: actions/checkout@v3
@@ -798,12 +794,11 @@ jobs:
           free -m
 
       - name: Install Rust toolchain
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@v1
         with:
           toolchain: stable
-          target: ${{ matrix.job.target }}
-          override: true
-          profile: minimal # minimal component installation (ie, no documentation)
+          targets: ${{ matrix.job.target }}
+          components: ''
 
       - name: Save Rust toolchain version
         run: |
@@ -880,8 +875,7 @@ jobs:
                ninja-build \
                pkg-config \
                tree \
-               wget \
-               yasm
+               wget
             # we have libopus compiled by us.
             apt-get remove -y libopus-dev || true
             # output devs
@@ -985,7 +979,6 @@ jobs:
                unzip \
                xz-utils \
                wget \
-               yasm \
                zip
 
       #- name: Maximize build space
@@ -1010,12 +1003,11 @@ jobs:
           free -m
 
       - name: Install Rust toolchain
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@v1
         with:
           toolchain: stable
-          target: ${{ matrix.job.target }}
-          override: true
-          profile: minimal # minimal component installation (ie, no documentation)
+          targets: ${{ matrix.job.target }}
+          components: ''
 
       - name: Save Rust toolchain version
         run: |
@@ -1097,8 +1089,7 @@ jobs:
                ninja-build \
                pkg-config \
                tree \
-               wget \
-               yasm
+               wget
             # we have libopus compiled by us.
             apt-get remove -y libopus-dev || true
             # output devs
@@ -1180,7 +1171,6 @@ jobs:
                pkg-config \
                unzip \
                xz-utils \
-               yasm \
                zip
 
       #- name: Maximize build space
@@ -1205,12 +1195,11 @@ jobs:
           free -m
 
       - name: Install Rust toolchain
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@v1
         with:
           toolchain: stable
-          target: ${{ matrix.job.target }}
-          override: true
-          profile: minimal # minimal component installation (ie, no documentation)
+          targets: ${{ matrix.job.target }}
+          components: ''
 
       - name: Save Rust toolchain version
         run: |
@@ -1225,6 +1214,7 @@ jobs:
 
       - name: Install vcpkg dependencies
         run: |
+          cp $PWD/res/vcpkg/linux.cmake $VCPKG_ROOT/scripts/toolchains/linux.cmake
           $VCPKG_ROOT/vcpkg install --triplet arm-linux --x-install-root="$VCPKG_ROOT/installed"
         shell: bash
 
@@ -1276,8 +1266,7 @@ jobs:
                rpm \
                unzip \
                wget \
-               xz-utils \
-               yasm
+               xz-utils
           run: |
             # disable git safe.directory
             git config --global --add safe.directory "*"
@@ -1389,8 +1378,7 @@ jobs:
                libarchive-tools \
                libgtk-3-dev \
                nasm \
-               wget \
-               yasm
+               wget
           mkdir -p ./target/release/
 
       - name: Restore the rustdesk lib file
@@ -1446,8 +1434,7 @@ jobs:
                rpm \
                unzip \
                wget \
-               xz-utils \
-               yasm
+               xz-utils
           run: |
             # disable git safe.directory
             git config --global --add safe.directory "*"
@@ -1591,7 +1578,6 @@ jobs:
       #       gcc
       #       curl
       #       wget
-      #       yasm
       #       nasm
       #       zip
       #       make
@@ -1675,8 +1661,7 @@ jobs:
                libarchive-tools \
                libgtk-3-dev \
                nasm \
-               wget \
-               yasm
+               wget
           mkdir -p ./target/release/
 
       - name: Restore the rustdesk lib file
@@ -1718,8 +1703,7 @@ jobs:
                rpm \
                unzip \
                wget \
-               xz-utils \
-               yasm
+               xz-utils
           run: |
             # disable git safe.directory
             git config --global --add safe.directory "*"
@@ -1805,7 +1789,6 @@ jobs:
             gcc
             curl
             wget
-            yasm
             nasm
             zip
             make
@@ -1922,8 +1905,7 @@ jobs:
   #             g++ \
   #             libgtk-3-dev \
   #             nasm \
-  #             wget \
-  #             yasm
+  #             wget
   #           # flatpak deps
   #           flatpak --user remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
   #           flatpak --user install -y flathub org.freedesktop.Platform/${{ matrix.job.arch }}/23.08
@@ -2000,8 +1982,7 @@ jobs:
                g++ \
                libgtk-3-dev \
                nasm \
-               wget \
-               yasm
+               wget
             # flatpak deps
             flatpak --user remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
             flatpak --user install -y flathub org.freedesktop.Platform/${{ matrix.job.arch }}/23.08

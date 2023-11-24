@@ -21,6 +21,7 @@ import '../../models/input_model.dart';
 import '../../models/model.dart';
 import '../../models/platform_model.dart';
 import '../../utils/image.dart';
+import '../widgets/dialog.dart';
 
 final initText = '1' * 1024;
 
@@ -114,6 +115,13 @@ class _RemotePageState extends State<RemotePage> {
           gFFI.ffiModel.pi.version.isNotEmpty) {
         gFFI.invokeMethod("enable_soft_keyboard", false);
       }
+    } else {
+      _timer?.cancel();
+      _timer = Timer(kMobileDelaySoftKeyboardFocus, () {
+        SystemChrome.setEnabledSystemUIMode(SystemUiMode.manual,
+            overlays: SystemUiOverlay.values);
+        _mobileFocusNode.requestFocus();
+      });
     }
     // update for Scaffold
     setState(() {});
@@ -203,12 +211,12 @@ class _RemotePageState extends State<RemotePage> {
     _value = initText;
     setState(() => _showEdit = false);
     _timer?.cancel();
-    _timer = Timer(Duration(milliseconds: 30), () {
+    _timer = Timer(kMobileDelaySoftKeyboard, () {
       // show now, and sleep a while to requestFocus to
       // make sure edit ready, so that keyboard wont show/hide/show/hide happen
       setState(() => _showEdit = true);
       _timer?.cancel();
-      _timer = Timer(Duration(milliseconds: 30), () {
+      _timer = Timer(kMobileDelaySoftKeyboardFocus, () {
         SystemChrome.setEnabledSystemUIMode(SystemUiMode.manual,
             overlays: SystemUiOverlay.values);
         _mobileFocusNode.requestFocus();
@@ -486,10 +494,23 @@ class _RemotePageState extends State<RemotePage> {
     final x = 120.0;
     final y = size.height;
     final menus = toolbarControls(context, id, gFFI);
+    getChild(TTextMenu menu) {
+      if (menu.trailingIcon != null) {
+        return Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              menu.child,
+              menu.trailingIcon!,
+            ]);
+      } else {
+        return menu.child;
+      }
+    }
+
     final more = menus
         .asMap()
         .entries
-        .map((e) => PopupMenuItem<int>(child: e.value.child, value: e.key))
+        .map((e) => PopupMenuItem<int>(child: getChild(e.value), value: e.key))
         .toList();
     () async {
       var index = await showMenu(
@@ -807,6 +828,16 @@ void showOptions(
   List<TToggleMenu> displayToggles =
       await toolbarDisplayToggle(context, id, gFFI);
 
+  List<TToggleMenu> privacyModeList = [];
+  // privacy mode
+  final privacyModeState = PrivacyModeState.find(id);
+  if (gFFI.ffiModel.keyboard && gFFI.ffiModel.pi.features.privacyMode) {
+    privacyModeList = toolbarPrivacyMode(privacyModeState, context, id, gFFI);
+    if (privacyModeList.length == 1) {
+      displayToggles.add(privacyModeList[0]);
+    }
+  }
+
   dialogManager.show((setState, close, context) {
     var viewStyle =
         (viewStyleRadios.isNotEmpty ? viewStyleRadios[0].groupValue : '').obs;
@@ -849,10 +880,21 @@ void showOptions(
             title: e.value.child)))
         .toList();
 
+    Widget privacyModeWidget = Offstage();
+    if (privacyModeList.length > 1) {
+      privacyModeWidget = ListTile(
+        contentPadding: EdgeInsets.zero,
+        visualDensity: VisualDensity.compact,
+        title: Text(translate('Privacy mode')),
+        onTap: () => setPrivacyModeDialog(
+            dialogManager, privacyModeList, privacyModeState),
+      );
+    }
+
     return CustomAlertDialog(
       content: Column(
           mainAxisSize: MainAxisSize.min,
-          children: displays + radios + toggles),
+          children: displays + radios + toggles + [privacyModeWidget]),
     );
   }, clickMaskDismiss: true, backDismiss: true);
 }
