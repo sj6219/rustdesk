@@ -395,8 +395,10 @@ class FfiModel with ChangeNotifier {
           msgBox(sessionId, 'custom-nook-nocancel-hasclose-info', 'Prompt',
               'elevated_switch_display_msg', '', parent.target!.dialogManager);
           bind.sessionSwitchDisplay(
-              sessionId: sessionId,
-              value: Int32List.fromList([pi.primaryDisplay]));
+            isDesktop: isDesktop,
+            sessionId: sessionId,
+            value: Int32List.fromList([pi.primaryDisplay]),
+          );
         }
       }
     }
@@ -735,17 +737,9 @@ class FfiModel with ChangeNotifier {
   }
 
   checkDesktopKeyboardMode() async {
-    final curMode = await bind.sessionGetKeyboardMode(sessionId: sessionId);
-    if (curMode != null) {
-      if (bind.sessionIsKeyboardModeSupported(
-          sessionId: sessionId, mode: curMode)) {
-        return;
-      }
-    }
-
-    // If current keyboard mode is not supported, change to another one.
-
-    if (stateGlobal.grabKeyboard) {
+    if (isInputSourceFlutter) {
+      // Local side, flutter keyboard input source
+      // Currently only map mode is supported, legacy mode is used for compatibility.
       for (final mode in [kKeyMapMode, kKeyLegacyMode]) {
         if (bind.sessionIsKeyboardModeSupported(
             sessionId: sessionId, mode: mode)) {
@@ -754,6 +748,15 @@ class FfiModel with ChangeNotifier {
         }
       }
     } else {
+      final curMode = await bind.sessionGetKeyboardMode(sessionId: sessionId);
+      if (curMode != null) {
+        if (bind.sessionIsKeyboardModeSupported(
+            sessionId: sessionId, mode: curMode)) {
+          return;
+        }
+      }
+
+      // If current keyboard mode is not supported, change to another one.
       for (final mode in [kKeyMapMode, kKeyTranslateMode, kKeyLegacyMode]) {
         if (bind.sessionIsKeyboardModeSupported(
             sessionId: sessionId, mode: mode)) {
@@ -787,7 +790,10 @@ class FfiModel with ChangeNotifier {
 
     // move to the first display and set fullscreen
     bind.sessionSwitchDisplay(
-        sessionId: sessionId, value: Int32List.fromList([0]));
+      isDesktop: isDesktop,
+      sessionId: sessionId,
+      value: Int32List.fromList([0]),
+    );
     _pi.currentDisplay = 0;
     try {
       CurrentDisplayState.find(peerId).value = _pi.currentDisplay;
@@ -898,7 +904,10 @@ class FfiModel with ChangeNotifier {
                 : pi.primaryDisplay;
             final displays = newDisplay;
             bind.sessionSwitchDisplay(
-                sessionId: sessionId, value: Int32List.fromList([displays]));
+              isDesktop: isDesktop,
+              sessionId: sessionId,
+              value: Int32List.fromList([displays]),
+            );
 
             if (_pi.isSupportMultiUiSession) {
               // If the peer supports multi-ui-session, no switch display message will be send back.
