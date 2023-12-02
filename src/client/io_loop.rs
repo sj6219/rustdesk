@@ -1378,7 +1378,7 @@ impl<T: InvokeUiSession> Remote<T> {
                     Some(misc::Union::CloseReason(c)) => {
                         self.handler.msgbox("error", "Connection Error", &c, "");
                         
-                        //..
+                        //.. get_wake_lock
                         #[cfg(not(feature = "flutter"))]
                         std::process::exit(0); 
 
