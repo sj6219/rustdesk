@@ -18,8 +18,6 @@
 // to-do:
 // https://slhck.info/video/2017/03/01/rate-control.html
 
-#[cfg(target_os = "linux")]
-use super::display_service::IS_X11;
 use super::{
     display_service::{check_display_changed, get_display_info},
     service::ServiceTmpl,
@@ -28,8 +26,15 @@ use super::{
 };
 #[cfg(target_os = "linux")]
 use crate::common::SimpleCallOnReturn;
+#[cfg(target_os = "linux")]
+use crate::platform::linux::is_x11;
+use crate::privacy_mode::{get_privacy_mode_conn_id, INVALID_PRIVACY_MODE_CONN_ID};
 #[cfg(windows)]
-use crate::{platform::windows::is_process_consent_running, privacy_win_mag};
+use crate::{
+    platform::windows::is_process_consent_running,
+    privacy_mode::{is_current_privacy_mode_impl, PRIVACY_MODE_IMPL_WIN_MAG},
+    ui_interface::is_installed,
+};
 use hbb_common::{
     anyhow::anyhow,
     tokio::sync::{
@@ -42,12 +47,11 @@ use scrap::Capturer;
 use scrap::{
     aom::AomEncoderConfig,
     codec::{Encoder, EncoderCfg, HwEncoderConfig, Quality},
+    convert_to_yuv,
     record::{Recorder, RecorderContext},
     vpxcodec::{VpxEncoderConfig, VpxVideoCodecId},
-    CodecName, Display, TraitCapturer,
+    CodecName, Display, Frame, TraitCapturer, TraitFrame,
 };
-#[cfg(target_os = "linux")]
-use std::sync::atomic::Ordering;
 #[cfg(windows)]
 use std::sync::Once;
 use std::{
@@ -65,7 +69,6 @@ lazy_static::lazy_static! {
         let (tx, rx) = unbounded_channel();
         (tx, Arc::new(TokioMutex::new(rx)))
     };
-    static ref PRIVACY_MODE_CONN_ID: Mutex<i32> = Mutex::new(0);
     pub static ref VIDEO_QOS: Arc<Mutex<VideoQoS>> = Default::default();
     pub static ref IS_UAC_RUNNING: Arc<Mutex<bool>> = Default::default();
     pub static ref IS_FOREGROUND_WINDOW_ELEVATED: Arc<Mutex<bool>> = Default::default();
@@ -74,16 +77,6 @@ lazy_static::lazy_static! {
 #[inline]
 pub fn notify_video_frame_fetched(conn_id: i32, frame_tm: Option<Instant>) {
     FRAME_FETCHED_NOTIFIER.0.send((conn_id, frame_tm)).ok();
-}
-
-#[inline]
-pub fn set_privacy_mode_conn_id(conn_id: i32) {
-    *PRIVACY_MODE_CONN_ID.lock().unwrap() = conn_id
-}
-
-#[inline]
-pub fn get_privacy_mode_conn_id() -> i32 {
-    *PRIVACY_MODE_CONN_ID.lock().unwrap()
 }
 
 struct VideoFrameController {
@@ -173,7 +166,6 @@ pub fn new(idx: usize) -> GenericService {
 fn create_capturer(
     privacy_mode_id: i32,
     display: Display,
-    use_yuv: bool,
     _current: usize,
     _portable_service_running: bool,
 ) -> ResultType<Box<dyn TraitCapturer>> {
@@ -184,48 +176,13 @@ fn create_capturer(
     if privacy_mode_id > 0 {
         #[cfg(windows)]
         {
-            match scrap::CapturerMag::new(
+            if let Some(c1) = crate::privacy_mode::win_mag::create_capturer(
+                privacy_mode_id,
                 display.origin(),
                 display.width(),
                 display.height(),
-                use_yuv,
-            ) {
-                Ok(mut c1) => {
-                    let mut ok = false;
-                    let check_begin = Instant::now();
-                    while check_begin.elapsed().as_secs() < 5 {
-                        match c1.exclude("", privacy_win_mag::PRIVACY_WINDOW_NAME) {
-                            Ok(false) => {
-                                ok = false;
-                                std::thread::sleep(std::time::Duration::from_millis(500));
-                            }
-                            Err(e) => {
-                                bail!(
-                                    "Failed to exclude privacy window {} - {}, err: {}",
-                                    "",
-                                    privacy_win_mag::PRIVACY_WINDOW_NAME,
-                                    e
-                                );
-                            }
-                            _ => {
-                                ok = true;
-                                break;
-                            }
-                        }
-                    }
-                    if !ok {
-                        bail!(
-                            "Failed to exclude privacy window {} - {} ",
-                            "",
-                            privacy_win_mag::PRIVACY_WINDOW_NAME
-                        );
-                    }
-                    log::debug!("Create magnifier capture for {}", privacy_mode_id);
-                    c = Some(Box::new(c1));
-                }
-                Err(e) => {
-                    bail!(format!("Failed to create magnifier capture {}", e));
-                }
+            )? {
+                c = Some(Box::new(c1));
             }
         }
     }
@@ -238,12 +195,11 @@ fn create_capturer(
             return crate::portable_service::client::create_capturer(
                 _current,
                 display,
-                use_yuv,
                 _portable_service_running,
             );
             #[cfg(not(windows))]
             return Ok(Box::new(
-                Capturer::new(display, use_yuv).with_context(|| "Failed to create capturer")?,
+                Capturer::new(display).with_context(|| "Failed to create capturer")?,
             ));
         }
     };
@@ -257,7 +213,7 @@ pub fn test_create_capturer(
 ) -> String {
     let test_begin = Instant::now();
     loop {
-        let err = match try_get_displays() {
+        let err = match Display::all() {
             Ok(mut displays) => {
                 if displays.len() <= display_idx {
                     anyhow!(
@@ -267,13 +223,13 @@ pub fn test_create_capturer(
                     )
                 } else {
                     let display = displays.remove(display_idx);
-                    match create_capturer(privacy_mode_id, display, true, display_idx, false) {
+                    match create_capturer(privacy_mode_id, display, display_idx, false) {
                         Ok(_) => return "".to_owned(),
                         Err(e) => e,
                     }
                 }
             }
-            Err(e) => e,
+            Err(e) => e.into(),
         };
         if test_begin.elapsed().as_millis() >= timeout_millis as _ {
             return err.to_string();
@@ -282,16 +238,21 @@ pub fn test_create_capturer(
     }
 }
 
+// Note: This function is extremely expensive, do not call it frequently.
 #[cfg(windows)]
 fn check_uac_switch(privacy_mode_id: i32, capturer_privacy_mode_id: i32) -> ResultType<()> {
-    if capturer_privacy_mode_id != 0 {
-        if privacy_mode_id != capturer_privacy_mode_id {
-            if !is_process_consent_running()? {
+    if capturer_privacy_mode_id != INVALID_PRIVACY_MODE_CONN_ID
+        && is_current_privacy_mode_impl(PRIVACY_MODE_IMPL_WIN_MAG)
+    {
+        if !is_installed() {
+            if privacy_mode_id != capturer_privacy_mode_id {
+                if !is_process_consent_running()? {
+                    bail!("consent.exe is not running");
+                }
+            }
+            if is_process_consent_running()? {
                 bail!("consent.exe is running");
             }
-        }
-        if is_process_consent_running()? {
-            bail!("consent.exe is running");
         }
     }
     Ok(())
@@ -322,19 +283,15 @@ impl DerefMut for CapturerInfo {
     }
 }
 
-fn get_capturer(
-    current: usize,
-    use_yuv: bool,
-    portable_service_running: bool,
-) -> ResultType<CapturerInfo> {
+fn get_capturer(current: usize, portable_service_running: bool) -> ResultType<CapturerInfo> {
     #[cfg(target_os = "linux")]
     {
-        if !IS_X11.load(Ordering::SeqCst) {
+        if !is_x11() {
             return super::wayland::get_capturer();
         }
     }
 
-    let mut displays = try_get_displays()?;
+    let mut displays = Display::all()?;
     let ndisplay = displays.len();
     if ndisplay <= current {
         bail!(
@@ -358,15 +315,21 @@ fn get_capturer(
         &name,
     );
 
-    let privacy_mode_id = *PRIVACY_MODE_CONN_ID.lock().unwrap();
+    let privacy_mode_id = get_privacy_mode_conn_id().unwrap_or(INVALID_PRIVACY_MODE_CONN_ID);
     #[cfg(not(windows))]
     let capturer_privacy_mode_id = privacy_mode_id;
     #[cfg(windows)]
     let mut capturer_privacy_mode_id = privacy_mode_id;
     #[cfg(windows)]
-    if capturer_privacy_mode_id != 0 {
-        if is_process_consent_running()? {
-            capturer_privacy_mode_id = 0;
+    {
+        if capturer_privacy_mode_id != INVALID_PRIVACY_MODE_CONN_ID
+            && is_current_privacy_mode_impl(PRIVACY_MODE_IMPL_WIN_MAG)
+        {
+            if !is_installed() {
+                if is_process_consent_running()? {
+                    capturer_privacy_mode_id = INVALID_PRIVACY_MODE_CONN_ID;
+                }
+            }
         }
     }
     log::debug!(
@@ -374,7 +337,7 @@ fn get_capturer(
         capturer_privacy_mode_id,
     );
 
-    if privacy_mode_id != 0 {
+    if privacy_mode_id != INVALID_PRIVACY_MODE_CONN_ID {
         if privacy_mode_id != capturer_privacy_mode_id {
             log::info!("In privacy mode, but show UAC prompt window for now");
         } else {
@@ -384,7 +347,6 @@ fn get_capturer(
     let capturer = create_capturer(
         capturer_privacy_mode_id,
         display,
-        use_yuv,
         current,
         portable_service_running,
     )?;
@@ -401,9 +363,6 @@ fn get_capturer(
 }
 
 fn run(vs: VideoService) -> ResultType<()> {
-    #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    let _wake_lock = get_wake_lock();
-
     // Wayland only support one video capturer for now. It is ok to call ensure_inited() here.
     //
     // ensure_inited() is needed because clear() may be called.
@@ -426,14 +385,14 @@ fn run(vs: VideoService) -> ResultType<()> {
 
     let display_idx = vs.idx;
     let sp = vs.sp;
-    let mut c = get_capturer(display_idx, true, last_portable_service_running)?;
+    let mut c = get_capturer(display_idx, last_portable_service_running)?;
 
     let mut video_qos = VIDEO_QOS.lock().unwrap();
     video_qos.refresh(None);
     let mut spf;
     let mut quality = video_qos.quality();
     let abr = VideoQoS::abr_enabled();
-    log::info!("init quality={:?}, abr enabled:{}", quality, abr);
+    log::info!("initial quality: {quality:?}, abr enabled: {abr}");
     let codec_name = Encoder::negotiated_codec();
     let recorder = get_recorder(c.width, c.height, &codec_name);
     let last_recording = recorder.lock().unwrap().is_some() || video_qos.record();
@@ -441,11 +400,11 @@ fn run(vs: VideoService) -> ResultType<()> {
     let encoder_cfg = get_encoder_config(&c, quality, last_recording);
 
     let mut encoder;
-    match Encoder::new(encoder_cfg) {
+    let use_i444 = Encoder::use_i444(&encoder_cfg);
+    match Encoder::new(encoder_cfg.clone(), use_i444) {
         Ok(x) => encoder = x,
         Err(err) => bail!("Failed to create encoder: {}", err),
     }
-    c.set_use_yuv(encoder.use_yuv());
     VIDEO_QOS.lock().unwrap().store_bitrate(encoder.bitrate());
 
     if sp.is_option_true(OPTION_REFRESH) {
@@ -465,6 +424,8 @@ fn run(vs: VideoService) -> ResultType<()> {
 
     #[cfg(target_os = "linux")]
     let mut would_block_count = 0u32;
+    let mut yuv = Vec::new();
+    let mut mid_data = Vec::new();
 
     while sp.ok() {
         #[cfg(windows)]
@@ -495,6 +456,9 @@ fn run(vs: VideoService) -> ResultType<()> {
         if last_portable_service_running != crate::portable_service::client::running() {
             bail!("SWITCH");
         }
+        if Encoder::use_i444(&encoder_cfg) != use_i444 {
+            bail!("SWITCH");
+        }
         check_privacy_mode_changed(&sp, c.privacy_mode_id)?;
         #[cfg(windows)]
         {
@@ -514,40 +478,23 @@ fn run(vs: VideoService) -> ResultType<()> {
 
         frame_controller.reset();
 
-        #[cfg(any(target_os = "android", target_os = "ios"))]
         let res = match c.frame(spf) {
             Ok(frame) => {
                 let time = now - start;
                 let ms = (time.as_secs() * 1000 + time.subsec_millis() as u64) as i64;
-                match frame {
-                    scrap::Frame::RAW(data) => {
-                        if data.len() != 0 {
-                            let send_conn_ids = handle_one_frame(
-                                display_idx,
-                                &sp,
-                                data,
-                                ms,
-                                &mut encoder,
-                                recorder.clone(),
-                            )?;
-                            frame_controller.set_send(now, send_conn_ids);
-                        }
-                    }
-                    _ => {}
-                };
-                Ok(())
-            }
-            Err(err) => Err(err),
-        };
-
-        #[cfg(not(any(target_os = "android", target_os = "ios")))]
-        let res = match c.frame(spf) {
-            Ok(frame) => {
-                let time = now - start;
-                let ms = (time.as_secs() * 1000 + time.subsec_millis() as u64) as i64;
-                let send_conn_ids =
-                    handle_one_frame(display_idx, &sp, &frame, ms, &mut encoder, recorder.clone())?;
-                frame_controller.set_send(now, send_conn_ids);
+                if frame.data().len() != 0 {
+                    let send_conn_ids = handle_one_frame(
+                        display_idx,
+                        &sp,
+                        frame,
+                        &mut yuv,
+                        &mut mid_data,
+                        ms,
+                        &mut encoder,
+                        recorder.clone(),
+                    )?;
+                    frame_controller.set_send(now, send_conn_ids);
+                }
                 #[cfg(windows)]
                 {
                     try_gdi = 0;
@@ -571,7 +518,7 @@ fn run(vs: VideoService) -> ResultType<()> {
                 #[cfg(target_os = "linux")]
                 {
                     would_block_count += 1;
-                    if !IS_X11.load(Ordering::SeqCst) {
+                    if !is_x11() {
                         if would_block_count >= 100 {
                             // to-do: Unknown reason for WouldBlock 100 times (seconds = 100 * 1 / fps)
                             // https://github.com/rustdesk/rustdesk/blob/63e6b2f8ab51743e77a151e2b7ff18816f5fa2fb/libs/scrap/src/common/wayland.rs#L81
@@ -611,8 +558,6 @@ fn run(vs: VideoService) -> ResultType<()> {
         let wait_begin = Instant::now();
         while wait_begin.elapsed().as_millis() < timeout_millis as _ {
             check_privacy_mode_changed(&sp, c.privacy_mode_id)?;
-            #[cfg(windows)]
-            check_uac_switch(c.privacy_mode_id, c._capturer_privacy_mode_id)?;
             frame_controller.try_wait_next(&mut fetched_conn_ids, 300);
             // break if all connections have received current frame
             if fetched_conn_ids.len() >= frame_controller.send_conn_ids.len() {
@@ -671,7 +616,6 @@ fn get_recorder(
     height: usize,
     codec_name: &CodecName,
 ) -> Arc<Mutex<Option<Recorder>>> {
-    #[cfg(not(target_os = "ios"))]
     let recorder = if !Config::get_option("allow-auto-record-incoming").is_empty() {
         use crate::hbbs_http::record_upload;
 
@@ -696,18 +640,17 @@ fn get_recorder(
     } else {
         Default::default()
     };
-    #[cfg(target_os = "ios")]
-    let recorder: Arc<Mutex<Option<Recorder>>> = Default::default();
 
     recorder
 }
 
 fn check_privacy_mode_changed(sp: &GenericService, privacy_mode_id: i32) -> ResultType<()> {
-    let privacy_mode_id_2 = *PRIVACY_MODE_CONN_ID.lock().unwrap();
+    let privacy_mode_id_2 = get_privacy_mode_conn_id().unwrap_or(INVALID_PRIVACY_MODE_CONN_ID);
     if privacy_mode_id != privacy_mode_id_2 {
-        if privacy_mode_id_2 != 0 {
+        if privacy_mode_id_2 != INVALID_PRIVACY_MODE_CONN_ID {
             let msg_out = crate::common::make_privacy_mode_msg(
                 back_notification::PrivacyModeState::PrvOnByOther,
+                "".to_owned(),
             );
             sp.send_to_others(msg_out, privacy_mode_id_2);
         }
@@ -720,7 +663,9 @@ fn check_privacy_mode_changed(sp: &GenericService, privacy_mode_id: i32) -> Resu
 fn handle_one_frame(
     display: usize,
     sp: &GenericService,
-    frame: &[u8],
+    frame: Frame,
+    yuv: &mut Vec<u8>,
+    mid_data: &mut Vec<u8>,
     ms: i64,
     encoder: &mut Encoder,
     recorder: Arc<Mutex<Option<Recorder>>>,
@@ -734,12 +679,12 @@ fn handle_one_frame(
     })?;
 
     let mut send_conn_ids: HashSet<i32> = Default::default();
-    if let Ok(mut vf) = encoder.encode_to_message(frame, ms) {
+    convert_to_yuv(&frame, encoder.yuvfmt(), yuv, mid_data)?;
+    if let Ok(mut vf) = encoder.encode_to_message(yuv, ms) {
         vf.display = display as _;
         let mut msg = Message::new();
         //..a::::::+4.4
         msg.set_video_frame(vf);
-        #[cfg(not(target_os = "ios"))]
         recorder
             .lock()
             .unwrap()
@@ -752,7 +697,7 @@ fn handle_one_frame(
 
 pub fn is_inited_msg() -> Option<Message> {
     #[cfg(target_os = "linux")]
-    if !IS_X11.load(Ordering::SeqCst) {
+    if !is_x11() {
         return super::wayland::is_inited();
     }
     None
@@ -762,52 +707,6 @@ pub fn is_inited_msg() -> Option<Message> {
 pub fn refresh() {
     #[cfg(target_os = "android")]
     Display::refresh_size();
-}
-
-#[inline]
-#[cfg(not(all(windows, feature = "virtual_display_driver")))]
-fn try_get_displays() -> ResultType<Vec<Display>> {
-    Ok(Display::all()?)
-}
-
-#[inline]
-#[cfg(all(windows, feature = "virtual_display_driver"))]
-fn no_displays(displays: &Vec<Display>) -> bool {
-    let display_len = displays.len();
-    if display_len == 0 {
-        true
-    } else if display_len == 1 {
-        let display = &displays[0];
-        let dummy_display_side_max_size = 800;
-        if display.width() > dummy_display_side_max_size
-            || display.height() > dummy_display_side_max_size
-        {
-            return false;
-        }
-        let any_real = crate::platform::resolutions(&display.name())
-            .iter()
-            .any(|r| {
-                (r.height as usize) > dummy_display_side_max_size
-                    || (r.width as usize) > dummy_display_side_max_size
-            });
-        !any_real
-    } else {
-        false
-    }
-}
-
-#[cfg(all(windows, feature = "virtual_display_driver"))]
-fn try_get_displays() -> ResultType<Vec<Display>> {
-    // let mut displays = Display::all()?;
-    // if no_displays(&displays) {
-    //     log::debug!("no displays, create virtual display");
-    //     if let Err(e) = virtual_display_manager::plug_in_headless() {
-    //         log::error!("plug in headless failed {}", e);
-    //     } else {
-    //         displays = Display::all()?;
-    //     }
-    // }
-    Ok(Display::all()?)
 }
 
 #[cfg(windows)]
@@ -830,7 +729,7 @@ fn start_uac_elevation_check() {
     });
 }
 
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
+#[cfg(not(target_os = "android"))]
 pub fn get_wake_lock() -> crate::platform::WakeLock {
     let (display, idle, sleep) = if cfg!(windows) {
         (true, false, false)
@@ -879,7 +778,7 @@ pub fn make_display_changed_msg(
         width: display.width,
         height: display.height,
         cursor_embedded: display_service::capture_cursor_embedded(),
-        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        #[cfg(not(target_os = "android"))]
         resolutions: Some(SupportedResolutions {
             resolutions: if display.name.is_empty() {
                 vec![]

@@ -35,6 +35,10 @@ type Xdo = *const c_void;
 pub const PA_SAMPLE_RATE: u32 = 48000;
 static mut UNMODIFIED: bool = true;
 
+lazy_static::lazy_static! {
+    pub static ref IS_X11: bool = hbb_common::platform::linux::is_x11_or_headless();
+}
+
 thread_local! {
     static XDO: RefCell<Xdo> = RefCell::new(unsafe { xdo_new(std::ptr::null()) });
     static DISPLAY: RefCell<*mut c_void> = RefCell::new(unsafe { XOpenDisplay(std::ptr::null())});
@@ -208,6 +212,9 @@ fn try_start_server_(desktop: Option<&Desktop>) -> ResultType<Option<Child>> {
             }
             if !desktop.xauth.is_empty() {
                 envs.push(("XAUTHORITY", desktop.xauth.clone()));
+            }
+            if !desktop.wl_display.is_empty() {
+                envs.push(("WAYLAND_DISPLAY", desktop.wl_display.clone()));
             }
             run_as_user(
                 vec!["--server"],
@@ -584,10 +591,8 @@ where
     let xdg = &format!("XDG_RUNTIME_DIR=/run/user/{}", uid) as &str;
     let mut args = vec![xdg, "-u", &username, cmd.to_str().unwrap_or("")];
     args.append(&mut arg.clone());
-    // -E required for opensuse
-    if is_opensuse() {
+    // -E is required to preserve env
         args.insert(0, "-E");
-    }
 
     let task = Command::new("sudo").envs(envs).args(args).spawn()?;
     Ok(Some(task))
@@ -932,6 +937,7 @@ mod desktop {
         pub display: String,
         pub xauth: String,
         pub is_rustdesk_subprocess: bool,
+        pub wl_display: String,
     }
 
     impl Desktop {
@@ -962,6 +968,7 @@ mod desktop {
                 for proc in display_proc {
                     self.display = get_env("DISPLAY", &self.uid, proc);
                     self.xauth = get_env("XAUTHORITY", &self.uid, proc);
+                    self.wl_display = get_env("WAYLAND_DISPLAY", &self.uid, proc);
                     if !self.display.is_empty() && !self.xauth.is_empty() {
                         break;
                     }
@@ -1331,7 +1338,7 @@ impl WallPaperRemover {
         wallpaper::set_from_path("").map_err(|e| anyhow!(e.to_string()))?;
         wallpaper::set_dark_from_path("").ok();
         log::info!(
-            "created wallpaper remover,  old_path:{:?}, old_path_dark:{:?}, elapsed:{:?}",
+            "created wallpaper remover,  old_path: {:?}, old_path_dark: {:?}, elapsed: {:?}",
             old_path,
             old_path_dark,
             start.elapsed(),
@@ -1358,5 +1365,28 @@ impl Drop for WallPaperRemover {
             allow_err!(wallpaper::set_dark_from_path(old_path_dark.as_str())
                 .map_err(|e| anyhow!(e.to_string())));
         }
+    }
+}
+
+#[inline]
+pub fn is_x11() -> bool {
+    *IS_X11
+}
+
+#[inline]
+pub fn is_selinux_enforcing() -> bool {
+    match run_cmds("getenforce") {
+        Ok(output) => output.trim() == "Enforcing",
+        Err(_) => match run_cmds("sestatus") {
+            Ok(output) => {
+                for line in output.lines() {
+                    if line.contains("Current mode:") {
+                        return line.contains("enforcing");
+                    }
+                }
+                false
+            }
+            Err(_) => false,
+        },
     }
 }

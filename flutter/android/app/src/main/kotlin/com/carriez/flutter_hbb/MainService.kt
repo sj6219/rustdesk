@@ -49,7 +49,6 @@ import java.util.Timer
 import java.util.TimerTask
 //import android.content.ClipboardManager.OnPrimaryClipChangedListener
 
-
 const val DEFAULT_NOTIFY_TITLE = "RustDesk"
 const val DEFAULT_NOTIFY_TEXT = "Service is running"
 const val DEFAULT_NOTIFY_ID = 1
@@ -97,6 +96,12 @@ class MainService : Service() /* , ClipboardManager.OnPrimaryClipChangedListener
                 }
             }
         }
+    }
+
+    @Keep
+    @RequiresApi(Build.VERSION_CODES.N)
+    fun rustKeyEventInput(input: ByteArray) {
+        InputService.ctx?.onKeyEvent(input)
     }
 
     @Keep
@@ -225,6 +230,7 @@ class MainService : Service() /* , ClipboardManager.OnPrimaryClipChangedListener
     override fun onCreate() {
         super.onCreate()
         Log.d(logTag,"MainService onCreate")
+        init(this)
         HandlerThread("Service", Process.THREAD_PRIORITY_BACKGROUND).apply {
             start()
             serviceLooper = looper
@@ -329,7 +335,6 @@ class MainService : Service() /* , ClipboardManager.OnPrimaryClipChangedListener
                 mediaProjection =
                     mediaProjectionManager.getMediaProjection(Activity.RESULT_OK, it)
                 checkMediaPermission()
-                init(this)
                 _isReady = true
             } ?: let {
                 Log.d(logTag, "getParcelableExtra intent null, invoke requestMediaProjection")

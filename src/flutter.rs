@@ -471,6 +471,7 @@ impl InvokeUiSession for FlutterHandler {
                     "codec_format",
                     &status.codec_format.map_or(NULL, |it| it.to_string()),
                 ),
+                ("chroma", &status.chroma.map_or(NULL, |it| it.to_string())),
             ],
         );
     }
@@ -691,6 +692,13 @@ impl InvokeUiSession for FlutterHandler {
         );
     }
 
+    fn set_platform_additions(&self, data: &str) {
+        self.push_event(
+            "sync_platform_additions",
+            vec![("platform_additions", &data)],
+        )
+    }
+
     fn on_connected(&self, _conn_type: ConnType) {}
 
     fn msgbox(&self, msgtype: &str, title: &str, text: &str, link: &str, retry: bool) {
@@ -855,7 +863,6 @@ pub fn session_add(
     LocalConfig::set_remote_id(&id);
 
     let session: Session<FlutterHandler> = Session {
-        id: id.to_owned(),
         password,
         server_keyboard_enabled: Arc::new(RwLock::new(true)),
         server_file_transfer_enabled: Arc::new(RwLock::new(true)),
@@ -1023,8 +1030,8 @@ pub mod connection_manager {
             self.push_event("update_voice_call_state", vec![("client", &client_json)]);
         }
 
-        fn file_transfer_log(&self, log: String) {
-            self.push_event("cm_file_transfer_log", vec![("log", &log.to_string())]);
+        fn file_transfer_log(&self, action: &str, log: &str) {
+            self.push_event("cm_file_transfer_log", vec![(action, log)]);
         }
     }
 
@@ -1458,25 +1465,7 @@ pub mod sessions {
                     if write_lock.is_empty() {
                         remove_peer_key = Some(peer_key.clone());
                     } else {
-                        // Set capture displays if some are not used any more.
-                        let mut remains_displays = HashSet::new();
-                        for (_, h) in write_lock.iter() {
-                            remains_displays.extend(
-                                h.renderer
-                                    .map_display_sessions
-                                    .read()
-                                    .unwrap()
-                                    .keys()
-                                    .cloned(),
-                            );
-                        }
-                        if !remains_displays.is_empty() {
-                            s.capture_displays(
-                                vec![],
-                                vec![],
-                                remains_displays.iter().map(|d| *d as i32).collect(),
-                            );
-                        }
+                        check_remove_unused_displays(None, id, s, &write_lock);
                     }
                     break;
                 }
@@ -1486,12 +1475,79 @@ pub mod sessions {
         SESSIONS.write().unwrap().remove(&remove_peer_key?)
     }
 
+    #[cfg(feature = "flutter_texture_render")]
+    fn check_remove_unused_displays(
+        current: Option<usize>,
+        session_id: &SessionID,
+        session: &FlutterSession,
+        handlers: &HashMap<SessionID, SessionHandler>,
+    ) {
+        // Set capture displays if some are not used any more.
+        let mut remains_displays = HashSet::new();
+        if let Some(current) = current {
+            remains_displays.insert(current);
+        }
+        for (k, h) in handlers.iter() {
+            if k == session_id {
+                continue;
+            }
+            remains_displays.extend(
+                h.renderer
+                    .map_display_sessions
+                    .read()
+                    .unwrap()
+                    .keys()
+                    .cloned(),
+            );
+        }
+        if !remains_displays.is_empty() {
+            session.capture_displays(
+                vec![],
+                vec![],
+                remains_displays.iter().map(|d| *d as i32).collect(),
+            );
+        }
+    }
+
+    pub fn session_switch_display(is_desktop: bool, session_id: SessionID, value: Vec<i32>) {
+        for s in SESSIONS.read().unwrap().values() {
+            let read_lock = s.ui_handler.session_handlers.read().unwrap();
+            if read_lock.contains_key(&session_id) {
+                if value.len() == 1 {
+                    // Switch display.
+                    // This operation will also cause the peer to send a switch display message.
+                    // The switch display message will contain `SupportedResolutions`, which is useful when changing resolutions.
+                    s.switch_display(value[0]);
+
+                    if !is_desktop {
+                        s.capture_displays(vec![], vec![], value);
+                    } else {
+                        // Check if other displays are needed.
+                        #[cfg(feature = "flutter_texture_render")]
+                        if value.len() == 1 {
+                            check_remove_unused_displays(
+                                Some(value[0] as _),
+                                &session_id,
+                                &s,
+                                &read_lock,
+                            );
+                        }
+                    }
+                } else {
+                    // Try capture all displays.
+                    s.capture_displays(vec![], vec![], value);
+                }
+                break;
+            }
+        }
+    }
+
     #[inline]
     pub fn insert_session(session_id: SessionID, conn_type: ConnType, session: FlutterSession) {
         SESSIONS
             .write()
             .unwrap()
-            .entry((session.id.clone(), conn_type))
+            .entry((session.get_id(), conn_type))
             .or_insert(session)
             .ui_handler
             .session_handlers
@@ -1543,5 +1599,78 @@ pub mod sessions {
             .get(&(peer_id, conn_type))
             .map(|s| s.session_handlers.read().unwrap().len() != 0)
             .unwrap_or(false)
+    }
+}
+
+pub(super) mod async_tasks {
+    use hbb_common::{
+        bail,
+        tokio::{
+            self, select,
+            sync::mpsc::{unbounded_channel, UnboundedSender},
+        },
+        ResultType,
+    };
+    use std::{
+        collections::HashMap,
+        sync::{Arc, Mutex},
+    };
+
+    type TxQueryOnlines = UnboundedSender<Vec<String>>;
+    lazy_static::lazy_static! {
+        static ref TX_QUERY_ONLINES: Arc<Mutex<Option<TxQueryOnlines>>> = Default::default();
+    }
+
+    #[inline]
+    pub fn start_flutter_async_runner() {
+        std::thread::spawn(start_flutter_async_runner_);
+    }
+
+    #[allow(dead_code)]
+    pub fn stop_flutter_async_runner() {
+        let _ = TX_QUERY_ONLINES.lock().unwrap().take();
+    }
+
+    #[tokio::main(flavor = "current_thread")]
+    async fn start_flutter_async_runner_() {
+        let (tx_onlines, mut rx_onlines) = unbounded_channel::<Vec<String>>();
+        TX_QUERY_ONLINES.lock().unwrap().replace(tx_onlines);
+
+        loop {
+            select! {
+                ids = rx_onlines.recv() => {
+                    match ids {
+                        Some(_ids) => {
+                            #[cfg(not(any(target_os = "ios")))]
+                            crate::rendezvous_mediator::query_online_states(_ids, handle_query_onlines).await
+                        }
+                        None => {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn query_onlines(ids: Vec<String>) -> ResultType<()> {
+        if let Some(tx) = TX_QUERY_ONLINES.lock().unwrap().as_ref() {
+            let _ = tx.send(ids)?;
+        } else {
+            bail!("No tx_query_onlines");
+        }
+        Ok(())
+    }
+
+    fn handle_query_onlines(onlines: Vec<String>, offlines: Vec<String>) {
+        let data = HashMap::from([
+            ("name", "callback_query_onlines".to_owned()),
+            ("onlines", onlines.join(",")),
+            ("offlines", offlines.join(",")),
+        ]);
+        let _res = super::push_global_event(
+            super::APP_TYPE_MAIN,
+            serde_json::ser::to_string(&data).unwrap_or("".to_owned()),
+        );
     }
 }

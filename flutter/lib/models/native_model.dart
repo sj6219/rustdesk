@@ -15,7 +15,7 @@ import 'package:path_provider/path_provider.dart';
 import '../common.dart';
 import '../generated_bridge.dart';
 
-class RgbaFrame extends Struct {
+final class RgbaFrame extends Struct {
   @Uint32()
   external int len;
   external Pointer<Uint8> data;
@@ -153,10 +153,10 @@ class PlatformFFI {
         AndroidDeviceInfo androidInfo = await deviceInfo.androidInfo;
         name = '${androidInfo.brand}-${androidInfo.model}';
         id = androidInfo.id.hashCode.toString();
-        androidVersion = androidInfo.version.sdkInt ?? 0;
+        androidVersion = androidInfo.version.sdkInt;
       } else if (Platform.isIOS) {
         IosDeviceInfo iosInfo = await deviceInfo.iosInfo;
-        name = iosInfo.utsname.machine ?? '';
+        name = iosInfo.utsname.machine;
         id = iosInfo.identifierForVendor.hashCode.toString();
       } else if (Platform.isLinux) {
         LinuxDeviceInfo linuxInfo = await deviceInfo.linuxInfo;

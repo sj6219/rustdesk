@@ -156,7 +156,7 @@ class _ConnectionTabPageState extends State<ConnectionTabPage> {
           ),
         ));
       } else if (call.method == kWindowDisableGrabKeyboard) {
-        stateGlobal.grabKeyboard = false;
+        // ???
       } else if (call.method == "onDestroy") {
         tabController.clear();
       } else if (call.method == kWindowActionRebuild) {
@@ -386,7 +386,7 @@ class _ConnectionTabPageState extends State<ConnectionTabPage> {
             pi.platform == kPeerPlatformMacOS)) {
       menu.add(MenuEntryButton<String>(
         childBuilder: (TextStyle? style) => Text(
-          translate('Restart Remote Device'),
+          translate('Restart remote device'),
           style: style,
         ),
         proc: () => showRestartRemoteDevice(
