@@ -12,16 +12,17 @@ use crate::platform::linux_desktop_manager;
 use crate::platform::WallPaperRemover;
 #[cfg(windows)]
 use crate::portable_service::client as portable_client;
+#[cfg(target_os = "linux")]
+use crate::platform::linux::is_x11;
 use crate::{
     client::{
         new_voice_call_request, new_voice_call_response, start_audio_thread, MediaData, MediaSender,
     },
     common::{get_default_sound_input, set_sound_input},
-    display_service, video_service,
+    display_service, ipc, privacy_mode, video_service, VERSION,
 };
 #[cfg(any(target_os = "android", target_os = "ios"))]
 use crate::{common::DEVICE_NAME, flutter::connection_manager::start_channel};
-use crate::{ipc, VERSION};
 use cidr_utils::cidr::IpCidr;
 #[cfg(all(target_os = "linux", feature = "linux_headless"))]
 #[cfg(not(any(feature = "flatpak", feature = "appimage")))]
@@ -71,6 +72,7 @@ lazy_static::lazy_static! {
     static ref ALIVE_CONNS: Arc::<Mutex<Vec<i32>>> = Default::default();
     static ref AUTHED_CONNS: Arc::<Mutex<Vec<(i32, AuthConnType)>>> = Default::default();
     static ref SWITCH_SIDES_UUID: Arc::<Mutex<HashMap<String, (Instant, uuid::Uuid)>>> = Default::default();
+    static ref WAKELOCK_SENDER: Arc::<Mutex<std::sync::mpsc::Sender<(usize, usize)>>> = Arc::new(Mutex::new(start_wakelock_thread()));
 }
 
 #[cfg(any(target_os = "windows", target_os = "linux"))]
@@ -506,24 +508,24 @@ impl Connection {
                         ipc::Data::ClipboardFile(clip) => {
                             allow_err!(conn.stream.send(&clip_2_msg(clip)).await);
                         }
-                        ipc::Data::PrivacyModeState((_, state)) => {
+                        ipc::Data::PrivacyModeState((_, state, impl_key)) => {
                             let msg_out = match state {
-                                ipc::PrivacyModeState::OffSucceeded => {
-                                    video_service::set_privacy_mode_conn_id(0);
+                                privacy_mode::PrivacyModeState::OffSucceeded => {
                                     crate::common::make_privacy_mode_msg(
                                         back_notification::PrivacyModeState::PrvOffSucceeded,
+                                        impl_key,
                                     )
                                 }
-                                ipc::PrivacyModeState::OffByPeer => {
-                                    video_service::set_privacy_mode_conn_id(0);
+                                privacy_mode::PrivacyModeState::OffByPeer => {
                                     crate::common::make_privacy_mode_msg(
                                         back_notification::PrivacyModeState::PrvOffByPeer,
+                                        impl_key,
                                     )
                                 }
-                                ipc::PrivacyModeState::OffUnknown => {
-                                    video_service::set_privacy_mode_conn_id(0);
+                                privacy_mode::PrivacyModeState::OffUnknown => {
                                      crate::common::make_privacy_mode_msg(
                                         back_notification::PrivacyModeState::PrvOffUnknown,
+                                        impl_key,
                                     )
                                 }
                             };
@@ -532,7 +534,7 @@ impl Connection {
                         #[cfg(windows)]
                         ipc::Data::DataPortableService(ipc::DataPortableService::RequestStart) => {
                             if let Err(e) = portable_client::start_portable_service(portable_client::StartPara::Direct) {
-                                log::error!("Failed to start portable service from cm:{:?}", e);
+                                log::error!("Failed to start portable service from cm: {:?}", e);
                             }
                         }
                         ipc::Data::SwitchSidesBack => {
@@ -680,12 +682,10 @@ impl Connection {
             }
         }
 
-        let video_privacy_conn_id = video_service::get_privacy_mode_conn_id();
-        if video_privacy_conn_id == id {
-            video_service::set_privacy_mode_conn_id(0);
-            let _ = privacy_mode::turn_off_privacy(id);
-        } else if video_privacy_conn_id == 0 {
-            let _ = privacy_mode::turn_off_privacy(0);
+        if let Some(video_privacy_conn_id) = privacy_mode::get_privacy_mode_conn_id() {
+            if video_privacy_conn_id == id {
+                let _ = Self::turn_off_privacy_to_msg(id);
+            }
         }
         #[cfg(all(feature = "flutter", feature = "plugin_framework"))]
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -883,7 +883,7 @@ impl Connection {
     }
 
     async fn check_privacy_mode_on(&mut self) -> bool {
-        if video_service::get_privacy_mode_conn_id() > 0 {
+        if privacy_mode::is_in_privacy_mode() {
             self.send_login_error("Someone turns on privacy mode, exit")
                 .await;
             false
@@ -1064,7 +1064,13 @@ impl Connection {
             pi.hostname = DEVICE_NAME.lock().unwrap().clone();
             pi.platform = "Android".into();
         }
-        #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+        #[cfg(all(target_os = "macos", not(feature = "unix-file-copy-paste")))]
+        let platform_additions = serde_json::Map::new();
+        #[cfg(any(
+            target_os = "windows",
+            target_os = "linux",
+            all(target_os = "macos", feature = "unix-file-copy-paste")
+        ))]
         let mut platform_additions = serde_json::Map::new();
         #[cfg(target_os = "linux")]
         {
@@ -1092,6 +1098,10 @@ impl Connection {
                     platform_additions.insert("virtual_displays".into(), json!(&virtual_displays));
                 }
             }
+            platform_additions.insert(
+                "supported_privacy_mode_impl".into(),
+                json!(privacy_mode::get_supported_privacy_mode_impl()),
+            );
         }
 
         #[cfg(any(
@@ -1163,25 +1173,11 @@ impl Connection {
         pi.username = username;
         pi.sas_enabled = sas_enabled;
         pi.features = Some(Features {
-            privacy_mode: display_service::is_privacy_mode_supported(),
+            privacy_mode: privacy_mode::is_privacy_mode_supported(),
             ..Default::default()
         })
         .into();
-        #[cfg(not(any(target_os = "android", target_os = "ios")))]
-        {
-            pi.resolutions = Some(SupportedResolutions {
-                resolutions: display_service::try_get_displays()
-                    .map(|displays| {
-                        displays
-                            .get(self.display_idx)
-                            .map(|d| crate::platform::resolutions(&d.name()))
-                            .unwrap_or(vec![])
-                    })
-                    .unwrap_or(vec![]),
-                ..Default::default()
-            })
-            .into();
-        }
+        pi.resolutions = Self::get_supported_resolutions(self.display_idx).into();
 
         let mut sub_service = false;
         if self.file_transfer.is_some() {
@@ -1241,15 +1237,39 @@ impl Connection {
                 #[cfg(not(any(target_os = "android", target_os = "ios")))]
                 let _h = try_start_record_cursor_pos();
                 self.auto_disconnect_timer = Self::get_auto_disconenct_timer();
+                s.try_add_primay_video_service();
                 //..a::::::+4.1
                 s.add_connection(self.inner.clone(), &noperms);
             }
         }
     }
 
+    fn get_supported_resolutions(display_idx: usize) -> Option<SupportedResolutions> {
+        #[cfg(any(target_os = "android", target_os = "ios"))]
+        return None;
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        {
+            #[cfg(target_os = "linux")]
+            {
+                if !is_x11() {
+                    return None;
+                }
+            }
+            Some(SupportedResolutions {
+                resolutions: display_service::try_get_displays()
+                    .map(|displays| {
+                        displays
+                            .get(display_idx)
+                            .map(|d| crate::platform::resolutions(&d.name()))
+                            .unwrap_or(vec![])
+                    })
+                    .unwrap_or(vec![]),
+                ..Default::default()
+            })
+        }
+    }
+
     fn on_remote_authorized(&self) {
-        use std::sync::Once;
-        static _ONCE: Once = Once::new();
         self.update_codec_on_login();
         #[cfg(any(target_os = "windows", target_os = "linux"))]
         if !Config::get_option("allow-remove-wallpaper").is_empty() {
@@ -1259,12 +1279,9 @@ impl Connection {
                 match crate::platform::WallPaperRemover::new() {
                     Ok(remover) => {
                         *wallpaper = Some(remover);
-                        _ONCE.call_once(|| {
-                            shutdown_hooks::add_shutdown_hook(shutdown_hook);
-                        });
                     }
                     Err(e) => {
-                        log::info!("create wallpaper remover failed:{:?}", e);
+                        log::info!("create wallpaper remover failed: {:?}", e);
                     }
                 }
             }
@@ -1485,6 +1502,7 @@ impl Connection {
     fn try_start_cm_ipc(&mut self) {
         if let Some(p) = self.start_cm_ipc_para.take() {
             tokio::spawn(async move {
+                #[cfg(windows)]
                 let tx_from_cm_clone = p.tx_from_cm.clone();
                 if let Err(err) = start_ipc(
                     p.rx_to_cm,
@@ -1495,7 +1513,10 @@ impl Connection {
                 .await
                 {
                     log::error!("ipc to connection manager exit: {}", err);
-                    allow_err!(tx_from_cm_clone.send(Data::CmErr(err.to_string())));
+                    #[cfg(windows)]
+                    if !crate::platform::is_prelogin() {
+                        allow_err!(tx_from_cm_clone.send(Data::CmErr(err.to_string())));
+                    }
                 }
             });
             #[cfg(all(windows, feature = "flutter"))]
@@ -2107,6 +2128,9 @@ impl Connection {
                     Some(misc::Union::ToggleVirtualDisplay(t)) => {
                         self.toggle_virtual_display(t).await;
                     }
+                    Some(misc::Union::TogglePrivacyMode(t)) => {
+                        self.toggle_privacy_mode(t).await;
+                    }
                     Some(misc::Union::ChatMessage(c)) => {
                         self.send_to_cm(ipc::Data::ChatMessage { text: c.text });
                         self.chat_unanswered = true;
@@ -2139,13 +2163,19 @@ impl Connection {
                         return false;
                     }
 
-                    Some(misc::Union::RestartRemoteDevice(_)) =>
-                    {
+                    Some(misc::Union::RestartRemoteDevice(_)) => {
                         #[cfg(not(any(target_os = "android", target_os = "ios")))]
                         if self.restart {
+                            // force_reboot, not work on linux vm and macos 14
+                            #[cfg(any(target_os = "linux", target_os = "windows"))]
+                            match system_shutdown::force_reboot() {
+                                Ok(_) => log::info!("Restart by the peer"),
+                                Err(e) => log::error!("Failed to restart: {}", e),
+                            }
+                            #[cfg(any(target_os = "linux", target_os = "macos"))]
                             match system_shutdown::reboot() {
                                 Ok(_) => log::info!("Restart by the peer"),
-                                Err(e) => log::error!("Failed to restart:{}", e),
+                                Err(e) => log::error!("Failed to restart: {}", e),
                             }
                         }
                     }
@@ -2196,10 +2226,6 @@ impl Connection {
                             crate::plugin::handle_client_event(&p.id, &self.lr.my_id, &p.content);
                         self.send(msg).await;
                     }
-                    Some(misc::Union::FullSpeedFps(fps)) => video_service::VIDEO_QOS
-                        .lock()
-                        .unwrap()
-                        .user_full_speed_fps(self.inner.id(), fps),
                     Some(misc::Union::AutoAdjustFps(fps)) => video_service::VIDEO_QOS
                         .lock()
                         .unwrap()
@@ -2339,6 +2365,22 @@ impl Connection {
     }
 
     async fn capture_displays(&mut self, add: &[usize], sub: &[usize], set: &[usize]) {
+        #[cfg(windows)]
+        if portable_client::running() && (add.len() > 0 || set.len() > 1) {
+            log::info!("Capturing multiple displays is not supported in the elevated mode.");
+            let mut msg_out = Message::new();
+            let res = MessageBox {
+                msgtype: "nook-nocancel-hasclose".to_owned(),
+                title: "Prompt".to_owned(),
+                text: "capture_display_elevated_connections_tip".to_owned(),
+                link: "".to_owned(),
+                ..Default::default()
+            };
+            msg_out.set_message_box(res);
+            self.send(msg_out).await;
+            return;
+        }
+
         if let Some(sever) = self.server.upgrade() {
             let mut lock = sever.write().unwrap();
             for display in add.iter() {
@@ -2366,10 +2408,34 @@ impl Connection {
 
     #[cfg(all(windows, feature = "virtual_display_driver"))]
     async fn toggle_virtual_display(&mut self, t: ToggleVirtualDisplay) {
+        let make_msg = |text: String| {
+            let mut msg_out = Message::new();
+            let res = MessageBox {
+                msgtype: "nook-nocancel-hasclose".to_owned(),
+                title: "Virtual display".to_owned(),
+                text,
+                link: "".to_owned(),
+                ..Default::default()
+            };
+            msg_out.set_message_box(res);
+            msg_out
+        };
+
         if t.on {
-            if let Err(e) = virtual_display_manager::plug_in_index_modes(t.display as _, Vec::new())
-            {
-                log::error!("Failed to plug in virtual display: {}", e);
+            if !virtual_display_manager::is_virtual_display_supported() {
+                self.send(make_msg("idd_not_support_under_win10_2004_tip".to_string()))
+                    .await;
+            } else {
+                if let Err(e) =
+                    virtual_display_manager::plug_in_index_modes(t.display as _, Vec::new())
+                {
+                    log::error!("Failed to plug in virtual display: {}", e);
+                    self.send(make_msg(format!(
+                        "Failed to plug in virtual display: {}",
+                        e
+                    )))
+                    .await;
+                }
             }
         } else {
             let indices = if t.display == -1 {
@@ -2379,7 +2445,20 @@ impl Connection {
             };
             if let Err(e) = virtual_display_manager::plug_out_peer_request(&indices) {
                 log::error!("Failed to plug out virtual display {:?}: {}", &indices, e);
+                self.send(make_msg(format!(
+                    "Failed to plug out virtual displays: {}",
+                    e
+                )))
+                .await;
             }
+        }
+    }
+
+    async fn toggle_privacy_mode(&mut self, t: TogglePrivacyMode) {
+        if t.on {
+            self.turn_on_privacy(t.impl_key).await;
+        } else {
+            self.turn_off_privacy(t.impl_key).await;
         }
     }
 
@@ -2408,7 +2487,7 @@ impl Connection {
                         crate::platform::change_resolution(&name, r.width as _, r.height as _)
                     {
                         log::error!(
-                            "Failed to change resolution '{}' to ({},{}):{:?}",
+                            "Failed to change resolution '{}' to ({},{}): {:?}",
                             &name,
                             r.width,
                             r.height,
@@ -2556,70 +2635,21 @@ impl Connection {
                 }
             }
         }
-        if let Ok(q) = o.privacy_mode.enum_value() {
-            if self.keyboard {
-                match q {
-                    BoolOption::Yes => {
-                        let msg_out = if !display_service::is_privacy_mode_supported() {
-                            crate::common::make_privacy_mode_msg_with_details(
-                                back_notification::PrivacyModeState::PrvNotSupported,
-                                "Unsupported. 1 Multi-screen is not supported. 2 Please confirm the license is activated.".to_string(),
-                            )
-                        } else {
-                            match privacy_mode::turn_on_privacy(self.inner.id) {
-                                Ok(true) => {
-                                    let err_msg = video_service::test_create_capturer(
-                                        self.inner.id,
-                                        self.display_idx,
-                                        5_000,
-                                    );
-                                    if err_msg.is_empty() {
-                                        video_service::set_privacy_mode_conn_id(self.inner.id);
-                                        crate::common::make_privacy_mode_msg(
-                                            back_notification::PrivacyModeState::PrvOnSucceeded,
-                                        )
-                                    } else {
-                                        log::error!(
-                                            "Wait privacy mode timeout, turn off privacy mode"
-                                        );
-                                        video_service::set_privacy_mode_conn_id(0);
-                                        let _ = privacy_mode::turn_off_privacy(self.inner.id);
-                                        crate::common::make_privacy_mode_msg_with_details(
-                                            back_notification::PrivacyModeState::PrvOnFailed,
-                                            err_msg,
-                                        )
-                                    }
-                                }
-                                Ok(false) => crate::common::make_privacy_mode_msg(
-                                    back_notification::PrivacyModeState::PrvOnFailedPlugin,
-                                ),
-                                Err(e) => {
-                                    log::error!("Failed to turn on privacy mode. {}", e);
-                                    if video_service::get_privacy_mode_conn_id() == 0 {
-                                        let _ = privacy_mode::turn_off_privacy(0);
-                                    }
-                                    crate::common::make_privacy_mode_msg_with_details(
-                                        back_notification::PrivacyModeState::PrvOnFailed,
-                                        e.to_string(),
-                                    )
-                                }
-                            }
-                        };
-                        self.send(msg_out).await;
+        // For compatibility with old versions ( < 1.2.4 ).
+        if hbb_common::get_version_number(&self.lr.version)
+            < hbb_common::get_version_number("1.2.4")
+        {
+            if let Ok(q) = o.privacy_mode.enum_value() {
+                if self.keyboard {
+                    match q {
+                        BoolOption::Yes => {
+                            self.turn_on_privacy("".to_owned()).await;
+                        }
+                        BoolOption::No => {
+                            self.turn_off_privacy("".to_owned()).await;
+                        }
+                        _ => {}
                     }
-                    BoolOption::No => {
-                        let msg_out = if !display_service::is_privacy_mode_supported() {
-                            crate::common::make_privacy_mode_msg_with_details(
-                                back_notification::PrivacyModeState::PrvNotSupported,
-                                "Unsupported. 1 Multi-screen is not supported. 2 Please confirm the license is activated.".to_string(),
-                            )
-                        } else {
-                            video_service::set_privacy_mode_conn_id(0);
-                            privacy_mode::turn_off_privacy(self.inner.id)
-                        };
-                        self.send(msg_out).await;
-                    }
-                    _ => {}
                 }
             }
         }
@@ -2646,6 +2676,122 @@ impl Connection {
                     }
                 }
             }
+        }
+    }
+
+    async fn turn_on_privacy(&mut self, impl_key: String) {
+        let msg_out = if !privacy_mode::is_privacy_mode_supported() {
+            crate::common::make_privacy_mode_msg_with_details(
+                back_notification::PrivacyModeState::PrvNotSupported,
+                "Unsupported. 1 Multi-screen is not supported. 2 Please confirm the license is activated.".to_string(),
+                impl_key,
+            )
+        } else {
+            let is_pre_privacy_on = privacy_mode::is_in_privacy_mode();
+            let pre_impl_key = privacy_mode::get_cur_impl_key();
+            let turn_on_res = privacy_mode::turn_on_privacy(&impl_key, self.inner.id);
+
+            if is_pre_privacy_on {
+                if let Some(pre_impl_key) = pre_impl_key {
+                    if !privacy_mode::is_current_privacy_mode_impl(&pre_impl_key) {
+                        let off_msg = crate::common::make_privacy_mode_msg(
+                            back_notification::PrivacyModeState::PrvOffSucceeded,
+                            pre_impl_key,
+                        );
+                        self.send(off_msg).await;
+                    }
+                }
+            }
+
+            match turn_on_res {
+                Some(Ok(res)) => {
+                    if res {
+                        let err_msg = privacy_mode::check_privacy_mode_err(
+                            self.inner.id,
+                            self.display_idx,
+                            5_000,
+                        );
+                        if err_msg.is_empty() {
+                            crate::common::make_privacy_mode_msg(
+                                back_notification::PrivacyModeState::PrvOnSucceeded,
+                                impl_key,
+                            )
+                        } else {
+                            log::error!(
+                                "Check privacy mode failed: {}, turn off privacy mode.",
+                                &err_msg
+                            );
+                            let _ = Self::turn_off_privacy_to_msg(self.inner.id);
+                            crate::common::make_privacy_mode_msg_with_details(
+                                back_notification::PrivacyModeState::PrvOnFailed,
+                                err_msg,
+                                impl_key,
+                            )
+                        }
+                    } else {
+                        crate::common::make_privacy_mode_msg(
+                            back_notification::PrivacyModeState::PrvOnFailedPlugin,
+                            impl_key,
+                        )
+                    }
+                }
+                Some(Err(e)) => {
+                    log::error!("Failed to turn on privacy mode. {}", e);
+                    if !privacy_mode::is_in_privacy_mode() {
+                        let _ = Self::turn_off_privacy_to_msg(
+                            privacy_mode::INVALID_PRIVACY_MODE_CONN_ID,
+                        );
+                    }
+                    crate::common::make_privacy_mode_msg_with_details(
+                        back_notification::PrivacyModeState::PrvOnFailed,
+                        e.to_string(),
+                        impl_key,
+                    )
+                }
+                None => crate::common::make_privacy_mode_msg_with_details(
+                    back_notification::PrivacyModeState::PrvOffFailed,
+                    "Not supported".to_string(),
+                    impl_key,
+                ),
+            }
+        };
+        self.send(msg_out).await;
+    }
+
+    async fn turn_off_privacy(&mut self, impl_key: String) {
+        let msg_out = if !privacy_mode::is_privacy_mode_supported() {
+            crate::common::make_privacy_mode_msg_with_details(
+                back_notification::PrivacyModeState::PrvNotSupported,
+                // This error message is used for magnifier. It is ok to use it here.
+                "Unsupported. 1 Multi-screen is not supported. 2 Please confirm the license is activated.".to_string(),
+                impl_key,
+            )
+        } else {
+            Self::turn_off_privacy_to_msg(self.inner.id)
+        };
+        self.send(msg_out).await;
+    }
+
+    pub fn turn_off_privacy_to_msg(_conn_id: i32) -> Message {
+        let impl_key = "".to_owned();
+        match privacy_mode::turn_off_privacy(_conn_id, None) {
+            Some(Ok(_)) => crate::common::make_privacy_mode_msg(
+                back_notification::PrivacyModeState::PrvOffSucceeded,
+                impl_key,
+            ),
+            Some(Err(e)) => {
+                log::error!("Failed to turn off privacy mode {}", e);
+                crate::common::make_privacy_mode_msg_with_details(
+                    back_notification::PrivacyModeState::PrvOffFailed,
+                    e.to_string(),
+                    impl_key,
+                )
+            }
+            None => crate::common::make_privacy_mode_msg_with_details(
+                back_notification::PrivacyModeState::PrvOffFailed,
+                "Not supported".to_string(),
+                impl_key,
+            ),
         }
     }
 
@@ -2944,47 +3090,6 @@ fn try_activate_screen() {
     });
 }
 
-mod privacy_mode {
-    use super::*;
-    #[cfg(windows)]
-    use crate::privacy_win_mag;
-
-    pub(super) fn turn_off_privacy(_conn_id: i32) -> Message {
-        #[cfg(windows)]
-        {
-            let res = privacy_win_mag::turn_off_privacy(_conn_id, None);
-            match res {
-                Ok(_) => crate::common::make_privacy_mode_msg(
-                    back_notification::PrivacyModeState::PrvOffSucceeded,
-                ),
-                Err(e) => {
-                    log::error!("Failed to turn off privacy mode {}", e);
-                    crate::common::make_privacy_mode_msg_with_details(
-                        back_notification::PrivacyModeState::PrvOffFailed,
-                        e.to_string(),
-                    )
-                }
-            }
-        }
-        #[cfg(not(windows))]
-        {
-            crate::common::make_privacy_mode_msg(back_notification::PrivacyModeState::PrvOffFailed)
-        }
-    }
-
-    pub(super) fn turn_on_privacy(_conn_id: i32) -> ResultType<bool> {
-        #[cfg(windows)]
-        {
-            let plugin_exist = privacy_win_mag::turn_on_privacy(_conn_id)?;
-            Ok(plugin_exist)
-        }
-        #[cfg(not(windows))]
-        {
-            Ok(true)
-        }
-    }
-}
-
 pub enum AlarmAuditType {
     IpWhitelist = 0,
     ExceedThirtyAttempts = 1,
@@ -3104,6 +3209,51 @@ impl FileRemoveLogControl {
     }
 }
 
+fn start_wakelock_thread() -> std::sync::mpsc::Sender<(usize, usize)> {
+    use crate::platform::{get_wakelock, WakeLock};
+    let (tx, rx) = std::sync::mpsc::channel::<(usize, usize)>();
+    std::thread::spawn(move || {
+        let mut wakelock: Option<WakeLock> = None;
+        let mut last_display = false;
+        loop {
+            match rx.recv() {
+                Ok((conn_count, remote_count)) => {
+                    if conn_count == 0 {
+                        wakelock = None;
+                        log::info!("drop wakelock");
+                    } else {
+                        let mut display = remote_count > 0;
+                        if let Some(w) = wakelock.as_mut() {
+                            if display != last_display {
+                                #[cfg(any(target_os = "windows", target_os = "macos"))]
+                                {
+                                    log::info!("set wakelock display to {display}");
+                                    if let Err(e) = w.set_display(display) {
+                                        log::error!(
+                                            "failed to set wakelock display to {display}: {e:?}"
+                                        );
+                                    }
+                                }
+                            }
+                        } else {
+                            if cfg!(target_os = "linux") {
+                                display = true;
+                            }
+                            wakelock = Some(get_wakelock(display));
+                        }
+                        last_display = display;
+                    }
+                }
+                Err(e) => {
+                    log::error!("wakelock receive error: {e:?}");
+                    break;
+                }
+            }
+        }
+    });
+    tx
+}
+
 #[cfg(windows)]
 pub struct PortableState {
     pub last_uac: bool,
@@ -3177,9 +3327,13 @@ impl LinuxHeadlessHandle {
     }
 }
 
-#[cfg(any(target_os = "windows", target_os = "linux"))]
-extern "C" fn shutdown_hook() {
-    *WALLPAPER_REMOVER.lock().unwrap() = None;
+extern "C" fn connection_shutdown_hook() {
+    // https://stackoverflow.com/questions/35980148/why-does-an-atexit-handler-panic-when-it-accesses-stdout
+    // Please make sure there is no print in the call stack
+    #[cfg(any(target_os = "windows", target_os = "linux"))]
+    {
+        *WALLPAPER_REMOVER.lock().unwrap() = None;
+    }
 }
 
 mod raii {
@@ -3209,7 +3363,27 @@ mod raii {
     impl AuthedConnID {
         pub fn new(id: i32, conn_type: AuthConnType) -> Self {
             AUTHED_CONNS.lock().unwrap().push((id, conn_type));
+            Self::check_wake_lock();
+            use std::sync::Once;
+            static _ONCE: Once = Once::new();
+            _ONCE.call_once(|| {
+                shutdown_hooks::add_shutdown_hook(connection_shutdown_hook);
+            });
             Self(id, conn_type)
+        }
+
+        fn check_wake_lock() {
+            let conn_count = AUTHED_CONNS.lock().unwrap().len();
+            let remote_count = AUTHED_CONNS
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|c| c.1 == AuthConnType::Remote)
+                .count();
+            allow_err!(WAKELOCK_SENDER
+                .lock()
+                .unwrap()
+                .send((conn_count, remote_count)));
         }
     }
 
@@ -3218,9 +3392,14 @@ mod raii {
             if self.1 == AuthConnType::Remote {
                 scrap::codec::Encoder::update(self.0, scrap::codec::EncodingUpdate::Remove);
             }
-            let mut lock = AUTHED_CONNS.lock().unwrap();
-            lock.retain(|&c| c.0 != self.0);
-            if lock.iter().filter(|c| c.1 == AuthConnType::Remote).count() == 0 {
+            AUTHED_CONNS.lock().unwrap().retain(|&c| c.0 != self.0);
+            let remote_count = AUTHED_CONNS
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|c| c.1 == AuthConnType::Remote)
+                .count();
+            if remote_count == 0 {
                 #[cfg(any(target_os = "windows", target_os = "linux"))]
                 {
                     *WALLPAPER_REMOVER.lock().unwrap() = None;
@@ -3229,9 +3408,8 @@ mod raii {
                 display_service::reset_resolutions();
                 #[cfg(all(windows, feature = "virtual_display_driver"))]
                 let _ = virtual_display_manager::reset_all();
-                #[cfg(all(windows))]
-                crate::privacy_win_mag::stop();
             }
+            Self::check_wake_lock();
         }
     }
 }
