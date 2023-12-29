@@ -151,7 +151,7 @@ pub fn is_cursor_embedded() -> bool {
     if is_x11() {
         x11::IS_CURSOR_EMBEDDED
     } else {
-        wayland::is_cursor_embedded()
+        false
     }
 }
 
@@ -382,7 +382,7 @@ pub trait GoogleImage {
                     );
                 }
                 // (Chroma::I444, ImageFormat::Raw), new version libyuv have I444ToRAW
-                _ => log::error!("unsupported pixfmt:{:?}", self.chroma()),
+                _ => log::error!("unsupported pixfmt: {:?}", self.chroma()),
             }
         }
     }

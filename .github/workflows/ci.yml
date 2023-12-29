@@ -88,7 +88,7 @@ jobs:
           core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
 
     - name: Checkout source code
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     - name: Install prerequisites
       shell: bash
@@ -114,8 +114,7 @@ jobs:
                libxdo-dev \
                libxfixes-dev \
                nasm \
-               wget \
-               yasm
+               wget
             ;;
           # arm-unknown-linux-*) sudo apt-get -y update ; sudo apt-get -y install gcc-arm-linux-gnueabihf ;;
           # aarch64-unknown-linux-gnu) sudo apt-get -y update ; sudo apt-get -y install gcc-aarch64-linux-gnu ;;
@@ -133,12 +132,11 @@ jobs:
       shell: bash
 
     - name: Install Rust toolchain
-      uses: actions-rs/toolchain@v1
+      uses: dtolnay/rust-toolchain@v1
       with:
         toolchain: stable
-        target: ${{ matrix.job.target }}
-        override: true
-        profile: minimal # minimal component installation (ie, no documentation)
+        targets: ${{ matrix.job.target }}
+        components: ''
 
     - name: Show version information (Rust, cargo, GCC)
       shell: bash
@@ -150,7 +148,7 @@ jobs:
         cargo -V
         rustc -V
 
-    - uses: Swatinem/rust-cache@v1
+    - uses: Swatinem/rust-cache@v2
 
     - name: Build
       uses: actions-rs/cargo@v1
@@ -216,7 +214,9 @@ jobs:
             ;;
         esac;
 
-        echo ::set-output name=CARGO_TEST_OPTIONS::${CARGO_TEST_OPTIONS}
+        #deprecated echo ::set-output name=CARGO_TEST_OPTIONS::${CARGO_TEST_OPTIONS}
+        echo "CARGO_TEST_OPTIONS=${CARGO_TEST_OPTIONS}" >> $GITHUB_ENV
+        echo "CARGO_TEST_OPTIONS=${CARGO_TEST_OPTIONS}" >> $GITHUB_OUTPUT
 
     - name: Run tests
       uses: actions-rs/cargo@v1

@@ -1,3 +1,5 @@
+#[cfg(target_os = "windows")]
+use hbb_common::platform::windows::is_windows_version_or_greater;
 use hbb_common::{allow_err, bail, lazy_static, log, ResultType};
 use std::{
     collections::{HashMap, HashSet},
@@ -6,8 +8,8 @@ use std::{
 
 // virtual display index range: 0 - 2 are reserved for headless and other special uses.
 const VIRTUAL_DISPLAY_INDEX_FOR_HEADLESS: u32 = 0;
-const VIRTUAL_DISPLAY_START_FOR_PEER: u32 = 3;
-const VIRTUAL_DISPLAY_MAX_COUNT: u32 = 10;
+const VIRTUAL_DISPLAY_START_FOR_PEER: u32 = 1;
+const VIRTUAL_DISPLAY_MAX_COUNT: u32 = 5;
 
 lazy_static::lazy_static! {
     static ref VIRTUAL_DISPLAY_MANAGER: Arc<Mutex<VirtualDisplayManager>> =
@@ -51,6 +53,24 @@ impl VirtualDisplayManager {
         }
         Ok(())
     }
+}
+
+pub fn is_virtual_display_supported() -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        is_windows_version_or_greater(10, 0, 19041, 0, 0)
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        false
+    }
+}
+
+pub fn install_update_driver() -> ResultType<()> {
+    VIRTUAL_DISPLAY_MANAGER
+        .lock()
+        .unwrap()
+        .install_update_driver()
 }
 
 pub fn plug_in_headless() -> ResultType<()> {
@@ -139,6 +159,10 @@ pub fn plug_in_index_modes(
 }
 
 pub fn reset_all() -> ResultType<()> {
+    if is_virtual_display_supported() {
+        return Ok(());
+    }
+
     if let Err(e) = plug_out_peer_request(&get_virtual_displays()) {
         log::error!("Failed to plug out virtual displays: {}", e);
     }
@@ -165,6 +189,7 @@ pub fn plug_in_peer_request(modes: Vec<Vec<virtual_display::MonitorMode>>) -> Re
                         log::error!("Plug in monitor failed {}", e);
                     }
                 }
+                break;
             }
         }
     }

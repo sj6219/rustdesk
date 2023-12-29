@@ -1,9 +1,10 @@
-use crate::{input::{MOUSE_BUTTON_LEFT, MOUSE_TYPE_DOWN, MOUSE_TYPE_UP, MOUSE_TYPE_WHEEL}, common::{is_keyboard_mode_supported, get_supported_keyboard_modes}};
+use crate::{
+    common::{get_supported_keyboard_modes, is_keyboard_mode_supported},
+    input::{MOUSE_BUTTON_LEFT, MOUSE_TYPE_DOWN, MOUSE_TYPE_UP, MOUSE_TYPE_WHEEL},
+};
 use async_trait::async_trait;
 use bytes::Bytes;
 use rdev::{Event, EventType::*, KeyCode};
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::{
     collections::HashMap,
     ops::{Deref, DerefMut},
@@ -39,9 +40,6 @@ use crate::client::{
 use crate::common::GrabState;
 use crate::keyboard;
 use crate::{client::Data, client::Interface};
-
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
-pub static IS_IN: AtomicBool = AtomicBool::new(false);
 
 const CHANGE_RESOLUTION_VALID_TIMEOUT_SECS: u64 = 15;
 
@@ -213,7 +211,7 @@ impl<T: InvokeUiSession> Session<T> {
         self.lc.read().unwrap().version.clone()
     }
 
-    pub fn fallback_keyboard_mode(&self) -> String { 
+    pub fn fallback_keyboard_mode(&self) -> String {
         let peer_version = self.get_peer_version();
         let platform = self.peer_platform();
 
@@ -314,6 +312,18 @@ impl<T: InvokeUiSession> Session<T> {
         }
     }
 
+    pub fn toggle_privacy_mode(&self, impl_key: String, on: bool) {
+        let mut misc = Misc::new();
+        misc.set_toggle_privacy_mode(TogglePrivacyMode {
+            impl_key,
+            on,
+            ..Default::default()
+        });
+        let mut msg_out = Message::new();
+        msg_out.set_misc(misc);
+        self.send(Data::Message(msg_out));
+    }
+
     pub fn get_toggle_option(&self, name: String) -> bool {
         self.lc.read().unwrap().get_toggle_option(&name)
     }
@@ -386,14 +396,19 @@ impl<T: InvokeUiSession> Session<T> {
     }
 
     pub fn save_image_quality(&self, value: String) {
-        let msg = self.lc.write().unwrap().save_image_quality(value);
+        let msg = self.lc.write().unwrap().save_image_quality(value.clone());
         if let Some(msg) = msg {
+            self.send(Data::Message(msg));
+        }
+        if value != "custom" {
+            // non custom quality use 30 fps
+            let msg = self.lc.write().unwrap().set_custom_fps(30, false);
             self.send(Data::Message(msg));
         }
     }
 
     pub fn set_custom_fps(&self, custom_fps: i32) {
-        let msg = self.lc.write().unwrap().set_custom_fps(custom_fps);
+        let msg = self.lc.write().unwrap().set_custom_fps(custom_fps, true);
         self.send(Data::Message(msg));
     }
 
@@ -576,7 +591,7 @@ impl<T: InvokeUiSession> Session<T> {
         return "".to_owned();
     }
 
-    pub fn swab_modifier_key(&self, msg: &mut KeyEvent) {
+    pub fn swap_modifier_key(&self, msg: &mut KeyEvent) {
         let allow_swap_key = self.get_toggle_option("allow_swap_key".to_string());
         if allow_swap_key {
             if let Some(key_event::Union::ControlKey(ck)) = msg.union {
@@ -655,7 +670,7 @@ impl<T: InvokeUiSession> Session<T> {
         // mode: legacy(0), map(1), translate(2), auto(3)
 
         let mut msg = evt.clone();
-        self.swab_modifier_key(&mut msg);
+        self.swap_modifier_key(&mut msg);
         let mut msg_out = Message::new();
         msg_out.set_key_event(msg);
         //..m!!!!!!1.2
@@ -709,13 +724,11 @@ impl<T: InvokeUiSession> Session<T> {
 
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     pub fn enter(&self, keyboard_mode: String) {
-        IS_IN.store(true, Ordering::SeqCst);
         keyboard::client::change_grab_status(GrabState::Run, &keyboard_mode);
     }
 
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     pub fn leave(&self, keyboard_mode: String) {
-        IS_IN.store(false, Ordering::SeqCst);
         keyboard::client::change_grab_status(GrabState::Wait, &keyboard_mode);
     }
 
@@ -916,7 +929,7 @@ impl<T: InvokeUiSession> Session<T> {
 
     pub fn send_mouse(
         &self,
-        mask: i32,
+        mut mask: i32,
         x: i32,
         y: i32,
         alt: bool,
@@ -943,6 +956,20 @@ impl<T: InvokeUiSession> Session<T> {
         // #[cfg(not(any(target_os = "android", target_os = "ios")))]
         let (alt, ctrl, shift, command) =
             keyboard::client::get_modifiers_state(alt, ctrl, shift, command);
+
+        use crate::input::*;
+        let is_left = (mask & (MOUSE_BUTTON_LEFT << 3)) > 0;
+        let is_right = (mask & (MOUSE_BUTTON_RIGHT << 3)) > 0;
+        if is_left ^ is_right {
+            let swap_lr = self.get_toggle_option("swap-left-right-mouse".to_string());
+            if swap_lr {
+                if is_left {
+                    mask = (mask & (!(MOUSE_BUTTON_LEFT << 3))) | (MOUSE_BUTTON_RIGHT << 3);
+                } else {
+                    mask = (mask & (!(MOUSE_BUTTON_RIGHT << 3))) | (MOUSE_BUTTON_LEFT << 3);
+                }
+            }
+        }
 
         send_mouse(mask, x, y, alt, ctrl, shift, command, self);
         // on macos, ctrl + left button down = right button down, up won't emit, so we need to
@@ -1436,6 +1463,10 @@ impl<T: InvokeUiSession> Session<T> {
 
 #[tokio::main(flavor = "current_thread")]
 pub async fn io_loop<T: InvokeUiSession>(handler: Session<T>, round: u32) {
+    //..
+    #[cfg(not(feature = "flutter"))]
+    let _wake_lock = crate::server::video_service::get_wake_lock();
+
     // It is ok to call this function multiple times.
     #[cfg(any(
         target_os = "windows",
