@@ -179,7 +179,7 @@ pub fn core_main() -> Option<Vec<String>> {
     {
         use crate::portable_service::client;
         if let Err(e) = client::start_portable_service(client::StartPara::Direct) {
-            log::error!("Failed to start portable service:{:?}", e);
+            log::error!("Failed to start portable service: {:?}", e);
         }
     }
     #[cfg(windows)]
@@ -221,7 +221,10 @@ pub fn core_main() -> Option<Vec<String>> {
                 );
                 let text = match res {
                     Ok(_) => translate("Installation Successful!".to_string()),
-                    Err(_) => translate("Installation failed!".to_string()),
+                    Err(err) => {
+                        println!("Failed with error: {err}");
+                        translate("Installation failed!".to_string())
+                    }
                 };
                 Toast::new(Toast::POWERSHELL_APP_ID)
                     .title(&hbb_common::config::APP_NAME.read().unwrap())
@@ -233,11 +236,33 @@ pub fn core_main() -> Option<Vec<String>> {
                 return None;
             } else if args[0] == "--install-cert" {
                 #[cfg(windows)]
-                hbb_common::allow_err!(crate::platform::windows::install_cert(&args[1]));
+                hbb_common::allow_err!(crate::platform::windows::install_cert(
+                    crate::platform::windows::DRIVER_CERT_FILE
+                ));
+                if args.len() > 1 && args[1] == "silent" {
+                    return None;
+                }
+                #[cfg(all(windows, feature = "virtual_display_driver"))]
+                if crate::virtual_display_manager::is_virtual_display_supported() {
+                    hbb_common::allow_err!(crate::virtual_display_manager::install_update_driver());
+                }
                 return None;
             } else if args[0] == "--uninstall-cert" {
                 #[cfg(windows)]
                 hbb_common::allow_err!(crate::platform::windows::uninstall_cert());
+                return None;
+            } else if args[0] == "--install-idd" {
+                #[cfg(windows)]
+                {
+                    // It's ok to install cert multiple times.
+                    hbb_common::allow_err!(crate::platform::windows::install_cert(
+                        crate::platform::windows::DRIVER_CERT_FILE
+                    ));
+                }
+                #[cfg(all(windows, feature = "virtual_display_driver"))]
+                if crate::virtual_display_manager::is_virtual_display_supported() {
+                    hbb_common::allow_err!(crate::virtual_display_manager::install_update_driver());
+                }
                 return None;
             } else if args[0] == "--portable-service" {
                 crate::platform::elevate_or_run_as_system(
@@ -275,6 +300,8 @@ pub fn core_main() -> Option<Vec<String>> {
             return None;
         } else if args[0] == "--server" {
             log::info!("start --server with user {}", crate::username());
+            #[cfg(all(windows, feature = "virtual_display_driver"))]
+            crate::privacy_mode::restore_reg_connectivity();
             #[cfg(any(target_os = "linux", target_os = "windows"))]
             {
                 crate::start_server(true);
@@ -427,7 +454,11 @@ pub fn core_main() -> Option<Vec<String>> {
             return None;
         } else if args[0] == "--check-hwcodec-config" {
             #[cfg(feature = "hwcodec")]
-            scrap::hwcodec::check_config();
+            scrap::hwcodec::check_available_hwcodec();
+            return None;
+        } else if args[0] == "--check-gpucodec-config" {
+            #[cfg(feature = "gpucodec")]
+            scrap::gpucodec::check_available_gpucodec();
             return None;
         } else if args[0] == "--cm" {
             // call connection manager to establish connections

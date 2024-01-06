@@ -57,9 +57,9 @@ def parse_rc_features(feature):
         },
         'PrivacyMode': {
             'platform': ['windows'],
-            'zip_url': 'https://github.com/fufesou/RustDeskTempTopMostWindow/releases/download/v0.1'
-                       '/TempTopMostWindow_x64_pic_en.zip',
-            'checksum_url': 'https://github.com/fufesou/RustDeskTempTopMostWindow/releases/download/v0.1/checksum_md5',
+            'zip_url': 'https://github.com/fufesou/RustDeskTempTopMostWindow/releases/download/v0.3'
+                       '/TempTopMostWindow_x64.zip',
+            'checksum_url': 'https://github.com/fufesou/RustDeskTempTopMostWindow/releases/download/v0.3/checksum_md5',
             'include': ['WindowInjection.dll'],
         }
     }
@@ -120,6 +120,11 @@ def make_parser():
         action='store_true',
         help='Enable feature hwcodec' + (
             '' if windows or osx else ', need libva-dev, libvdpau-dev.')
+    )
+    parser.add_argument(
+        '--gpucodec',
+        action='store_true',
+        help='Enable feature gpucodec, only available on windows now.'
     )
     parser.add_argument(
         '--portable',
@@ -274,6 +279,8 @@ def get_features(args):
         features.append('virtual_display_driver')
     if args.hwcodec:
         features.append('hwcodec')
+    if args.gpucodec: 
+        features.append('gpucodec')
     if args.flutter:
         features.append('flutter')
         features.append('flutter_texture_render')

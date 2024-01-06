@@ -14,8 +14,6 @@ use crossbeam_queue::ArrayQueue;
 use hbb_common::sleep;
 #[cfg(not(target_os = "ios"))]
 use hbb_common::tokio::sync::mpsc::error::TryRecvError;
-#[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
-use hbb_common::tokio::sync::Mutex as TokioMutex;
 use hbb_common::{
     allow_err,
     config::{PeerConfig, TransferSerde},
@@ -34,8 +32,10 @@ use hbb_common::{
         sync::mpsc,
         time::{self, Duration, Instant, Interval},
     },
-    ResultType, Stream,
+    Stream,
 };
+#[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
+use hbb_common::{tokio::sync::Mutex as TokioMutex, ResultType};
 use scrap::CodecFormat;
 
 use crate::client::{
@@ -322,10 +322,15 @@ impl<T: InvokeUiSession> Remote<T> {
                         *self.handler.server_file_transfer_enabled.read().unwrap();
                     let file_transfer_enabled =
                         self.handler.lc.read().unwrap().enable_file_transfer.v;
+                    let view_only = self.handler.lc.read().unwrap().view_only.v;
                     let stop = is_stopping_allowed
-                        && (!self.is_connected
+                        && (view_only
+                            || !self.is_connected
                             || !(server_file_transfer_enabled && file_transfer_enabled));
-                    log::debug!("Process clipboard message from system, stop: {}, is_stopping_allowed: {}, server_file_transfer_enabled: {}, file_transfer_enabled: {}", stop, is_stopping_allowed, server_file_transfer_enabled, file_transfer_enabled);
+                    log::debug!(
+                        "Process clipboard message from system, stop: {}, is_stopping_allowed: {}, view_only: {}, server_file_transfer_enabled: {}, file_transfer_enabled: {}",
+                        view_only, stop, is_stopping_allowed, server_file_transfer_enabled, file_transfer_enabled
+                    );
                     if stop {
                         ContextSend::set_is_stopped();
                     } else {
@@ -927,6 +932,24 @@ impl<T: InvokeUiSession> Remote<T> {
         }
     }
 
+    async fn send_toggle_privacy_mode_msg(&self, peer: &mut Stream) {
+        let lc = self.handler.lc.read().unwrap();
+        if lc.version >= hbb_common::get_version_number("1.2.4")
+            && lc.get_toggle_option("privacy-mode")
+        {
+            let impl_key = lc.get_option("privacy-mode-impl-key");
+            let mut misc = Misc::new();
+            misc.set_toggle_privacy_mode(TogglePrivacyMode {
+                impl_key,
+                on: true,
+                ..Default::default()
+            });
+            let mut msg_out = Message::new();
+            msg_out.set_misc(misc);
+            allow_err!(peer.send(&msg_out).await);
+        }
+    }
+
     fn contains_key_frame(vf: &VideoFrame) -> bool {
         use video_frame::Union::*;
         match &vf.union {
@@ -940,6 +963,12 @@ impl<T: InvokeUiSession> Remote<T> {
 
     #[inline]
     fn fps_control(&mut self, direct: bool) {
+        let custom_fps = self.handler.lc.read().unwrap().custom_fps.clone();
+        let custom_fps = custom_fps.lock().unwrap().clone();
+        let mut custom_fps = custom_fps.unwrap_or(30);
+        if custom_fps < 5 || custom_fps > 120 {
+            custom_fps = 30;
+        }
         let decode_fps_read = self.decode_fps_map.read().unwrap();
         for (display, decode_fps) in decode_fps_read.iter() {
             let video_queue_map_read = self.video_queue_map.read().unwrap();
@@ -956,32 +985,15 @@ impl<T: InvokeUiSession> Remote<T> {
 
             let len = video_queue.len();
             let decode_fps = *decode_fps;
-            let limited_fps = if direct {
+            let mut limited_fps = if direct {
                 decode_fps * 9 / 10 // 30 got 27
             } else {
                 decode_fps * 4 / 5 // 30 got 24
             };
-            // send full speed fps
-            let version = self.handler.lc.read().unwrap().version;
-            let max_encode_speed = 144 * 10 / 9;
-            if version >= hbb_common::get_version_number("1.2.1")
-                && (ctl.last_full_speed_fps.is_none() // First time
-                    || ((ctl.last_full_speed_fps.unwrap_or_default() - decode_fps as i32).abs() >= 5 // diff 5
-                        && !(decode_fps > max_encode_speed // already exceed max encoding speed
-                            && ctl.last_full_speed_fps.unwrap_or_default() > max_encode_speed as i32)))
-            {
-                let mut misc = Misc::new();
-                misc.set_full_speed_fps(decode_fps as _);
-                let mut msg = Message::new();
-                msg.set_misc(misc);
-                self.sender.send(Data::Message(msg)).ok();
-                ctl.last_full_speed_fps = Some(decode_fps as _);
+            if limited_fps > custom_fps {
+                limited_fps = custom_fps;
             }
-            // decrease judgement
-            let debounce = if decode_fps > 10 { decode_fps / 2 } else { 5 }; // 500ms
-            let should_decrease = len >= debounce // exceed debounce
-                && len > ctl.last_queue_size + 5 // still caching
-                && !ctl.last_custom_fps.unwrap_or(i32::MAX) < limited_fps as i32; // NOT already set a smaller one
+            let should_decrease = len > 1 && ctl.last_auto_fps.unwrap_or(0) > limited_fps as i32;
 
             // increase judgement
             if len <= 1 {
@@ -990,35 +1002,30 @@ impl<T: InvokeUiSession> Remote<T> {
                 ctl.idle_counter = 0;
             }
             let mut should_increase = false;
-            if let Some(last_custom_fps) = ctl.last_custom_fps {
+            if let Some(last_auto_fps) = ctl.last_auto_fps {
                 // ever set
-                if last_custom_fps + 5 < limited_fps as i32 && ctl.idle_counter > 3 {
+                if last_auto_fps + 3 <= limited_fps as i32 && ctl.idle_counter > 3 {
                     // limited_fps is 5 larger than last set, and idle time is more than 3 seconds
                     should_increase = true;
                 }
             }
-            if should_decrease || should_increase {
+            if ctl.last_auto_fps.is_none() || should_decrease || should_increase {
                 // limited_fps to ensure decoding is faster than encoding
-                let mut custom_fps = limited_fps as i32;
-                if custom_fps < 1 {
-                    custom_fps = 1;
+                let mut auto_fps = limited_fps as i32;
+                if auto_fps < 1 {
+                    auto_fps = 1;
                 }
                 // send custom fps
                 let mut misc = Misc::new();
-                if version > hbb_common::get_version_number("1.2.1") {
-                    // avoid confusion with custom image quality fps
-                    misc.set_auto_adjust_fps(custom_fps as _);
-                } else {
-                    misc.set_option(OptionMessage {
-                        custom_fps,
-                        ..Default::default()
-                    });
-                }
+                misc.set_option(OptionMessage {
+                    custom_fps: auto_fps,
+                    ..Default::default()
+                });
                 let mut msg = Message::new();
                 msg.set_misc(misc);
                 self.sender.send(Data::Message(msg)).ok();
                 ctl.last_queue_size = len;
-                ctl.last_custom_fps = Some(custom_fps);
+                ctl.last_auto_fps = Some(auto_fps);
             }
             // send refresh
             if ctl.refresh_times < 10 // enough
@@ -1044,6 +1051,7 @@ impl<T: InvokeUiSession> Remote<T> {
                         self.handler.close_success();
                         self.handler.adapt_size();
                         self.send_opts_after_login(peer).await;
+                        self.send_toggle_privacy_mode_msg(peer).await;
                     }
                     let incoming_format = CodecFormat::from(&vf);
                     if self.video_format != incoming_format {
@@ -1374,6 +1382,11 @@ impl<T: InvokeUiSession> Remote<T> {
                     }
                     Some(misc::Union::CloseReason(c)) => {
                         self.handler.msgbox("error", "Connection Error", &c, "");
+                        
+                        //.. get_wake_lock
+                        // #[cfg(not(feature = "flutter"))]
+                        std::process::exit(0); 
+
                         return false;
                     }
                     Some(misc::Union::BackNotification(notification)) => {
@@ -1491,6 +1504,11 @@ impl<T: InvokeUiSession> Remote<T> {
                         };
                         self.handler.msgbox("custom-nocancel", &name, &p.msg, "");
                     }
+                    Some(misc::Union::SupportedEncoding(e)) => {
+                        log::info!("update supported encoding:{:?}", e);
+                        self.handler.lc.write().unwrap().supported_encoding = e;
+                    }
+
                     _ => {}
                 },
                 Some(message::Union::TestDelay(t)) => {
@@ -1577,6 +1595,7 @@ impl<T: InvokeUiSession> Remote<T> {
                     .handle_back_msg_privacy_mode(
                         state.enum_value_or(back_notification::PrivacyModeState::PrvStateUnknown),
                         notification.details,
+                        notification.impl_key,
                     )
                     .await
                 {
@@ -1635,9 +1654,20 @@ impl<T: InvokeUiSession> Remote<T> {
     }
 
     #[inline(always)]
-    fn update_privacy_mode(&mut self, on: bool) {
+    fn update_privacy_mode(&mut self, impl_key: String, on: bool) {
         let mut config = self.handler.load_config();
         config.privacy_mode.v = on;
+        if on {
+            // For compatibility, version < 1.2.4, the default value is 'privacy_mode_impl_mag'.
+            let impl_key = if impl_key.is_empty() {
+                "privacy_mode_impl_mag".to_string()
+            } else {
+                impl_key
+            };
+            config
+                .options
+                .insert("privacy-mode-impl-key".to_string(), impl_key);
+        }
         self.handler.save_config(config);
 
         self.handler.update_privacy_mode();
@@ -1647,6 +1677,7 @@ impl<T: InvokeUiSession> Remote<T> {
         &mut self,
         state: back_notification::PrivacyModeState,
         details: String,
+        impl_key: String,
     ) -> bool {
         match state {
             back_notification::PrivacyModeState::PrvOnByOther => {
@@ -1661,22 +1692,22 @@ impl<T: InvokeUiSession> Remote<T> {
             back_notification::PrivacyModeState::PrvNotSupported => {
                 self.handler
                     .msgbox("custom-error", "Privacy mode", "Unsupported", "");
-                self.update_privacy_mode(false);
+                self.update_privacy_mode(impl_key, false);
             }
             back_notification::PrivacyModeState::PrvOnSucceeded => {
                 self.handler
-                    .msgbox("custom-nocancel", "Privacy mode", "In privacy mode", "");
-                self.update_privacy_mode(true);
+                    .msgbox("custom-nocancel", "Privacy mode", "Enter privacy mode", "");
+                self.update_privacy_mode(impl_key, true);
             }
             back_notification::PrivacyModeState::PrvOnFailedDenied => {
                 self.handler
                     .msgbox("custom-error", "Privacy mode", "Peer denied", "");
-                self.update_privacy_mode(false);
+                self.update_privacy_mode(impl_key, false);
             }
             back_notification::PrivacyModeState::PrvOnFailedPlugin => {
                 self.handler
                     .msgbox("custom-error", "Privacy mode", "Please install plugins", "");
-                self.update_privacy_mode(false);
+                self.update_privacy_mode(impl_key, false);
             }
             back_notification::PrivacyModeState::PrvOnFailed => {
                 self.handler.msgbox(
@@ -1689,17 +1720,17 @@ impl<T: InvokeUiSession> Remote<T> {
                     },
                     "",
                 );
-                self.update_privacy_mode(false);
+                self.update_privacy_mode(impl_key, false);
             }
             back_notification::PrivacyModeState::PrvOffSucceeded => {
                 self.handler
-                    .msgbox("custom-nocancel", "Privacy mode", "Out privacy mode", "");
-                self.update_privacy_mode(false);
+                    .msgbox("custom-nocancel", "Privacy mode", "Exit privacy mode", "");
+                self.update_privacy_mode(impl_key, false);
             }
             back_notification::PrivacyModeState::PrvOffByPeer => {
                 self.handler
                     .msgbox("custom-error", "Privacy mode", "Peer exit", "");
-                self.update_privacy_mode(false);
+                self.update_privacy_mode(impl_key, false);
             }
             back_notification::PrivacyModeState::PrvOffFailed => {
                 self.handler.msgbox(
@@ -1717,7 +1748,7 @@ impl<T: InvokeUiSession> Remote<T> {
                 self.handler
                     .msgbox("custom-error", "Privacy mode", "Turned off", "");
                 // log::error!("Privacy mode is turned off with unknown reason");
-                self.update_privacy_mode(false);
+                self.update_privacy_mode(impl_key, false);
             }
             _ => {}
         }
@@ -1809,8 +1840,7 @@ struct FpsControl {
     last_queue_size: usize,
     refresh_times: usize,
     last_refresh_instant: Instant,
-    last_full_speed_fps: Option<i32>,
-    last_custom_fps: Option<i32>,
+    last_auto_fps: Option<i32>,
     idle_counter: usize,
 }
 
@@ -1820,8 +1850,7 @@ impl Default for FpsControl {
             last_queue_size: Default::default(),
             refresh_times: Default::default(),
             last_refresh_instant: Instant::now(),
-            last_full_speed_fps: None,
-            last_custom_fps: None,
+            last_auto_fps: None,
             idle_counter: 0,
         }
     }

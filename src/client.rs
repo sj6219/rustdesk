@@ -1,12 +1,12 @@
 use std::{
     collections::HashMap,
+    ffi::c_void,
     net::SocketAddr,
     ops::Deref,
     str::FromStr,
     sync::{mpsc, Arc, Mutex, RwLock},
 };
 
-pub use async_trait::async_trait;
 use bytes::Bytes;
 #[cfg(not(any(target_os = "android", target_os = "linux")))]
 use cpal::{
@@ -156,7 +156,7 @@ pub fn get_key_state(key: enigo::Key) -> bool {
 cfg_if::cfg_if! {
     if #[cfg(target_os = "android")] {
 
-use hbb_common::libc::{c_float, c_int, c_void};
+use hbb_common::libc::{c_float, c_int};
 type Oboe = *mut c_void;
 extern "C" {
     fn create_oboe_player(channels: c_int, sample_rate: c_int) -> Oboe;
@@ -1021,6 +1021,7 @@ impl AudioHandler {
 pub struct VideoHandler {
     decoder: Decoder,
     pub rgb: ImageRgb,
+    pub texture: *mut c_void,
     recorder: Arc<Mutex<Option<Recorder>>>,
     record: bool,
     _display: usize, // useful for debug
@@ -1029,10 +1030,16 @@ pub struct VideoHandler {
 impl VideoHandler {
     /// Create a new video handler.
     pub fn new(_display: usize) -> Self {
+        #[cfg(all(feature = "gpucodec", feature = "flutter"))]
+        let luid = crate::flutter::get_adapter_luid();
+        #[cfg(not(all(feature = "gpucodec", feature = "flutter")))]
+        let luid = Default::default();
+        println!("new session_get_adapter_luid: {:?}", luid);
         log::info!("new video handler for display #{_display}");
         VideoHandler {
-            decoder: Decoder::new(),
+            decoder: Decoder::new(luid),
             rgb: ImageRgb::new(ImageFormat::ARGB, crate::DST_STRIDE_RGBA),
+            texture: std::ptr::null_mut(),
             recorder: Default::default(),
             record: false,
             _display,
@@ -1044,13 +1051,18 @@ impl VideoHandler {
     pub fn handle_frame(
         &mut self,
         vf: VideoFrame,
+        pixelbuffer: &mut bool,
         chroma: &mut Option<Chroma>,
     ) -> ResultType<bool> {
         match &vf.union {
             Some(frame) => {
-                let res = self
-                    .decoder
-                    .handle_video_frame(frame, &mut self.rgb, chroma);
+                let res = self.decoder.handle_video_frame(
+                    frame,
+                    &mut self.rgb,
+                    &mut self.texture,
+                    pixelbuffer,
+                    chroma,
+                );
                 if self.record {
                     self.recorder
                         .lock()
@@ -1066,7 +1078,11 @@ impl VideoHandler {
 
     /// Reset the decoder.
     pub fn reset(&mut self) {
-        self.decoder = Decoder::new();
+        #[cfg(all(feature = "flutter", feature = "gpucodec"))]
+        let luid = crate::flutter::get_adapter_luid();
+        #[cfg(not(all(feature = "flutter", feature = "gpucodec")))]
+        let luid = None;
+        self.decoder = Decoder::new(luid);
     }
 
     /// Start or stop screen record.
@@ -1113,6 +1129,8 @@ pub struct LoginConfigHandler {
     switch_uuid: Option<String>,
     pub save_ab_password_to_recent: bool, // true: connected with ab password
     pub other_server: Option<(String, String, String)>,
+    pub custom_fps: Arc<Mutex<Option<usize>>>,
+    pub adapter_luid: Option<i64>,
 }
 
 impl Deref for LoginConfigHandler {
@@ -1136,6 +1154,7 @@ impl LoginConfigHandler {
         conn_type: ConnType,
         switch_uuid: Option<String>,
         mut force_relay: bool,
+        adapter_luid: Option<i64>,
     ) {
         let mut id = id;
         if id.contains("@") {
@@ -1197,6 +1216,7 @@ impl LoginConfigHandler {
         self.direct = None;
         self.received = false;
         self.switch_uuid = switch_uuid;
+        self.adapter_luid = adapter_luid;
     }
 
     /// Check if the client should auto login.
@@ -1421,10 +1441,14 @@ impl LoginConfigHandler {
                 option.disable_keyboard = f(true);
                 option.disable_clipboard = f(true);
                 option.show_remote_cursor = f(true);
+                option.enable_file_transfer = f(false);
+                option.lock_after_session_end = f(false);
             } else {
                 option.disable_keyboard = f(false);
                 option.disable_clipboard = f(self.get_toggle_option("disable-clipboard"));
                 option.show_remote_cursor = f(self.get_toggle_option("show-remote-cursor"));
+                option.enable_file_transfer = f(self.config.enable_file_transfer.v);
+                option.lock_after_session_end = f(self.config.lock_after_session_end.v);
             }
         } else {
             let is_set = self
@@ -1483,15 +1507,26 @@ impl LoginConfigHandler {
             n += 1;
         } else if q == "custom" {
             let config = self.load_config();
+            let allow_more =
+                !crate::ui_interface::using_public_server() || self.direct == Some(true);
             let quality = if config.custom_image_quality.is_empty() {
                 50
             } else {
-                config.custom_image_quality[0]
+                let mut quality = config.custom_image_quality[0];
+                if !allow_more && quality > 100 {
+                    quality = 50;
+                }
+                quality
             };
             msg.custom_image_quality = quality << 8;
             #[cfg(feature = "flutter")]
             if let Some(custom_fps) = self.options.get("custom-fps") {
-                msg.custom_fps = custom_fps.parse().unwrap_or(30);
+                let mut custom_fps = custom_fps.parse().unwrap_or(30);
+                if !allow_more && custom_fps > 30 {
+                    custom_fps = 30;
+                }
+                msg.custom_fps = custom_fps;
+                *self.custom_fps.lock().unwrap() = Some(custom_fps as _);
             }
             n += 1;
         }
@@ -1504,7 +1539,7 @@ impl LoginConfigHandler {
             msg.show_remote_cursor = BoolOption::Yes.into();
             n += 1;
         }
-        if self.get_toggle_option("lock-after-session-end") {
+        if !view_only && self.get_toggle_option("lock-after-session-end") {
             msg.lock_after_session_end = BoolOption::Yes.into();
             n += 1;
         }
@@ -1512,7 +1547,7 @@ impl LoginConfigHandler {
             msg.disable_audio = BoolOption::Yes.into();
             n += 1;
         }
-        if self.get_toggle_option("enable-file-transfer") {
+        if !view_only && self.get_toggle_option("enable-file-transfer") {
             msg.enable_file_transfer = BoolOption::Yes.into();
             n += 1;
         }
@@ -1521,7 +1556,11 @@ impl LoginConfigHandler {
             n += 1;
         }
         msg.supported_decoding =
-            hbb_common::protobuf::MessageField::some(Decoder::supported_decodings(Some(&self.id)));
+            hbb_common::protobuf::MessageField::some(Decoder::supported_decodings(
+                Some(&self.id),
+                cfg!(feature = "flutter"),
+                self.adapter_luid,
+            ));
         n += 1;
 
         if n > 0 {
@@ -1540,9 +1579,11 @@ impl LoginConfigHandler {
         }
         let mut n = 0;
         let mut msg = OptionMessage::new();
-        if self.get_toggle_option("privacy-mode") {
-            msg.privacy_mode = BoolOption::Yes.into();
-            n += 1;
+        if self.version < hbb_common::get_version_number("1.2.4") {
+            if self.get_toggle_option("privacy-mode") {
+                msg.privacy_mode = BoolOption::Yes.into();
+                n += 1;
+            }
         }
         if n > 0 {
             Some(msg)
@@ -1678,7 +1719,8 @@ impl LoginConfigHandler {
     /// # Arguments
     ///
     /// * `fps` - The given fps.
-    pub fn set_custom_fps(&mut self, fps: i32) -> Message {
+    /// * `save_config` - Save the config.
+    pub fn set_custom_fps(&mut self, fps: i32, save_config: bool) -> Message {
         let mut misc = Misc::new();
         misc.set_option(OptionMessage {
             custom_fps: fps,
@@ -1686,11 +1728,14 @@ impl LoginConfigHandler {
         });
         let mut msg_out = Message::new();
         msg_out.set_misc(misc);
-        let mut config = self.load_config();
-        config
-            .options
-            .insert("custom-fps".to_owned(), fps.to_string());
-        self.save_config(config);
+        if save_config {
+            let mut config = self.load_config();
+            config
+                .options
+                .insert("custom-fps".to_owned(), fps.to_string());
+            self.save_config(config);
+        }
+        *self.custom_fps.lock().unwrap() = Some(fps as _);
         msg_out
     }
 
@@ -1802,7 +1847,11 @@ impl LoginConfigHandler {
             crate::flutter::push_global_event(crate::flutter::APP_TYPE_MAIN, evt);
         }
         if config.keyboard_mode.is_empty() {
-            if is_keyboard_mode_supported(&KeyboardMode::Map, get_version_number(&pi.version), &pi.platform) {
+            if is_keyboard_mode_supported(
+                &KeyboardMode::Map,
+                get_version_number(&pi.version),
+                &pi.platform,
+            ) {
                 config.keyboard_mode = KeyboardMode::Map.to_string();
             } else {
                 config.keyboard_mode = KeyboardMode::Legacy.to_string();
@@ -1818,6 +1867,7 @@ impl LoginConfigHandler {
         // no matter if change, for update file time
         self.save_config(config);
         self.supported_encoding = pi.encoding.clone().unwrap_or_default();
+        log::info!("peer info supported_encoding:{:?}", self.supported_encoding);
     }
 
     pub fn get_remote_dir(&self) -> String {
@@ -1893,8 +1943,12 @@ impl LoginConfigHandler {
         msg_out
     }
 
-    pub fn change_prefer_codec(&self) -> Message {
-        let decoding = scrap::codec::Decoder::supported_decodings(Some(&self.id));
+    pub fn update_supported_decodings(&self) -> Message {
+        let decoding = scrap::codec::Decoder::supported_decodings(
+            Some(&self.id),
+            cfg!(feature = "flutter"),
+            self.adapter_luid,
+        );
         let mut misc = Misc::new();
         misc.set_option(OptionMessage {
             supported_decoding: hbb_common::protobuf::MessageField::some(decoding),
@@ -1903,6 +1957,44 @@ impl LoginConfigHandler {
         let mut msg_out = Message::new();
         msg_out.set_misc(misc);
         msg_out
+    }
+
+    fn real_supported_decodings(
+        &self,
+        handler_controller_map: &Vec<VideoHandlerController>,
+    ) -> Data {
+        let abilities: Vec<CodecAbility> = handler_controller_map
+            .iter()
+            .map(|h| h.handler.decoder.exist_codecs(cfg!(feature = "flutter")))
+            .collect();
+        let all = |ability: fn(&CodecAbility) -> bool| -> i32 {
+            if abilities.iter().all(|d| ability(d)) {
+                1
+            } else {
+                0
+            }
+        };
+        let decoding = scrap::codec::Decoder::supported_decodings(
+            Some(&self.id),
+            cfg!(feature = "flutter"),
+            self.adapter_luid,
+        );
+        let decoding = SupportedDecoding {
+            ability_vp8: all(|e| e.vp8),
+            ability_vp9: all(|e| e.vp9),
+            ability_av1: all(|e| e.av1),
+            ability_h264: all(|e| e.h264),
+            ability_h265: all(|e| e.h265),
+            ..decoding
+        };
+        let mut misc = Misc::new();
+        misc.set_option(OptionMessage {
+            supported_decoding: hbb_common::protobuf::MessageField::some(decoding),
+            ..Default::default()
+        });
+        let mut msg_out = Message::new();
+        msg_out.set_misc(misc);
+        Data::Message(msg_out)
     }
 
     pub fn restart_remote_device(&self) -> Message {
@@ -1950,13 +2042,14 @@ pub fn start_video_audio_threads<F, T>(
     Arc<RwLock<Option<Chroma>>>,
 )
 where
-    F: 'static + FnMut(usize, &mut scrap::ImageRgb) + Send,
+    F: 'static + FnMut(usize, &mut scrap::ImageRgb, *mut c_void, bool) + Send,
     T: InvokeUiSession,
 {
     let (video_sender, video_receiver) = mpsc::channel::<MediaData>();
     let video_queue_map: Arc<RwLock<HashMap<usize, ArrayQueue<VideoFrame>>>> = Default::default();
     let video_queue_map_cloned = video_queue_map.clone();
     let mut video_callback = video_callback;
+
     let fps_map = Arc::new(RwLock::new(HashMap::new()));
     let decode_fps_map = fps_map.clone();
     let chroma = Arc::new(RwLock::new(None));
@@ -1997,6 +2090,7 @@ where
                         };
                         let display = vf.display as usize;
                         let start = std::time::Instant::now();
+                        let mut created_new_handler = false;
                         if handler_controller_map.len() <= display {
                             for _i in handler_controller_map.len()..=display {
                                 handler_controller_map.push(VideoHandlerController {
@@ -2005,13 +2099,33 @@ where
                                     duration: std::time::Duration::ZERO,
                                     skip_beginning: 0,
                                 });
+                                created_new_handler = true;
                             }
                         }
+                        if created_new_handler {
+                            session.send(
+                                session
+                                    .lc
+                                    .read()
+                                    .unwrap()
+                                    .real_supported_decodings(&handler_controller_map),
+                            );
+                        }
                         if let Some(handler_controller) = handler_controller_map.get_mut(display) {
+                            let mut pixelbuffer = true;
                             let mut tmp_chroma = None;
-                            match handler_controller.handler.handle_frame(vf, &mut tmp_chroma) {
+                            match handler_controller.handler.handle_frame(
+                                vf,
+                                &mut pixelbuffer,
+                                &mut tmp_chroma,
+                            ) {
                                 Ok(true) => {
-                                    video_callback(display, &mut handler_controller.handler.rgb);
+                                    video_callback(
+                                        display,
+                                        &mut handler_controller.handler.rgb,
+                                        handler_controller.handler.texture,
+                                        pixelbuffer,
+                                    );
 
                                     // chroma
                                     if tmp_chroma.is_some() && last_chroma != tmp_chroma {
@@ -2064,10 +2178,17 @@ where
                     MediaData::Reset(display) => {
                         if let Some(handler_controler) = handler_controller_map.get_mut(display) {
                             handler_controler.handler.reset();
+                            session.send(
+                                session
+                                    .lc
+                                    .read()
+                                    .unwrap()
+                                    .real_supported_decodings(&handler_controller_map),
+                            );
                         }
                     }
                     MediaData::RecordScreen(start, display, w, h, id) => {
-                        log::info!("record screen command: start:{start}, display:{display}");
+                        log::info!("record screen command: start: {start}, display: {display}");
                         if handler_controller_map.len() == 1 {
                             // Compatible with the sciter version(single ui session).
                             // For the sciter version, there're no multi-ui-sessions for one connection.
@@ -2628,7 +2749,6 @@ async fn send_switch_login_request(
 }
 
 /// Interface for client to send data and commands.
-#[async_trait]
 pub trait Interface: Send + Clone + 'static + Sized {
     /// Send message data to remote peer.
     fn send(&self, data: Data);
@@ -2675,21 +2795,25 @@ pub trait Interface: Send + Clone + 'static + Sized {
         let lc = self.get_lch();
         let direct = lc.read().unwrap().direct;
         let received = lc.read().unwrap().received;
-        let relay_condition = direct == Some(true) && !received;
 
+        let mut relay_hint = false;
+        let mut relay_hint_type = "relay-hint";
         // force relay
         let errno = errno::errno().0;
         log::error!("Connection closed: {err}({errno})");
-        if relay_condition
-            && (cfg!(windows) && (errno == 10054 || err.contains("10054"))
-                || !cfg!(windows) && (errno == 104 || err.contains("104")))
+        if direct == Some(true)
+            && ((cfg!(windows) && (errno == 10054 || err.contains("10054")))
+                || (!cfg!(windows) && (errno == 104 || err.contains("104"))))
         {
-            lc.write().unwrap().force_relay = true;
+            relay_hint = true;
+            if !received {
+                relay_hint_type = "relay-hint2"
+            }
         }
 
         // relay-hint
-        if cfg!(feature = "flutter") && relay_condition {
-            self.msgbox("relay-hint", title, &text, "");
+        if cfg!(feature = "flutter") && relay_hint {
+            self.msgbox(relay_hint_type, title, &text, "");
         } else {
             self.msgbox("error", title, &text, "");
         }
