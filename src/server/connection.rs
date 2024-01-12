@@ -5,6 +5,8 @@ use crate::clipboard_file::*;
 use crate::common::update_clipboard;
 #[cfg(target_os = "android")]
 use crate::keyboard::client::map_key_to_control_key;
+#[cfg(target_os = "linux")]
+use crate::platform::linux::is_x11;
 #[cfg(all(target_os = "linux", feature = "linux_headless"))]
 #[cfg(not(any(feature = "flatpak", feature = "appimage")))]
 use crate::platform::linux_desktop_manager;
@@ -70,6 +72,7 @@ lazy_static::lazy_static! {
     static ref ALIVE_CONNS: Arc::<Mutex<Vec<i32>>> = Default::default();
     static ref AUTHED_CONNS: Arc::<Mutex<Vec<(i32, AuthConnType)>>> = Default::default();
     static ref SWITCH_SIDES_UUID: Arc::<Mutex<HashMap<String, (Instant, uuid::Uuid)>>> = Default::default();
+    static ref WAKELOCK_SENDER: Arc::<Mutex<std::sync::mpsc::Sender<(usize, usize)>>> = Arc::new(Mutex::new(start_wakelock_thread()));
 }
 
 #[cfg(any(target_os = "windows", target_os = "linux"))]
@@ -185,8 +188,8 @@ pub struct Connection {
     restart: bool,
     recording: bool,
     block_input: bool,
-    last_test_delay: i64,
-    network_delay: Option<u32>,
+    last_test_delay: Option<Instant>,
+    network_delay: u32,
     lock_after_session_end: bool,
     show_remote_cursor: bool,
     // by peer
@@ -230,6 +233,8 @@ pub struct Connection {
     auto_disconnect_timer: Option<(Instant, u64)>,
     authed_conn_id: Option<self::raii::AuthedConnID>,
     file_remove_log_control: FileRemoveLogControl,
+    #[cfg(feature = "gpucodec")]
+    supported_encoding_flag: (bool, Option<bool>),
 }
 
 impl ConnInner {
@@ -332,8 +337,8 @@ impl Connection {
             restart: Connection::permission("enable-remote-restart"),
             recording: Connection::permission("enable-record-session"),
             block_input: Connection::permission("enable-block-input"),
-            last_test_delay: 0,
-            network_delay: None,
+            last_test_delay: None,
+            network_delay: 0,
             lock_after_session_end: false,
             show_remote_cursor: false,
             ip: "".to_owned(),
@@ -374,6 +379,8 @@ impl Connection {
             auto_disconnect_timer: None,
             authed_conn_id: None,
             file_remove_log_control: FileRemoveLogControl::new(id),
+            #[cfg(feature = "gpucodec")]
+            supported_encoding_flag: (false, None),
         };
         let addr = hbb_common::try_into_v4(addr);
         if !conn.on_open(addr).await {
@@ -405,8 +412,7 @@ impl Connection {
         if !conn.block_input {
             conn.send_permission(Permission::BlockInput, false).await;
         }
-        let mut test_delay_timer =
-            time::interval_at(Instant::now() + TEST_DELAY_TIMEOUT, TEST_DELAY_TIMEOUT);
+        let mut test_delay_timer = time::interval(TEST_DELAY_TIMEOUT);
         let mut last_recv_time = Instant::now();
 
         conn.stream.set_send_timeout(
@@ -508,21 +514,18 @@ impl Connection {
                         ipc::Data::PrivacyModeState((_, state, impl_key)) => {
                             let msg_out = match state {
                                 privacy_mode::PrivacyModeState::OffSucceeded => {
-                                    video_service::set_privacy_mode_conn_id(0);
                                     crate::common::make_privacy_mode_msg(
                                         back_notification::PrivacyModeState::PrvOffSucceeded,
                                         impl_key,
                                     )
                                 }
                                 privacy_mode::PrivacyModeState::OffByPeer => {
-                                    video_service::set_privacy_mode_conn_id(0);
                                     crate::common::make_privacy_mode_msg(
                                         back_notification::PrivacyModeState::PrvOffByPeer,
                                         impl_key,
                                     )
                                 }
                                 privacy_mode::PrivacyModeState::OffUnknown => {
-                                    video_service::set_privacy_mode_conn_id(0);
                                      crate::common::make_privacy_mode_msg(
                                         back_notification::PrivacyModeState::PrvOffUnknown,
                                         impl_key,
@@ -534,7 +537,7 @@ impl Connection {
                         #[cfg(windows)]
                         ipc::Data::DataPortableService(ipc::DataPortableService::RequestStart) => {
                             if let Err(e) = portable_client::start_portable_service(portable_client::StartPara::Direct) {
-                                log::error!("Failed to start portable service from cm:{:?}", e);
+                                log::error!("Failed to start portable service from cm: {:?}", e);
                             }
                         }
                         ipc::Data::SwitchSidesBack => {
@@ -658,20 +661,20 @@ impl Connection {
                         }
                     }
                     conn.file_remove_log_control.on_timer().drain(..).map(|x| conn.send_to_cm(x)).count();
+                    #[cfg(feature = "gpucodec")]
+                    conn.update_supported_encoding();
                 }
                 _ = test_delay_timer.tick() => {
                     if last_recv_time.elapsed() >= SEC30 {
                         conn.on_close("Timeout", true).await;
                         break;
                     }
-                    let time = get_time();
                     let mut qos = video_service::VIDEO_QOS.lock().unwrap();
-                    if time > 0 && conn.last_test_delay == 0 {
-                        conn.last_test_delay = time;
+                    if conn.last_test_delay.is_none() {
+                        conn.last_test_delay = Some(Instant::now());
                         let mut msg_out = Message::new();
                         msg_out.set_test_delay(TestDelay{
-                            time,
-                            last_delay:conn.network_delay.unwrap_or_default(),
+                            last_delay: conn.network_delay,
                             target_bitrate: qos.bitrate(),
                             ..Default::default()
                         });
@@ -682,10 +685,10 @@ impl Connection {
             }
         }
 
-        let video_privacy_conn_id = video_service::get_privacy_mode_conn_id();
-        if video_privacy_conn_id == id {
-            video_service::set_privacy_mode_conn_id(0);
-            let _ = Self::turn_off_privacy_to_msg(id);
+        if let Some(video_privacy_conn_id) = privacy_mode::get_privacy_mode_conn_id() {
+            if video_privacy_conn_id == id {
+                let _ = Self::turn_off_privacy_to_msg(id);
+            }
         }
         #[cfg(all(feature = "flutter", feature = "plugin_framework"))]
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -883,7 +886,7 @@ impl Connection {
     }
 
     async fn check_privacy_mode_on(&mut self) -> bool {
-        if video_service::get_privacy_mode_conn_id() > 0 {
+        if privacy_mode::is_in_privacy_mode() {
             self.send_login_error("Someone turns on privacy mode, exit")
                 .await;
             false
@@ -1120,7 +1123,9 @@ impl Connection {
             pi.platform_additions = serde_json::to_string(&platform_additions).unwrap_or("".into());
         }
 
-        pi.encoding = Some(scrap::codec::Encoder::supported_encoding()).into();
+        let supported_encoding = scrap::codec::Encoder::supported_encoding();
+        log::info!("peer info supported_encoding: {:?}", supported_encoding);
+        pi.encoding = Some(supported_encoding).into();
 
         if self.port_forward_socket.is_some() {
             let mut msg_out = Message::new();
@@ -1177,26 +1182,27 @@ impl Connection {
             ..Default::default()
         })
         .into();
-        #[cfg(not(any(target_os = "android", target_os = "ios")))]
-        {
-            pi.resolutions = Some(SupportedResolutions {
-                resolutions: display_service::try_get_displays()
-                    .map(|displays| {
-                        displays
-                            .get(self.display_idx)
-                            .map(|d| crate::platform::resolutions(&d.name()))
-                            .unwrap_or(vec![])
-                    })
-                    .unwrap_or(vec![]),
-                ..Default::default()
-            })
-            .into();
-        }
 
         let mut sub_service = false;
         if self.file_transfer.is_some() {
             res.set_peer_info(pi);
         } else {
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
+            {
+                pi.resolutions = Some(SupportedResolutions {
+                    resolutions: display_service::try_get_displays()
+                        .map(|displays| {
+                            displays
+                                .get(self.display_idx)
+                                .map(|d| crate::platform::resolutions(&d.name()))
+                                .unwrap_or(vec![])
+                        })
+                        .unwrap_or(vec![]),
+                    ..Default::default()
+                })
+                .into();
+            }
+
             try_activate_screen();
             if let Some(msg_out) = super::video_service::is_inited_msg() {
                 self.send(msg_out).await;
@@ -1213,6 +1219,14 @@ impl Connection {
                     pi.current_display = self.display_idx as _;
                     res.set_peer_info(pi);
                     sub_service = true;
+
+                    #[cfg(target_os = "linux")]
+                    {
+                        // use rdp_input when uinput is not available in wayland. Ex: flatpak
+                        if !is_x11() && !crate::is_server() {
+                            let _ = setup_rdp_input().await;
+                        }
+                    }
                 }
             }
             self.on_remote_authorized();
@@ -1251,6 +1265,7 @@ impl Connection {
                 #[cfg(not(any(target_os = "android", target_os = "ios")))]
                 let _h = try_start_record_cursor_pos();
                 self.auto_disconnect_timer = Self::get_auto_disconenct_timer();
+                s.try_add_primay_video_service();
                 //..a::::::+4.1
                 s.add_connection(self.inner.clone(), &noperms);
             }
@@ -1258,8 +1273,6 @@ impl Connection {
     }
 
     fn on_remote_authorized(&self) {
-        use std::sync::Once;
-        static _ONCE: Once = Once::new();
         self.update_codec_on_login();
         #[cfg(any(target_os = "windows", target_os = "linux"))]
         if !Config::get_option("allow-remove-wallpaper").is_empty() {
@@ -1269,12 +1282,9 @@ impl Connection {
                 match crate::platform::WallPaperRemover::new() {
                     Ok(remover) => {
                         *wallpaper = Some(remover);
-                        _ONCE.call_once(|| {
-                            shutdown_hooks::add_shutdown_hook(shutdown_hook);
-                        });
                     }
                     Err(e) => {
-                        log::info!("create wallpaper remover failed:{:?}", e);
+                        log::info!("create wallpaper remover failed: {:?}", e);
                     }
                 }
             }
@@ -1463,23 +1473,15 @@ impl Connection {
     }
 
     fn update_codec_on_login(&self) {
+        use scrap::codec::{Encoder, EncodingUpdate::*};
         if let Some(o) = self.lr.clone().option.as_ref() {
             if let Some(q) = o.supported_decoding.clone().take() {
-                scrap::codec::Encoder::update(
-                    self.inner.id(),
-                    scrap::codec::EncodingUpdate::New(q),
-                );
+                Encoder::update(Update(self.inner.id(), q));
             } else {
-                scrap::codec::Encoder::update(
-                    self.inner.id(),
-                    scrap::codec::EncodingUpdate::NewOnlyVP9,
-                );
+                Encoder::update(NewOnlyVP9(self.inner.id()));
             }
         } else {
-            scrap::codec::Encoder::update(
-                self.inner.id(),
-                scrap::codec::EncodingUpdate::NewOnlyVP9,
-            );
+            Encoder::update(NewOnlyVP9(self.inner.id()));
         }
     }
 
@@ -1722,13 +1724,15 @@ impl Connection {
                 msg_out.set_test_delay(t);
                 self.inner.send(msg_out.into());
             } else {
-                self.last_test_delay = 0;
-                let new_delay = (get_time() - t.time) as u32;
-                video_service::VIDEO_QOS
-                    .lock()
-                    .unwrap()
-                    .user_network_delay(self.inner.id(), new_delay);
-                self.network_delay = Some(new_delay);
+                if let Some(tm) = self.last_test_delay {
+                    self.last_test_delay = None;
+                    let new_delay = tm.elapsed().as_millis() as u32;
+                    video_service::VIDEO_QOS
+                        .lock()
+                        .unwrap()
+                        .user_network_delay(self.inner.id(), new_delay);
+                    self.network_delay = new_delay;
+                }
                 self.delay_response_instant = Instant::now();
             }
         } else if let Some(message::Union::SwitchSidesResponse(_s)) = msg.union {
@@ -2156,13 +2160,19 @@ impl Connection {
                         return false;
                     }
 
-                    Some(misc::Union::RestartRemoteDevice(_)) =>
-                    {
+                    Some(misc::Union::RestartRemoteDevice(_)) => {
                         #[cfg(not(any(target_os = "android", target_os = "ios")))]
                         if self.restart {
+                            // force_reboot, not work on linux vm and macos 14
+                            #[cfg(any(target_os = "linux", target_os = "windows"))]
+                            match system_shutdown::force_reboot() {
+                                Ok(_) => log::info!("Restart by the peer"),
+                                Err(e) => log::error!("Failed to restart: {}", e),
+                            }
+                            #[cfg(any(target_os = "linux", target_os = "macos"))]
                             match system_shutdown::reboot() {
                                 Ok(_) => log::info!("Restart by the peer"),
-                                Err(e) => log::error!("Failed to restart:{}", e),
+                                Err(e) => log::error!("Failed to restart: {}", e),
                             }
                         }
                     }
@@ -2352,6 +2362,22 @@ impl Connection {
     }
 
     async fn capture_displays(&mut self, add: &[usize], sub: &[usize], set: &[usize]) {
+        #[cfg(windows)]
+        if portable_client::running() && (add.len() > 0 || set.len() > 1) {
+            log::info!("Capturing multiple displays is not supported in the elevated mode.");
+            let mut msg_out = Message::new();
+            let res = MessageBox {
+                msgtype: "nook-nocancel-hasclose".to_owned(),
+                title: "Prompt".to_owned(),
+                text: "capture_display_elevated_connections_tip".to_owned(),
+                link: "".to_owned(),
+                ..Default::default()
+            };
+            msg_out.set_message_box(res);
+            self.send(msg_out).await;
+            return;
+        }
+
         if let Some(sever) = self.server.upgrade() {
             let mut lock = sever.write().unwrap();
             for display in add.iter() {
@@ -2379,10 +2405,34 @@ impl Connection {
 
     #[cfg(all(windows, feature = "virtual_display_driver"))]
     async fn toggle_virtual_display(&mut self, t: ToggleVirtualDisplay) {
+        let make_msg = |text: String| {
+            let mut msg_out = Message::new();
+            let res = MessageBox {
+                msgtype: "nook-nocancel-hasclose".to_owned(),
+                title: "Virtual display".to_owned(),
+                text,
+                link: "".to_owned(),
+                ..Default::default()
+            };
+            msg_out.set_message_box(res);
+            msg_out
+        };
+
         if t.on {
-            if let Err(e) = virtual_display_manager::plug_in_index_modes(t.display as _, Vec::new())
-            {
-                log::error!("Failed to plug in virtual display: {}", e);
+            if !virtual_display_manager::is_virtual_display_supported() {
+                self.send(make_msg("idd_not_support_under_win10_2004_tip".to_string()))
+                    .await;
+            } else {
+                if let Err(e) =
+                    virtual_display_manager::plug_in_index_modes(t.display as _, Vec::new())
+                {
+                    log::error!("Failed to plug in virtual display: {}", e);
+                    self.send(make_msg(format!(
+                        "Failed to plug in virtual display: {}",
+                        e
+                    )))
+                    .await;
+                }
             }
         } else {
             let indices = if t.display == -1 {
@@ -2392,6 +2442,11 @@ impl Connection {
             };
             if let Err(e) = virtual_display_manager::plug_out_peer_request(&indices) {
                 log::error!("Failed to plug out virtual display {:?}: {}", &indices, e);
+                self.send(make_msg(format!(
+                    "Failed to plug out virtual displays: {}",
+                    e
+                )))
+                .await;
             }
         }
     }
@@ -2429,7 +2484,7 @@ impl Connection {
                         crate::platform::change_resolution(&name, r.width as _, r.height as _)
                     {
                         log::error!(
-                            "Failed to change resolution '{}' to ({},{}):{:?}",
+                            "Failed to change resolution '{}' to ({},{}): {:?}",
                             &name,
                             r.width,
                             r.height,
@@ -2502,7 +2557,7 @@ impl Connection {
                 .user_custom_fps(self.inner.id(), o.custom_fps as _);
         }
         if let Some(q) = o.supported_decoding.clone().take() {
-            scrap::codec::Encoder::update(self.inner.id(), scrap::codec::EncodingUpdate::New(q));
+            scrap::codec::Encoder::update(scrap::codec::EncodingUpdate::Update(self.inner.id(), q));
         }
         if let Ok(q) = o.lock_after_session_end.enum_value() {
             if q != BoolOption::NotSet {
@@ -2629,7 +2684,23 @@ impl Connection {
                 impl_key,
             )
         } else {
-            match privacy_mode::turn_on_privacy(&impl_key, self.inner.id) {
+            let is_pre_privacy_on = privacy_mode::is_in_privacy_mode();
+            let pre_impl_key = privacy_mode::get_cur_impl_key();
+            let turn_on_res = privacy_mode::turn_on_privacy(&impl_key, self.inner.id);
+
+            if is_pre_privacy_on {
+                if let Some(pre_impl_key) = pre_impl_key {
+                    if !privacy_mode::is_current_privacy_mode_impl(&pre_impl_key) {
+                        let off_msg = crate::common::make_privacy_mode_msg(
+                            back_notification::PrivacyModeState::PrvOffSucceeded,
+                            pre_impl_key,
+                        );
+                        self.send(off_msg).await;
+                    }
+                }
+            }
+
+            match turn_on_res {
                 Some(Ok(res)) => {
                     if res {
                         let err_msg = privacy_mode::check_privacy_mode_err(
@@ -2638,7 +2709,6 @@ impl Connection {
                             5_000,
                         );
                         if err_msg.is_empty() {
-                            video_service::set_privacy_mode_conn_id(self.inner.id);
                             crate::common::make_privacy_mode_msg(
                                 back_notification::PrivacyModeState::PrvOnSucceeded,
                                 impl_key,
@@ -2648,7 +2718,6 @@ impl Connection {
                                 "Check privacy mode failed: {}, turn off privacy mode.",
                                 &err_msg
                             );
-                            video_service::set_privacy_mode_conn_id(0);
                             let _ = Self::turn_off_privacy_to_msg(self.inner.id);
                             crate::common::make_privacy_mode_msg_with_details(
                                 back_notification::PrivacyModeState::PrvOnFailed,
@@ -2665,8 +2734,10 @@ impl Connection {
                 }
                 Some(Err(e)) => {
                     log::error!("Failed to turn on privacy mode. {}", e);
-                    if video_service::get_privacy_mode_conn_id() == 0 {
-                        let _ = Self::turn_off_privacy_to_msg(0);
+                    if !privacy_mode::is_in_privacy_mode() {
+                        let _ = Self::turn_off_privacy_to_msg(
+                            privacy_mode::INVALID_PRIVACY_MODE_CONN_ID,
+                        );
                     }
                     crate::common::make_privacy_mode_msg_with_details(
                         back_notification::PrivacyModeState::PrvOnFailed,
@@ -2693,7 +2764,6 @@ impl Connection {
                 impl_key,
             )
         } else {
-            video_service::set_privacy_mode_conn_id(0);
             Self::turn_off_privacy_to_msg(self.inner.id)
         };
         self.send(msg_out).await;
@@ -2853,6 +2923,24 @@ impl Connection {
         self.auto_disconnect_timer
             .as_mut()
             .map(|t| t.0 = Instant::now());
+    }
+
+    #[cfg(feature = "gpucodec")]
+    fn update_supported_encoding(&mut self) {
+        let not_use = Some(scrap::gpucodec::GpuEncoder::not_use());
+        if !self.authorized
+            || self.supported_encoding_flag.0 && self.supported_encoding_flag.1 == not_use
+        {
+            return;
+        }
+        let mut misc: Misc = Misc::new();
+        let supported_encoding = scrap::codec::Encoder::supported_encoding();
+        log::info!("update supported encoding: {:?}", supported_encoding);
+        misc.set_supported_encoding(supported_encoding);
+        let mut msg = Message::new();
+        msg.set_misc(misc);
+        self.inner.send(msg.into());
+        self.supported_encoding_flag = (true, not_use);
     }
 }
 
@@ -3136,6 +3224,51 @@ impl FileRemoveLogControl {
     }
 }
 
+fn start_wakelock_thread() -> std::sync::mpsc::Sender<(usize, usize)> {
+    use crate::platform::{get_wakelock, WakeLock};
+    let (tx, rx) = std::sync::mpsc::channel::<(usize, usize)>();
+    std::thread::spawn(move || {
+        let mut wakelock: Option<WakeLock> = None;
+        let mut last_display = false;
+        loop {
+            match rx.recv() {
+                Ok((conn_count, remote_count)) => {
+                    if conn_count == 0 {
+                        wakelock = None;
+                        log::info!("drop wakelock");
+                    } else {
+                        let mut display = remote_count > 0;
+                        if let Some(_w) = wakelock.as_mut() {
+                            if display != last_display {
+                                #[cfg(any(target_os = "windows", target_os = "macos"))]
+                                {
+                                    log::info!("set wakelock display to {display}");
+                                    if let Err(e) = _w.set_display(display) {
+                                        log::error!(
+                                            "failed to set wakelock display to {display}: {e:?}"
+                                        );
+                                    }
+                                }
+                            }
+                        } else {
+                            if cfg!(target_os = "linux") {
+                                display = true;
+                            }
+                            wakelock = Some(get_wakelock(display));
+                        }
+                        last_display = display;
+                    }
+                }
+                Err(e) => {
+                    log::error!("wakelock receive error: {e:?}");
+                    break;
+                }
+            }
+        }
+    });
+    tx
+}
+
 #[cfg(windows)]
 pub struct PortableState {
     pub last_uac: bool,
@@ -3209,9 +3342,13 @@ impl LinuxHeadlessHandle {
     }
 }
 
-#[cfg(any(target_os = "windows", target_os = "linux"))]
-extern "C" fn shutdown_hook() {
-    *WALLPAPER_REMOVER.lock().unwrap() = None;
+extern "C" fn connection_shutdown_hook() {
+    // https://stackoverflow.com/questions/35980148/why-does-an-atexit-handler-panic-when-it-accesses-stdout
+    // Please make sure there is no print in the call stack
+    #[cfg(any(target_os = "windows", target_os = "linux"))]
+    {
+        *WALLPAPER_REMOVER.lock().unwrap() = None;
+    }
 }
 
 mod raii {
@@ -3241,18 +3378,43 @@ mod raii {
     impl AuthedConnID {
         pub fn new(id: i32, conn_type: AuthConnType) -> Self {
             AUTHED_CONNS.lock().unwrap().push((id, conn_type));
+            Self::check_wake_lock();
+            use std::sync::Once;
+            static _ONCE: Once = Once::new();
+            _ONCE.call_once(|| {
+                shutdown_hooks::add_shutdown_hook(connection_shutdown_hook);
+            });
             Self(id, conn_type)
+        }
+
+        fn check_wake_lock() {
+            let conn_count = AUTHED_CONNS.lock().unwrap().len();
+            let remote_count = AUTHED_CONNS
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|c| c.1 == AuthConnType::Remote)
+                .count();
+            allow_err!(WAKELOCK_SENDER
+                .lock()
+                .unwrap()
+                .send((conn_count, remote_count)));
         }
     }
 
     impl Drop for AuthedConnID {
         fn drop(&mut self) {
             if self.1 == AuthConnType::Remote {
-                scrap::codec::Encoder::update(self.0, scrap::codec::EncodingUpdate::Remove);
+                scrap::codec::Encoder::update(scrap::codec::EncodingUpdate::Remove(self.0));
             }
-            let mut lock = AUTHED_CONNS.lock().unwrap();
-            lock.retain(|&c| c.0 != self.0);
-            if lock.iter().filter(|c| c.1 == AuthConnType::Remote).count() == 0 {
+            AUTHED_CONNS.lock().unwrap().retain(|&c| c.0 != self.0);
+            let remote_count = AUTHED_CONNS
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|c| c.1 == AuthConnType::Remote)
+                .count();
+            if remote_count == 0 {
                 #[cfg(any(target_os = "windows", target_os = "linux"))]
                 {
                     *WALLPAPER_REMOVER.lock().unwrap() = None;
@@ -3262,6 +3424,7 @@ mod raii {
                 #[cfg(all(windows, feature = "virtual_display_driver"))]
                 let _ = virtual_display_manager::reset_all();
             }
+            Self::check_wake_lock();
         }
     }
 }

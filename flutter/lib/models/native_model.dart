@@ -99,9 +99,14 @@ class PlatformFFI {
 
   int getRgbaSize(SessionID sessionId, int display) =>
       _ffiBind.sessionGetRgbaSize(sessionId: sessionId, display: display);
-  void nextRgba(SessionID sessionId, int display) => _ffiBind.sessionNextRgba(sessionId: sessionId, display: display);
-  void registerTexture(SessionID sessionId, int display, int ptr) =>
-      _ffiBind.sessionRegisterTexture(sessionId: sessionId, display: display, ptr: ptr);
+  void nextRgba(SessionID sessionId, int display) =>
+      _ffiBind.sessionNextRgba(sessionId: sessionId, display: display);
+  void registerPixelbufferTexture(SessionID sessionId, int display, int ptr) =>
+      _ffiBind.sessionRegisterPixelbufferTexture(
+          sessionId: sessionId, display: display, ptr: ptr);
+  void registerGpuTexture(SessionID sessionId, int display, int ptr) =>
+      _ffiBind.sessionRegisterGpuTexture(
+          sessionId: sessionId, display: display, ptr: ptr);
 
   /// Init the FFI class, loads the native Rust core library.
   Future<void> init(String appType) async {
@@ -153,10 +158,10 @@ class PlatformFFI {
         AndroidDeviceInfo androidInfo = await deviceInfo.androidInfo;
         name = '${androidInfo.brand}-${androidInfo.model}';
         id = androidInfo.id.hashCode.toString();
-        androidVersion = androidInfo.version.sdkInt ?? 0;
+        androidVersion = androidInfo.version.sdkInt;
       } else if (Platform.isIOS) {
         IosDeviceInfo iosInfo = await deviceInfo.iosInfo;
-        name = iosInfo.utsname.machine ?? '';
+        name = iosInfo.utsname.machine;
         id = iosInfo.identifierForVendor.hashCode.toString();
       } else if (Platform.isLinux) {
         LinuxDeviceInfo linuxInfo = await deviceInfo.linuxInfo;

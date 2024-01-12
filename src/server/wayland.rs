@@ -175,7 +175,12 @@ pub(super) async fn check_init() -> ResultType<()> {
                             .trim_end_matches(",")
                             .parse()
                             .unwrap_or(origin.1 + height as i32);
-                        (w, h)
+                        if w < origin.0 + width as i32 || h < origin.1 + height as i32 {
+                            (origin.0 + width as i32, origin.1 + height as i32)
+                        }
+                        else{
+                            (w, h)
+                        }
                     }
                     _ => (origin.0 + width as i32, origin.1 + height as i32),
                 };
@@ -186,8 +191,7 @@ pub(super) async fn check_init() -> ResultType<()> {
                 maxy = max_height;
 
                 let capturer = Box::into_raw(Box::new(
-                    Capturer::new(display)
-                        .with_context(|| "Failed to create capturer")?,
+                    Capturer::new(display).with_context(|| "Failed to create capturer")?,
                 ));
                 let capturer = CapturerPtr(capturer);
                 let cap_display_info = Box::into_raw(Box::new(CapDisplayInfo {
