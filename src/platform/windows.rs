@@ -63,6 +63,8 @@ use windows_service::{
 use winreg::enums::*;
 use winreg::RegKey;
 
+pub const DRIVER_CERT_FILE: &str = "RustDeskIddDriver.cer";
+
 pub fn get_cursor_pos() -> Option<(i32, i32)> {
     unsafe {
         #[allow(invalid_value)]
@@ -1029,7 +1031,12 @@ if exist \"{tmp_path}\\{app_name} Tray.lnk\" del /f /q \"{tmp_path}\\{app_name} 
     let src_exe = std::env::current_exe()?.to_str().unwrap_or("").to_string();
 
     let install_cert = if options.contains("driverCert") {
-        format!("\"{}\" --install-cert \"RustDeskIddDriver.cer\"", src_exe)
+        let s = format!(r#""{}" --install-cert"#, src_exe);
+        if silent {
+            format!("{} silent", s)
+        } else {
+            s
+        }
     } else {
         "".to_owned()
     };
@@ -1214,7 +1221,9 @@ fn run_cmds(cmds: String, show: bool, tip: &str) -> ResultType<()> {
     let tmp = write_cmds(cmds, "bat", tip)?;
     let tmp2 = get_undone_file(&tmp)?;
     let tmp_fn = tmp.to_str().unwrap_or("");
-    let res = runas::Command::new("cmd")
+    // https://github.com/rustdesk/rustdesk/issues/6786#issuecomment-1879655410
+    // Specify cmd.exe explicitly to avoid the replacement of cmd commands.
+    let res = runas::Command::new("cmd.exe")
         .args(&["/C", &tmp_fn])
         .show(show)
         .force_prompt(true)
@@ -2102,7 +2111,7 @@ pub fn is_process_consent_running() -> ResultType<bool> {
         .output()?;
     Ok(output.status.success() && !output.stdout.is_empty())
 }
-pub struct WakeLock;
+pub struct WakeLock(u32);
 // Failed to compile keepawake-rs on i686
 impl WakeLock {
     pub fn new(display: bool, idle: bool, sleep: bool) -> Self {
@@ -2117,7 +2126,20 @@ impl WakeLock {
             flag |= ES_AWAYMODE_REQUIRED;
         }
         unsafe { SetThreadExecutionState(flag) };
-        WakeLock {}
+        WakeLock(flag)
+    }
+
+    pub fn set_display(&mut self, display: bool) -> ResultType<()> {
+        let flag = if display {
+            self.0 | ES_DISPLAY_REQUIRED
+        } else {
+            self.0 & !ES_DISPLAY_REQUIRED
+        };
+        if flag != self.0 {
+            unsafe { SetThreadExecutionState(flag) };
+            self.0 = flag;
+        }
+        Ok(())
     }
 }
 

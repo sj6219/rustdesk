@@ -214,6 +214,7 @@ pub fn call_main_service_set_clip_text(name: &str) -> JniResult<()> {
             &[JValue::Object(&JObject::from(name))],
         )?;
         return Ok(());
+    }
     else {
         return Err(JniError::ThrowFailed(-1));
     }
@@ -279,6 +280,7 @@ fn init_ndk_context() -> JniResult<()> {
         unsafe {
             ndk_context::release_android_context();
         }
+        *lock = false;
     }
     if let (Some(jvm), Some(ctx)) = (
         JVM.read().unwrap().as_ref(),
