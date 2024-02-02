@@ -248,6 +248,10 @@ fn get_keyboard_mode() -> String {
 }
 
 fn start_grab_loop() {
+    //..
+    #[cfg(not(feature = "flutter"))]
+    IS_RDEV_ENABLED.store(true, Ordering::SeqCst);
+    
     std::env::set_var("KEYBOARD_ONLY", "y");
     #[cfg(any(target_os = "windows", target_os = "macos"))]
     std::thread::spawn(move || {

@@ -578,5 +578,13 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("capture_display_elevated_connections_tip", "La capture de plusieurs écrans n'est pas prise en charge en mode utilisateur avec privilièges. Veuillez réessayer après l'installation si vous souhaitez contrôler plusieurs écrans."),
         ("Swap control-command key", "Échanger la touche de controle-commande"),
         ("swap-left-right-mouse", "Intervertir le bouton gauche et droit de la souris"),
+        ("2FA code", ""),
+        ("More", ""),
+        ("enable-2fa-title", ""),
+        ("enable-2fa-desc", ""),
+        ("wrong-2fa-code", ""),
+        ("enter-2fa-title", ""),
+        ("Email verification code must be 6 characters.", ""),
+        ("2FA code must be 6 digits.", ""),
     ].iter().cloned().collect();
 }
