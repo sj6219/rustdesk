@@ -41,7 +41,7 @@ use hbb_common::{
     rendezvous_proto::*,
     socket_client,
     sodiumoxide::base64,
-    sodiumoxide::crypto::{box_, secretbox, sign},
+    sodiumoxide::crypto::sign,
     tcp::FramedStream,
     timeout,
     tokio::time::Duration,
@@ -51,13 +51,13 @@ pub use helper::*;
 use scrap::{
     codec::Decoder,
     record::{Recorder, RecorderContext},
-    ImageFormat, ImageRgb,
+    CodecFormat, ImageFormat, ImageRgb,
 };
 
 use crate::{
     check_port,
     common::input::{MOUSE_BUTTON_LEFT, MOUSE_BUTTON_RIGHT, MOUSE_TYPE_DOWN, MOUSE_TYPE_UP},
-    is_keyboard_mode_supported,
+    create_symmetric_key_msg, decode_id_pk, get_rs_pk, is_keyboard_mode_supported, secure_tcp,
     ui_session_interface::{InvokeUiSession, Session},
 };
 
@@ -76,6 +76,7 @@ pub mod io_loop;
 pub const MILLI1: Duration = Duration::from_millis(1);
 pub const SEC30: Duration = Duration::from_secs(30);
 pub const VIDEO_QUEUE_SIZE: usize = 120;
+const MAX_DECODE_FAIL_COUNTER: usize = 10; // Currently, failed decode cause refresh_video, so make it small
 
 #[cfg(all(target_os = "linux", feature = "linux_headless"))]
 #[cfg(not(any(feature = "flatpak", feature = "appimage")))]
@@ -92,6 +93,8 @@ pub const LOGIN_MSG_DESKTOP_SESSION_NOT_READY_PASSWORD_WRONG: &str =
     "Desktop session not ready, password wrong";
 pub const LOGIN_MSG_PASSWORD_EMPTY: &str = "Empty Password";
 pub const LOGIN_MSG_PASSWORD_WRONG: &str = "Wrong Password";
+pub const LOGIN_MSG_2FA_WRONG: &str = "Wrong 2FA Code";
+pub const REQUIRE_2FA: &'static str = "2FA Required";
 pub const LOGIN_MSG_NO_PASSWORD_ACCESS: &str = "No Password Access";
 pub const LOGIN_MSG_OFFLINE: &str = "Offline";
 pub const LOGIN_SCREEN_WAYLAND: &str = "Wayland login screen is not supported";
@@ -311,7 +314,7 @@ impl Client {
 
         if !key.is_empty() && !token.is_empty() {
             // mainly for the security of token
-            allow_err!(secure_punch_connection(&mut socket, key).await);
+            allow_err!(secure_tcp(&mut socket, key).await);
         }
 
         let start = std::time::Instant::now();
@@ -620,7 +623,7 @@ impl Client {
 
             if !key.is_empty() && !token.is_empty() {
                 // mainly for the security of token
-                allow_err!(secure_punch_connection(&mut socket, key).await);
+                allow_err!(secure_tcp(&mut socket, key).await);
             }
 
             ipv4 = socket.local_addr().is_ipv4();
@@ -1025,24 +1028,25 @@ pub struct VideoHandler {
     recorder: Arc<Mutex<Option<Recorder>>>,
     record: bool,
     _display: usize, // useful for debug
+    fail_counter: usize,
 }
 
 impl VideoHandler {
     /// Create a new video handler.
-    pub fn new(_display: usize) -> Self {
+    pub fn new(format: CodecFormat, _display: usize) -> Self {
         #[cfg(all(feature = "gpucodec", feature = "flutter"))]
         let luid = crate::flutter::get_adapter_luid();
         #[cfg(not(all(feature = "gpucodec", feature = "flutter")))]
         let luid = Default::default();
-        println!("new session_get_adapter_luid: {:?}", luid);
-        log::info!("new video handler for display #{_display}");
+        log::info!("new video handler for display #{_display}, format: {format:?}, luid: {luid:?}");
         VideoHandler {
-            decoder: Decoder::new(luid),
+            decoder: Decoder::new(format, luid),
             rgb: ImageRgb::new(ImageFormat::ARGB, crate::DST_STRIDE_RGBA),
             texture: std::ptr::null_mut(),
             recorder: Default::default(),
             record: false,
             _display,
+            fail_counter: 0,
         }
     }
 
@@ -1054,6 +1058,10 @@ impl VideoHandler {
         pixelbuffer: &mut bool,
         chroma: &mut Option<Chroma>,
     ) -> ResultType<bool> {
+        let format = CodecFormat::from(&vf);
+        if format != self.decoder.format() {
+            self.reset(Some(format));
+        }
         match &vf.union {
             Some(frame) => {
                 let res = self.decoder.handle_video_frame(
@@ -1063,6 +1071,13 @@ impl VideoHandler {
                     pixelbuffer,
                     chroma,
                 );
+                if res.as_ref().is_ok_and(|x| *x) {
+                    self.fail_counter = 0;
+                } else {
+                    if self.fail_counter < usize::MAX {
+                        self.fail_counter += 1
+                    }
+                }
                 if self.record {
                     self.recorder
                         .lock()
@@ -1076,13 +1091,15 @@ impl VideoHandler {
         }
     }
 
-    /// Reset the decoder.
-    pub fn reset(&mut self) {
+    /// Reset the decoder, change format if it is Some
+    pub fn reset(&mut self, format: Option<CodecFormat>) {
         #[cfg(all(feature = "flutter", feature = "gpucodec"))]
         let luid = crate::flutter::get_adapter_luid();
         #[cfg(not(all(feature = "flutter", feature = "gpucodec")))]
         let luid = None;
-        self.decoder = Decoder::new(luid);
+        let format = format.unwrap_or(self.decoder.format());
+        self.decoder = Decoder::new(format, luid);
+        self.fail_counter = 0;
     }
 
     /// Start or stop screen record.
@@ -1131,6 +1148,9 @@ pub struct LoginConfigHandler {
     pub other_server: Option<(String, String, String)>,
     pub custom_fps: Arc<Mutex<Option<usize>>>,
     pub adapter_luid: Option<i64>,
+    pub mark_unsupported: Vec<CodecFormat>,
+    pub selected_windows_session_id: Option<u32>,
+    pub peer_info: Option<PeerInfo>,
 }
 
 impl Deref for LoginConfigHandler {
@@ -1217,6 +1237,7 @@ impl LoginConfigHandler {
         self.received = false;
         self.switch_uuid = switch_uuid;
         self.adapter_luid = adapter_luid;
+        self.selected_windows_session_id = None;
     }
 
     /// Check if the client should auto login.
@@ -1493,14 +1514,18 @@ impl LoginConfigHandler {
     ///
     /// * `ignore_default` - If `true`, ignore the default value of the option.
     fn get_option_message(&self, ignore_default: bool) -> Option<OptionMessage> {
-        if self.conn_type.eq(&ConnType::FILE_TRANSFER)
-            || self.conn_type.eq(&ConnType::PORT_FORWARD)
-            || self.conn_type.eq(&ConnType::RDP)
-        {
+        if self.conn_type.eq(&ConnType::PORT_FORWARD) || self.conn_type.eq(&ConnType::RDP) {
             return None;
         }
         let mut n = 0;
         let mut msg = OptionMessage::new();
+        // Version 1.2.5 can remove this, and OptionMessage is not needed for file transfer
+        msg.support_windows_specific_session = BoolOption::Yes.into();
+        n += 1;
+
+        if self.conn_type.eq(&ConnType::FILE_TRANSFER) {
+            return Some(msg);
+        }
         let q = self.image_quality.clone();
         if let Some(q) = self.get_image_quality_enum(&q, ignore_default) {
             msg.image_quality = q.into();
@@ -1508,7 +1533,7 @@ impl LoginConfigHandler {
         } else if q == "custom" {
             let config = self.load_config();
             let allow_more =
-                !crate::ui_interface::using_public_server() || self.direct == Some(true);
+                !crate::using_public_server() || self.direct == Some(true);
             let quality = if config.custom_image_quality.is_empty() {
                 50
             } else {
@@ -1560,9 +1585,9 @@ impl LoginConfigHandler {
                 Some(&self.id),
                 cfg!(feature = "flutter"),
                 self.adapter_luid,
+                &self.mark_unsupported,
             ));
         n += 1;
-
         if n > 0 {
             Some(msg)
         } else {
@@ -1948,6 +1973,7 @@ impl LoginConfigHandler {
             Some(&self.id),
             cfg!(feature = "flutter"),
             self.adapter_luid,
+            &self.mark_unsupported,
         );
         let mut misc = Misc::new();
         misc.set_option(OptionMessage {
@@ -1957,44 +1983,6 @@ impl LoginConfigHandler {
         let mut msg_out = Message::new();
         msg_out.set_misc(misc);
         msg_out
-    }
-
-    fn real_supported_decodings(
-        &self,
-        handler_controller_map: &Vec<VideoHandlerController>,
-    ) -> Data {
-        let abilities: Vec<CodecAbility> = handler_controller_map
-            .iter()
-            .map(|h| h.handler.decoder.exist_codecs(cfg!(feature = "flutter")))
-            .collect();
-        let all = |ability: fn(&CodecAbility) -> bool| -> i32 {
-            if abilities.iter().all(|d| ability(d)) {
-                1
-            } else {
-                0
-            }
-        };
-        let decoding = scrap::codec::Decoder::supported_decodings(
-            Some(&self.id),
-            cfg!(feature = "flutter"),
-            self.adapter_luid,
-        );
-        let decoding = SupportedDecoding {
-            ability_vp8: all(|e| e.vp8),
-            ability_vp9: all(|e| e.vp9),
-            ability_av1: all(|e| e.av1),
-            ability_h264: all(|e| e.h264),
-            ability_h265: all(|e| e.h265),
-            ..decoding
-        };
-        let mut misc = Misc::new();
-        misc.set_option(OptionMessage {
-            supported_decoding: hbb_common::protobuf::MessageField::some(decoding),
-            ..Default::default()
-        });
-        let mut msg_out = Message::new();
-        msg_out.set_misc(misc);
-        Data::Message(msg_out)
     }
 
     pub fn restart_remote_device(&self) -> Message {
@@ -2090,26 +2078,16 @@ where
                         };
                         let display = vf.display as usize;
                         let start = std::time::Instant::now();
-                        let mut created_new_handler = false;
+                        let format = CodecFormat::from(&vf);
                         if handler_controller_map.len() <= display {
                             for _i in handler_controller_map.len()..=display {
                                 handler_controller_map.push(VideoHandlerController {
-                                    handler: VideoHandler::new(_i),
+                                    handler: VideoHandler::new(format, _i),
                                     count: 0,
                                     duration: std::time::Duration::ZERO,
                                     skip_beginning: 0,
                                 });
-                                created_new_handler = true;
                             }
-                        }
-                        if created_new_handler {
-                            session.send(
-                                session
-                                    .lc
-                                    .read()
-                                    .unwrap()
-                                    .real_supported_decodings(&handler_controller_map),
-                            );
                         }
                         if let Some(handler_controller) = handler_controller_map.get_mut(display) {
                             let mut pixelbuffer = true;
@@ -2174,17 +2152,32 @@ where
                                 _ => {}
                             }
                         }
+
+                        // check invalid decoders
+                        let mut should_update_supported = false;
+                        handler_controller_map
+                            .iter()
+                            .map(|h| {
+                                if !h.handler.decoder.valid() || h.handler.fail_counter >= MAX_DECODE_FAIL_COUNTER {
+                                    let mut lc = session.lc.write().unwrap();
+                                    let format = h.handler.decoder.format();
+                                    if !lc.mark_unsupported.contains(&format) {
+                                        lc.mark_unsupported.push(format);
+                                        should_update_supported = true;
+                                        log::info!("mark {format:?} decoder as unsupported, valid:{}, fail_counter:{}, all unsupported:{:?}", h.handler.decoder.valid(), h.handler.fail_counter, lc.mark_unsupported);
+                                    }
+                                }
+                            })
+                            .count();
+                        if should_update_supported {
+                            session.send(Data::Message(
+                                session.lc.read().unwrap().update_supported_decodings(),
+                            ));
+                        }
                     }
                     MediaData::Reset(display) => {
                         if let Some(handler_controler) = handler_controller_map.get_mut(display) {
-                            handler_controler.handler.reset();
-                            session.send(
-                                session
-                                    .lc
-                                    .read()
-                                    .unwrap()
-                                    .real_supported_decodings(&handler_controller_map),
-                            );
+                            handler_controler.handler.reset(None);
                         }
                     }
                     MediaData::RecordScreen(start, display, w, h, id) => {
@@ -2566,6 +2559,9 @@ pub fn handle_login_error(
         lc.write().unwrap().password = Default::default();
         interface.msgbox("re-input-password", err, "Do you want to enter again?", "");
         true
+    } else if err == LOGIN_MSG_2FA_WRONG || err == REQUIRE_2FA {
+        interface.msgbox("input-2fa", err, "", "");
+        true
     } else if LOGIN_ERROR_MAP.contains_key(err) {
         if let Some(msgbox_info) = LOGIN_ERROR_MAP.get(err) {
             interface.msgbox(
@@ -2606,7 +2602,7 @@ pub async fn handle_hash(
     peer: &mut Stream,
 ) {
     lc.write().unwrap().hash = hash.clone();
-    let uuid = lc.read().unwrap().switch_uuid.clone();
+    let uuid = lc.write().unwrap().switch_uuid.take();
     if let Some(uuid) = uuid {
         if let Ok(uuid) = uuid::Uuid::from_str(&uuid) {
             send_switch_login_request(lc.clone(), peer, uuid).await;
@@ -2755,6 +2751,7 @@ pub trait Interface: Send + Clone + 'static + Sized {
     fn msgbox(&self, msgtype: &str, title: &str, text: &str, link: &str);
     fn handle_login_error(&self, err: &str) -> bool;
     fn handle_peer_info(&self, pi: PeerInfo);
+    fn set_multiple_windows_session(&self, sessions: Vec<WindowsSession>);
     fn on_error(&self, err: &str) {
         self.msgbox("error", "Error", err, "");
     }
@@ -3000,81 +2997,4 @@ pub fn check_if_retry(msgtype: &str, title: &str, text: &str, retry_for_relay: b
                 && !text.to_lowercase().contains("mismatch")
                 && !text.to_lowercase().contains("manually")
                 && !text.to_lowercase().contains("not allowed")))
-}
-
-#[inline]
-fn get_pk(pk: &[u8]) -> Option<[u8; 32]> {
-    if pk.len() == 32 {
-        let mut tmp = [0u8; 32];
-        tmp[..].copy_from_slice(&pk);
-        Some(tmp)
-    } else {
-        None
-    }
-}
-
-#[inline]
-fn get_rs_pk(str_base64: &str) -> Option<sign::PublicKey> {
-    if let Ok(pk) = crate::decode64(str_base64) {
-        get_pk(&pk).map(|x| sign::PublicKey(x))
-    } else {
-        None
-    }
-}
-
-fn decode_id_pk(signed: &[u8], key: &sign::PublicKey) -> ResultType<(String, [u8; 32])> {
-    let res = IdPk::parse_from_bytes(
-        &sign::verify(signed, key).map_err(|_| anyhow!("Signature mismatch"))?,
-    )?;
-    if let Some(pk) = get_pk(&res.pk) {
-        Ok((res.id, pk))
-    } else {
-        bail!("Wrong their public length");
-    }
-}
-
-fn create_symmetric_key_msg(their_pk_b: [u8; 32]) -> (Bytes, Bytes, secretbox::Key) {
-    let their_pk_b = box_::PublicKey(their_pk_b);
-    let (our_pk_b, out_sk_b) = box_::gen_keypair();
-    let key = secretbox::gen_key();
-    let nonce = box_::Nonce([0u8; box_::NONCEBYTES]);
-    let sealed_key = box_::seal(&key.0, &nonce, &their_pk_b, &out_sk_b);
-    (Vec::from(our_pk_b.0).into(), sealed_key.into(), key)
-}
-
-async fn secure_punch_connection(conn: &mut FramedStream, key: &str) -> ResultType<()> {
-    let rs_pk = get_rs_pk(key);
-    let Some(rs_pk) = rs_pk else {
-        bail!("Handshake failed: invalid public key from rendezvous server");
-    };
-    match timeout(READ_TIMEOUT, conn.next()).await? {
-        Some(Ok(bytes)) => {
-            if let Ok(msg_in) = RendezvousMessage::parse_from_bytes(&bytes) {
-                match msg_in.union {
-                    Some(rendezvous_message::Union::KeyExchange(ex)) => {
-                        if ex.keys.len() != 1 {
-                            bail!("Handshake failed: invalid key exchange message");
-                        }
-                        let their_pk_b = sign::verify(&ex.keys[0], &rs_pk)
-                            .map_err(|_| anyhow!("Signature mismatch in key exchange"))?;
-                        let (asymmetric_value, symmetric_value, key) = create_symmetric_key_msg(
-                            get_pk(&their_pk_b)
-                                .context("Wrong their public length in key exchange")?,
-                        );
-                        let mut msg_out = RendezvousMessage::new();
-                        msg_out.set_key_exchange(KeyExchange {
-                            keys: vec![asymmetric_value, symmetric_value],
-                            ..Default::default()
-                        });
-                        timeout(CONNECT_TIMEOUT, conn.send(&msg_out)).await??;
-                        conn.set_key(key);
-                        log::info!("Token secured");
-                    }
-                    _ => {}
-                }
-            }
-        }
-        _ => {}
-    }
-    Ok(())
 }

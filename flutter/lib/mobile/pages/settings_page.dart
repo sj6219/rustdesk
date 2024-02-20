@@ -221,6 +221,17 @@ class _SettingsState extends State<SettingsPage> with WidgetsBindingObserver {
     final List<AbstractSettingsTile> enhancementsTiles = [];
     final List<AbstractSettingsTile> shareScreenTiles = [
       SettingsTile.switchTile(
+        title: Text(translate('enable-2fa-title')),
+        initialValue: bind.mainHasValid2FaSync(),
+        onToggle: (_) async {
+          update() async {
+            setState(() {});
+          }
+
+          change2fa(callback: update);
+        },
+      ),
+      SettingsTile.switchTile(
         title: Text(translate('Deny LAN discovery')),
         initialValue: _denyLANDiscovery,
         onToggle: (v) async {
@@ -708,7 +719,7 @@ class ScanButton extends StatelessWidget {
 }
 
 class _DisplayPage extends StatefulWidget {
-  const _DisplayPage({super.key});
+  const _DisplayPage();
 
   @override
   State<_DisplayPage> createState() => __DisplayPageState();

@@ -142,6 +142,14 @@ pub fn get_license() -> String {
 }
 
 #[inline]
+pub fn refresh_options() {
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        *OPTIONS.lock().unwrap() = Config::get_options();
+    }
+}
+
+#[inline]
 pub fn get_option<T: AsRef<str>>(key: T) -> String {
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
@@ -238,12 +246,6 @@ pub fn set_peer_option(id: String, name: String, value: String) {
         c.options.insert(name, value);
     }
     c.store(&id);
-}
-
-#[inline]
-pub fn using_public_server() -> bool {
-    option_env!("RENDEZVOUS_SERVER").unwrap_or("").is_empty()
-        && crate::get_custom_rendezvous_server(get_option("custom-rendezvous-server")).is_empty()
 }
 
 #[inline]
@@ -838,7 +840,7 @@ pub fn has_gpucodec() -> bool {
 #[cfg(feature = "flutter")]
 #[inline]
 pub fn supported_hwdecodings() -> (bool, bool) {
-    let decoding = scrap::codec::Decoder::supported_decodings(None, true, None);
+    let decoding = scrap::codec::Decoder::supported_decodings(None, true, None, &vec![]);
     #[allow(unused_mut)]
     let (mut h264, mut h265) = (decoding.ability_h264 > 0, decoding.ability_h265 > 0);
     #[cfg(feature = "gpucodec")]
@@ -1036,7 +1038,7 @@ async fn check_connect_status_(reconnect: bool, rx: mpsc::UnboundedReceiver<ipc:
 
     loop {
         if let Ok(mut c) = ipc::connect(1000, "").await {
-            let mut timer = time::interval(time::Duration::from_secs(1));
+            let mut timer = crate::rustdesk_interval(time::interval(time::Duration::from_secs(1)));
             loop {
                 tokio::select! {
                     res = c.next() => {
@@ -1292,4 +1294,21 @@ pub fn support_remove_wallpaper() -> bool {
     return crate::platform::WallPaperRemover::support();
     #[cfg(not(any(target_os = "windows", target_os = "linux")))]
     return false;
+}
+
+pub fn has_valid_2fa() -> bool {
+    let raw = get_option("2fa");
+    crate::auth_2fa::get_2fa(Some(raw)).is_some()
+}
+
+pub fn generate2fa() -> String {
+    crate::auth_2fa::generate2fa()
+}
+
+pub fn verify2fa(code: String) -> bool {
+    let res = crate::auth_2fa::verify2fa(code);
+    if res {
+        refresh_options();
+    }
+    res
 }
