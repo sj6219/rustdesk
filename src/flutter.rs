@@ -826,6 +826,24 @@ impl InvokeUiSession for FlutterHandler {
         )
     }
 
+    fn set_multiple_windows_session(&self, sessions: Vec<WindowsSession>) {
+        let mut msg_vec = Vec::new();
+        let mut sessions = sessions;
+        for d in sessions.drain(..) {
+            let mut h: HashMap<&str, String> = Default::default();
+            h.insert("sid", d.sid.to_string());
+            h.insert("name", d.name);
+            msg_vec.push(h);
+        }
+        self.push_event(
+            "set_multiple_windows_session",
+            vec![(
+                "windows_sessions",
+                &serde_json::ser::to_string(&msg_vec).unwrap_or("".to_owned()),
+            )],
+        );
+    }
+
     fn on_connected(&self, _conn_type: ConnType) {}
 
     fn msgbox(&self, msgtype: &str, title: &str, text: &str, link: &str, retry: bool) {
@@ -1772,13 +1790,10 @@ pub mod sessions {
 
     #[inline]
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    pub fn other_sessions_running(peer_id: String, conn_type: ConnType) -> bool {
-        SESSIONS
-            .read()
-            .unwrap()
-            .get(&(peer_id, conn_type))
-            .map(|s| s.session_handlers.read().unwrap().len() != 0)
-            .unwrap_or(false)
+    pub fn has_sessions_running(conn_type: ConnType) -> bool {
+        SESSIONS.read().unwrap().iter().any(|((_, r#type), s)| {
+            *r#type == conn_type && s.session_handlers.read().unwrap().len() != 0
+        })
     }
 }
 
