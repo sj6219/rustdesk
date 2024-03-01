@@ -11,8 +11,7 @@ mv ./rustdesk-1.2.4-aarch64-windows-sciter-install.exe ./rustdesk-1.2.4-x64-wind
 
 Push-Location flutter ; flutter pub get ; Pop-Location
 ~/.cargo/bin/flutter_rust_bridge_codegen --rust-input ./src/flutter_ffi.rs --dart-output ./flutter/lib/generated_bridge.dart
-rm -r .\flutter\build\windows\runner\Release\RustDeskIddDriver
-python3 ./build.py --portable --hwcodec --flutter --feature IddDriver
+python3 ./build.py --portable --hwcodec --flutter --gpucodec 
 
 %comspec% /k "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsamd64_arm64.bat" 
 rustup update
