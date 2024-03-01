@@ -2,6 +2,7 @@ use hbb_common::regex::Regex;
 use std::ops::Deref;
 
 mod ar;
+mod bg;
 mod ca;
 mod cn;
 mod cs;
@@ -11,6 +12,7 @@ mod el;
 mod en;
 mod eo;
 mod es;
+mod et;
 mod fa;
 mod fr;
 mod hu;
@@ -49,7 +51,9 @@ pub const LANGS: &[(&str, &str)] = &[
     ("zh-tw", "繁體中文"),
     ("pt", "Português"),
     ("es", "Español"),
+    ("et", "Eesti keel"),
     ("hu", "Magyar"),
+    ("bg", "Български"),
     ("ru", "Русский"),
     ("sk", "Slovenčina"),
     ("id", "Indonesia"),
@@ -114,6 +118,7 @@ pub fn translate_locale(name: String, locale: &str) -> String {
         "nb" => nb::T.deref(),
         "nl" => nl::T.deref(),
         "es" => es::T.deref(),
+        "et" => et::T.deref(),
         "hu" => hu::T.deref(),
         "ru" => ru::T.deref(),
         "eo" => eo::T.deref(),
@@ -142,6 +147,7 @@ pub fn translate_locale(name: String, locale: &str) -> String {
         "lt" => lt::T.deref(),
         "lv" => lv::T.deref(),
         "ar" => ar::T.deref(),
+        "bg" => bg::T.deref(),
         _ => en::T.deref(),
     };
     let (name, placeholder_value) = extract_placeholder(&name);
@@ -149,6 +155,11 @@ pub fn translate_locale(name: String, locale: &str) -> String {
         let mut s = s.to_string();
         if let Some(value) = placeholder_value.as_ref() {
             s = s.replace("{}", &value);
+        }
+        if !crate::is_rustdesk() {
+            if s.contains("RustDesk") && !name.starts_with("upgrade_rustdesk_server_pro") {
+                s = s.replace("RustDesk", &crate::get_app_name());
+            }
         }
         s
     };

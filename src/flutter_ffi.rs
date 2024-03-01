@@ -1,8 +1,9 @@
 use crate::{
     client::file_trait::FileManager,
-    common::is_keyboard_mode_supported,
-    common::make_fd_to_json,
-    flutter::{self, session_add, session_add_existed, session_start_, sessions},
+    common::{is_keyboard_mode_supported, make_fd_to_json},
+    flutter::{
+        self, session_add, session_add_existed, session_start_, sessions, try_sync_peer_option,
+    },
     input::*,
     ui_interface::{self, *},
 };
@@ -77,6 +78,7 @@ pub fn stop_global_event_stream(app_type: String) {
 pub enum EventToUI {
     Event(String),
     Rgba(usize),
+    Texture(usize),
 }
 
 pub fn host_stop_system_key_propagate(_stopped: bool) {
@@ -179,6 +181,12 @@ pub fn session_login(
     }
 }
 
+pub fn session_send2fa(session_id: SessionID, code: String) {
+    if let Some(session) = sessions::get_session_by_session_id(&session_id) {
+        session.send2fa(code);
+    }
+}
+
 pub fn session_close(session_id: SessionID) {
     if let Some(session) = sessions::remove_session_by_session_id(&session_id) {
         session.close_event_stream(session_id);
@@ -221,6 +229,7 @@ pub fn session_toggle_option(session_id: SessionID, value: String) {
     if let Some(session) = sessions::get_session_by_session_id(&session_id) {
         log::warn!("toggle option {}", &value);
         session.toggle_option(value.clone());
+        try_sync_peer_option(&session, &session_id, &value, None);
     }
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     if sessions::get_session_by_session_id(&session_id).is_some() && value == "disable-clipboard" {
@@ -333,6 +342,7 @@ pub fn session_set_keyboard_mode(session_id: SessionID, value: String) {
     if let Some(session) = sessions::get_session_by_session_id(&session_id) {
         session.save_keyboard_mode(value.clone());
         _mode_updated = true;
+        try_sync_peer_option(&session, &session_id, "keyboard_mode", None);
     }
     #[cfg(windows)]
     if _mode_updated {
@@ -340,12 +350,13 @@ pub fn session_set_keyboard_mode(session_id: SessionID, value: String) {
     }
 }
 
-pub fn session_get_reverse_mouse_wheel(session_id: SessionID) -> Option<String> {
-    if let Some(session) = sessions::get_session_by_session_id(&session_id) {
+pub fn session_get_reverse_mouse_wheel_sync(session_id: SessionID) -> SyncReturn<Option<String>> {
+    let res = if let Some(session) = sessions::get_session_by_session_id(&session_id) {
         Some(session.get_reverse_mouse_wheel())
     } else {
         None
-    }
+    };
+    SyncReturn(res)
 }
 
 pub fn session_set_reverse_mouse_wheel(session_id: SessionID, value: String) {
@@ -693,6 +704,12 @@ pub fn session_set_size(_session_id: SessionID, _display: usize, _width: usize, 
     super::flutter::session_set_size(_session_id, _display, _width, _height)
 }
 
+pub fn session_send_selected_session_id(session_id: SessionID, sid: String) {
+    if let Some(session) = sessions::get_session_by_session_id(&session_id) {
+        session.send_selected_session_id(sid);
+    }
+}
+
 pub fn main_get_sound_inputs() -> Vec<String> {
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     return get_sound_inputs();
@@ -787,6 +804,10 @@ pub fn main_get_app_name_sync() -> SyncReturn<String> {
     SyncReturn(get_app_name())
 }
 
+pub fn main_uri_prefix_sync() -> SyncReturn<String> {
+    SyncReturn(crate::get_uri_prefix())
+}
+
 pub fn main_get_license() -> String {
     get_license()
 }
@@ -833,7 +854,7 @@ pub fn main_check_connect_status() {
 }
 
 pub fn main_is_using_public_server() -> bool {
-    using_public_server()
+    crate::using_public_server()
 }
 
 pub fn main_discover() {
@@ -870,7 +891,12 @@ pub fn main_get_input_source() -> SyncReturn<String> {
 
 pub fn main_set_input_source(session_id: SessionID, value: String) {
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    change_input_source(session_id, value);
+    {
+        change_input_source(session_id, value);
+        if let Some(session) = sessions::get_session_by_session_id(&session_id) {
+            try_sync_peer_option(&session, &session_id, "input_source", None);
+        }
+    }
 }
 
 pub fn main_get_my_id() -> String {
@@ -1267,6 +1293,10 @@ pub fn main_has_hwcodec() -> SyncReturn<bool> {
     SyncReturn(has_hwcodec())
 }
 
+pub fn main_has_gpucodec() -> SyncReturn<bool> {
+    SyncReturn(has_gpucodec())
+}
+
 pub fn main_supported_hwdecodings() -> SyncReturn<String> {
     let decoding = supported_hwdecodings();
     let msg = HashMap::from([("h264", decoding.0), ("h265", decoding.1)]);
@@ -1583,12 +1613,22 @@ pub fn session_next_rgba(session_id: SessionID, display: usize) -> SyncReturn<()
     SyncReturn(super::flutter::session_next_rgba(session_id, display))
 }
 
-pub fn session_register_texture(
+pub fn session_register_pixelbuffer_texture(
     session_id: SessionID,
     display: usize,
     ptr: usize,
 ) -> SyncReturn<()> {
-    SyncReturn(super::flutter::session_register_texture(
+    SyncReturn(super::flutter::session_register_pixelbuffer_texture(
+        session_id, display, ptr,
+    ))
+}
+
+pub fn session_register_gpu_texture(
+    session_id: SessionID,
+    display: usize,
+    ptr: usize,
+) -> SyncReturn<()> {
+    SyncReturn(super::flutter::session_register_gpu_texture(
         session_id, display, ptr,
     ))
 }
@@ -1637,10 +1677,6 @@ pub fn main_is_can_input_monitoring(prompt: bool) -> SyncReturn<bool> {
 
 pub fn main_is_share_rdp() -> SyncReturn<bool> {
     SyncReturn(is_share_rdp())
-}
-
-pub fn main_is_rdp_service_open() -> SyncReturn<bool> {
-    SyncReturn(is_rdp_service_open())
 }
 
 pub fn main_set_share_rdp(enable: bool) {
@@ -1728,15 +1764,8 @@ pub fn main_hide_docker() -> SyncReturn<bool> {
     SyncReturn(true)
 }
 
-pub fn main_use_texture_render() -> SyncReturn<bool> {
-    #[cfg(not(feature = "flutter_texture_render"))]
-    {
-        SyncReturn(false)
-    }
-    #[cfg(feature = "flutter_texture_render")]
-    {
-        SyncReturn(true)
-    }
+pub fn main_has_pixelbuffer_texture_render() -> SyncReturn<bool> {
+    SyncReturn(cfg!(feature = "flutter_texture_render"))
 }
 
 pub fn main_has_file_clipboard() -> SyncReturn<bool> {
@@ -1748,6 +1777,10 @@ pub fn main_has_file_clipboard() -> SyncReturn<bool> {
         )
     ));
     SyncReturn(ret)
+}
+
+pub fn main_has_gpu_texture_render() -> SyncReturn<bool> {
+    SyncReturn(cfg!(feature = "gpucodec"))
 }
 
 pub fn cm_init() {
@@ -1778,6 +1811,10 @@ pub fn main_test_wallpaper(_second: u64) {
 
 pub fn main_support_remove_wallpaper() -> bool {
     support_remove_wallpaper()
+}
+
+pub fn is_qs() -> SyncReturn<bool> {
+    SyncReturn(false)
 }
 
 /// Send a url scheme throught the ipc.
@@ -2001,6 +2038,18 @@ pub fn main_supported_input_source() -> SyncReturn<String> {
                 .unwrap_or_default(),
         )
     }
+}
+
+pub fn main_generate2fa() -> String {
+    generate2fa()
+}
+
+pub fn main_verify2fa(code: String) -> bool {
+    verify2fa(code)
+}
+
+pub fn main_has_valid_2fa_sync() -> SyncReturn<bool> {
+    SyncReturn(has_valid_2fa())
 }
 
 #[cfg(target_os = "android")]

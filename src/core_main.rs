@@ -24,10 +24,11 @@ macro_rules! my_println{
 
 #[inline]
 fn is_empty_uni_link(arg: &str) -> bool {
-    if !arg.starts_with("rustdesk://") {
+    let prefix = crate::get_uri_prefix();
+    if !arg.starts_with(&prefix) {
         return false;
     }
-    arg["rustdesk://".len()..].chars().all(|c| c == '/')
+    arg[prefix.len()..].chars().all(|c| c == '/')
 }
 
 /// shared by flutter and sciter main function
@@ -92,7 +93,11 @@ pub fn core_main() -> Option<Vec<String>> {
             ]
             .contains(&arg.as_str())
             {
-                _is_flutter_invoke_new_connection = true;
+                if crate::flutter_ffi::is_qs().0 {
+                    return None;
+                } else {
+                    _is_flutter_invoke_new_connection = true;
+                }
             }
             if arg == "--elevate" {
                 _is_elevate = true;
@@ -166,7 +171,7 @@ pub fn core_main() -> Option<Vec<String>> {
 
     // linux uni (url) go here.
     #[cfg(all(target_os = "linux", feature = "flutter"))]
-    if args.len() > 0 && args[0].starts_with("rustdesk:") {
+    if args.len() > 0 && args[0].starts_with(&crate::get_uri_prefix()) {
         return try_send_by_dbus(args[0].clone());
     }
 
@@ -214,14 +219,17 @@ pub fn core_main() -> Option<Vec<String>> {
                 return None;
             } else if args[0] == "--silent-install" {
                 let res = platform::install_me(
-                    "desktopicon startmenu driverCert",
+                    "desktopicon startmenu",
                     "".to_owned(),
                     true,
                     args.len() > 1,
                 );
                 let text = match res {
                     Ok(_) => translate("Installation Successful!".to_string()),
-                    Err(_) => translate("Installation failed!".to_string()),
+                    Err(err) => {
+                        println!("Failed with error: {err}");
+                        translate("Installation failed!".to_string())
+                    }
                 };
                 Toast::new(Toast::POWERSHELL_APP_ID)
                     .title(&hbb_common::config::APP_NAME.read().unwrap())
@@ -368,7 +376,7 @@ pub fn core_main() -> Option<Vec<String>> {
                     } else {
                         format!("{}.exe", args[1])
                     };
-                    if let Ok(lic) = crate::license::get_license_from_string(&name) {
+                    if let Ok(lic) = crate::custom_server::get_custom_server_from_string(&name) {
                         if !lic.host.is_empty() {
                             crate::ui_interface::set_option("key".into(), lic.key);
                             crate::ui_interface::set_option(
@@ -376,6 +384,7 @@ pub fn core_main() -> Option<Vec<String>> {
                                 lic.host,
                             );
                             crate::ui_interface::set_option("api-server".into(), lic.api);
+                            crate::ui_interface::set_option("relay-server".into(), lic.relay);
                         }
                     }
                 } else {
@@ -451,7 +460,11 @@ pub fn core_main() -> Option<Vec<String>> {
             return None;
         } else if args[0] == "--check-hwcodec-config" {
             #[cfg(feature = "hwcodec")]
-            scrap::hwcodec::check_config();
+            scrap::hwcodec::check_available_hwcodec();
+            return None;
+        } else if args[0] == "--check-gpucodec-config" {
+            #[cfg(feature = "gpucodec")]
+            scrap::gpucodec::check_available_gpucodec();
             return None;
         } else if args[0] == "--cm" {
             // call connection manager to establish connections
@@ -574,7 +587,14 @@ fn core_main_invoke_new_connection(mut args: std::env::Args) -> Option<Vec<Strin
             }
             let params = param_array.join("&");
             let params_flag = if params.is_empty() { "" } else { "?" };
-            uni_links = format!("rustdesk://{}/{}{}{}", authority, id, params_flag, params);
+            uni_links = format!(
+                "{}{}/{}{}{}",
+                crate::get_uri_prefix(),
+                authority,
+                id,
+                params_flag,
+                params
+            );
         }
     }
     if uni_links.is_empty() {
@@ -589,7 +609,7 @@ fn core_main_invoke_new_connection(mut args: std::env::Args) -> Option<Vec<Strin
         use winapi::um::winuser::WM_USER;
         let res = crate::platform::send_message_to_hnwd(
             "FLUTTER_RUNNER_WIN32_WINDOW",
-            "RustDesk",
+            &crate::get_app_name(),
             (WM_USER + 2) as _, // referred from unilinks desktop pub
             uni_links.as_str(),
             false,

@@ -214,6 +214,7 @@ pub fn call_main_service_set_clip_text(name: &str) -> JniResult<()> {
             &[JValue::Object(&JObject::from(name))],
         )?;
         return Ok(());
+    }
     else {
         return Err(JniError::ThrowFailed(-1));
     }

@@ -1,6 +1,8 @@
 use std::{
+    borrow::Cow,
     future::Future,
     sync::{Arc, Mutex, RwLock},
+    task::Poll,
 };
 
 #[derive(Debug, Eq, PartialEq)]
@@ -10,13 +12,6 @@ pub enum GrabState {
     Wait,
     Exit,
 }
-
-#[cfg(not(any(
-    target_os = "android",
-    target_os = "ios",
-    all(target_os = "linux", feature = "unix-file-copy-paste")
-)))]
-pub use arboard::Clipboard as ClipboardContext;
 
 #[cfg(all(target_os = "linux", feature = "unix-file-copy-paste"))]
 static X11_CLIPBOARD: once_cell::sync::OnceCell<x11_clipboard::Clipboard> =
@@ -128,16 +123,25 @@ impl ClipboardContext {
 use hbb_common::compress::decompress;
 use hbb_common::{
     allow_err,
+    anyhow::{anyhow, Context},
+    bail,
+    bytes::Bytes,
     compress::compress as compress_func,
     config::{self, Config, CONNECT_TIMEOUT, READ_TIMEOUT},
+    futures_util::future::poll_fn,
     get_version_number, log,
     message_proto::*,
-    protobuf::Enum,
-    protobuf::Message as _,
+    protobuf::{Enum, Message as _},
     rendezvous_proto::*,
     socket_client,
+    sodiumoxide::crypto::{box_, secretbox, sign},
     tcp::FramedStream,
-    tokio, ResultType,
+    timeout,
+    tokio::{
+        self,
+        time::{Duration, Instant, Interval},
+    },
+    ResultType,
 };
 // #[cfg(any(target_os = "android", target_os = "ios", feature = "cli"))]
 use hbb_common::{config::RENDEZVOUS_PORT, futures::future::join_all};
@@ -285,14 +289,18 @@ pub fn create_clipboard_msg(content: String) -> Message {
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub fn check_clipboard(
-    ctx: &mut ClipboardContext,
+    ctx: &mut Option<ClipboardContext>,
     old: Option<&Arc<Mutex<String>>>,
 ) -> Option<Message> {
+    if ctx.is_none() {
+        *ctx = ClipboardContext::new().ok();
+    }
+    let ctx2 = ctx.as_mut()?;
     let side = if old.is_none() { "host" } else { "client" };
     let old = if let Some(old) = old { old } else { &CONTENT };
     let content = {
         let _lock = ARBOARD_MTX.lock().unwrap();
-        ctx.get_text()
+        ctx2.get_text()
     };
     if let Ok(content) = content {
         if content.len() < 2_000_000 && !content.is_empty() {
@@ -922,7 +930,10 @@ pub fn get_sysinfo() -> serde_json::Value {
     });
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
-        out["username"] = json!(crate::platform::get_active_username());
+        let username = crate::platform::get_active_username();
+        if !username.is_empty() && (!cfg!(windows) || username != "SYSTEM") {
+            out["username"] = json!(username);
+        }
     }
     out
 }
@@ -988,8 +999,19 @@ async fn check_software_update_() -> hbb_common::ResultType<()> {
     Ok(())
 }
 
+#[inline]
 pub fn get_app_name() -> String {
     hbb_common::config::APP_NAME.read().unwrap().clone()
+}
+
+#[inline]
+pub fn is_rustdesk() -> bool {
+    hbb_common::config::APP_NAME.read().unwrap().eq("RustDesk")
+}
+
+#[inline]
+pub fn get_uri_prefix() -> String {
+    format!("{}://", get_app_name().to_lowercase())
 }
 
 #[cfg(target_os = "macos")]
@@ -1093,7 +1115,10 @@ pub fn make_privacy_mode_msg_with_details(
 }
 
 #[inline]
-pub fn make_privacy_mode_msg(state: back_notification::PrivacyModeState, impl_key: String) -> Message {
+pub fn make_privacy_mode_msg(
+    state: back_notification::PrivacyModeState,
+    impl_key: String,
+) -> Message {
     make_privacy_mode_msg_with_details(state, "".to_owned(), impl_key)
 }
 
@@ -1182,7 +1207,7 @@ pub async fn get_key(sync: bool) -> String {
         let mut options = crate::ipc::get_options_async().await;
         options.remove("key").unwrap_or_default()
     };
-    if key.is_empty() && !option_env!("RENDEZVOUS_SERVER").unwrap_or("").is_empty() {
+    if key.is_empty() {
         key = config::RS_PUB_KEY.to_owned();
     }
     key
@@ -1260,4 +1285,368 @@ pub fn check_process(arg: &str, same_uid: bool) -> bool {
         }
     }
     false
+}
+
+pub async fn secure_tcp(conn: &mut FramedStream, key: &str) -> ResultType<()> {
+    let rs_pk = get_rs_pk(key);
+    let Some(rs_pk) = rs_pk else {
+        bail!("Handshake failed: invalid public key from rendezvous server");
+    };
+    match timeout(READ_TIMEOUT, conn.next()).await? {
+        Some(Ok(bytes)) => {
+            if let Ok(msg_in) = RendezvousMessage::parse_from_bytes(&bytes) {
+                match msg_in.union {
+                    Some(rendezvous_message::Union::KeyExchange(ex)) => {
+                        if ex.keys.len() != 1 {
+                            bail!("Handshake failed: invalid key exchange message");
+                        }
+                        let their_pk_b = sign::verify(&ex.keys[0], &rs_pk)
+                            .map_err(|_| anyhow!("Signature mismatch in key exchange"))?;
+                        let (asymmetric_value, symmetric_value, key) = create_symmetric_key_msg(
+                            get_pk(&their_pk_b)
+                                .context("Wrong their public length in key exchange")?,
+                        );
+                        let mut msg_out = RendezvousMessage::new();
+                        msg_out.set_key_exchange(KeyExchange {
+                            keys: vec![asymmetric_value, symmetric_value],
+                            ..Default::default()
+                        });
+                        timeout(CONNECT_TIMEOUT, conn.send(&msg_out)).await??;
+                        conn.set_key(key);
+                        log::info!("Connection secured");
+                    }
+                    _ => {}
+                }
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+#[inline]
+fn get_pk(pk: &[u8]) -> Option<[u8; 32]> {
+    if pk.len() == 32 {
+        let mut tmp = [0u8; 32];
+        tmp[..].copy_from_slice(&pk);
+        Some(tmp)
+    } else {
+        None
+    }
+}
+
+#[inline]
+pub fn get_rs_pk(str_base64: &str) -> Option<sign::PublicKey> {
+    if let Ok(pk) = crate::decode64(str_base64) {
+        get_pk(&pk).map(|x| sign::PublicKey(x))
+    } else {
+        None
+    }
+}
+
+pub fn decode_id_pk(signed: &[u8], key: &sign::PublicKey) -> ResultType<(String, [u8; 32])> {
+    let res = IdPk::parse_from_bytes(
+        &sign::verify(signed, key).map_err(|_| anyhow!("Signature mismatch"))?,
+    )?;
+    if let Some(pk) = get_pk(&res.pk) {
+        Ok((res.id, pk))
+    } else {
+        bail!("Wrong their public length");
+    }
+}
+
+pub fn create_symmetric_key_msg(their_pk_b: [u8; 32]) -> (Bytes, Bytes, secretbox::Key) {
+    let their_pk_b = box_::PublicKey(their_pk_b);
+    let (our_pk_b, out_sk_b) = box_::gen_keypair();
+    let key = secretbox::gen_key();
+    let nonce = box_::Nonce([0u8; box_::NONCEBYTES]);
+    let sealed_key = box_::seal(&key.0, &nonce, &their_pk_b, &out_sk_b);
+    (Vec::from(our_pk_b.0).into(), sealed_key.into(), key)
+}
+
+#[inline]
+pub fn using_public_server() -> bool {
+    option_env!("RENDEZVOUS_SERVER").unwrap_or("").is_empty()
+        && crate::get_custom_rendezvous_server(get_option("custom-rendezvous-server")).is_empty()
+}
+
+pub struct ThrottledInterval {
+    interval: Interval,
+    last_tick: Instant,
+    min_interval: Duration,
+}
+
+impl ThrottledInterval {
+    pub fn new(i: Interval) -> ThrottledInterval {
+        let period = i.period();
+        ThrottledInterval {
+            interval: i,
+            last_tick: Instant::now() - period * 2,
+            min_interval: Duration::from_secs_f64(period.as_secs_f64() * 0.9),
+        }
+    }
+
+    pub async fn tick(&mut self) -> Instant {
+        let instant = poll_fn(|cx| self.poll_tick(cx));
+        instant.await
+    }
+
+    pub fn poll_tick(&mut self, cx: &mut std::task::Context<'_>) -> Poll<Instant> {
+        match self.interval.poll_tick(cx) {
+            Poll::Ready(instant) => {
+                if self.last_tick.elapsed() >= self.min_interval {
+                    self.last_tick = Instant::now();
+                    Poll::Ready(instant)
+                } else {
+                    // This call is required since tokio 1.27
+                    cx.waker().wake_by_ref();
+                    Poll::Pending
+                }
+            }
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
+pub type RustDeskInterval = ThrottledInterval;
+
+#[inline]
+pub fn rustdesk_interval(i: Interval) -> ThrottledInterval {
+    ThrottledInterval::new(i)
+}
+
+#[cfg(not(any(
+    target_os = "android",
+    target_os = "ios",
+    all(target_os = "linux", feature = "unix-file-copy-paste")
+)))]
+pub struct ClipboardContext(arboard::Clipboard);
+
+#[cfg(not(any(
+    target_os = "android",
+    target_os = "ios",
+    all(target_os = "linux", feature = "unix-file-copy-paste")
+)))]
+impl ClipboardContext {
+    #[inline]
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
+    pub fn new() -> ResultType<ClipboardContext> {
+        Ok(ClipboardContext(arboard::Clipboard::new()?))
+    }
+
+    #[cfg(target_os = "linux")]
+    pub fn new() -> ResultType<ClipboardContext> {
+        let dur = arboard::Clipboard::get_x11_server_conn_timeout();
+        let dur_bak = dur;
+        let _restore_timeout_on_ret = SimpleCallOnReturn {
+            b: true,
+            f: Box::new(move || arboard::Clipboard::set_x11_server_conn_timeout(dur_bak)),
+        };
+
+        for i in 1..4 {
+            arboard::Clipboard::set_x11_server_conn_timeout(dur * i);
+            match arboard::Clipboard::new() {
+                Ok(c) => return Ok(ClipboardContext(c)),
+                Err(arboard::Error::X11ServerConnTimeout) => continue,
+                Err(err) => return Err(err.into()),
+            }
+        }
+        bail!("Failed to create clipboard context, timeout");
+    }
+
+    #[inline]
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
+    pub fn get_text(&mut self) -> ResultType<String> {
+        Ok(self.0.get_text()?)
+    }
+
+    #[cfg(target_os = "linux")]
+    pub fn get_text(&mut self) -> ResultType<String> {
+        let dur = arboard::Clipboard::get_x11_server_conn_timeout();
+        let dur_bak = dur;
+        let _restore_timeout_on_ret = SimpleCallOnReturn {
+            b: true,
+            f: Box::new(move || arboard::Clipboard::set_x11_server_conn_timeout(dur_bak)),
+        };
+
+        for i in 1..4 {
+            arboard::Clipboard::set_x11_server_conn_timeout(dur * i);
+            match self.0.get_text() {
+                Ok(s) => return Ok(s),
+                Err(arboard::Error::X11ServerConnTimeout) => continue,
+                Err(err) => return Err(err.into()),
+            }
+        }
+        bail!("Failed to get text, timeout");
+    }
+
+    #[inline]
+    pub fn set_text<'a, T: Into<Cow<'a, str>>>(&mut self, text: T) -> ResultType<()> {
+        self.0.set_text(text)?;
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::{format::StrftimeItems, Local};
+    use hbb_common::tokio::{
+        self,
+        time::{interval, interval_at, sleep, Duration, Instant, Interval},
+    };
+    use std::collections::HashSet;
+
+    #[inline]
+    fn now_time_string() -> String {
+        let format = StrftimeItems::new("%Y-%m-%d %H:%M:%S");
+        Local::now().format_with_items(format).to_string()
+    }
+
+    fn interval_maker() -> Interval {
+        interval(Duration::from_secs(1))
+    }
+
+    fn interval_at_maker() -> Interval {
+        interval_at(
+            Instant::now() + Duration::from_secs(1),
+            Duration::from_secs(1),
+        )
+    }
+
+    // ThrottledInterval tick at the same time as tokio interval, if no sleeps
+    #[allow(non_snake_case)]
+    #[tokio::test]
+    async fn test_RustDesk_interval() {
+        let base_intervals = [interval_maker, interval_at_maker];
+        for maker in base_intervals.into_iter() {
+            let mut tokio_timer = maker();
+            let mut tokio_times = Vec::new();
+            let mut timer = rustdesk_interval(maker());
+            let mut times = Vec::new();
+            loop {
+                tokio::select! {
+                    _ = timer.tick() => {
+                        if tokio_times.len() >= 10 && times.len() >= 10 {
+                            break;
+                        }
+                        times.push(now_time_string());
+                    }
+                    _ = tokio_timer.tick() => {
+                        if tokio_times.len() >= 10 && times.len() >= 10 {
+                            break;
+                        }
+                        tokio_times.push(now_time_string());
+                    }
+                }
+            }
+            assert_eq!(times, tokio_times);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_tokio_time_interval_sleep() {
+        let mut timer = interval_maker();
+        let mut times = Vec::new();
+        sleep(Duration::from_secs(3)).await;
+        loop {
+            tokio::select! {
+                _ = timer.tick() => {
+                    times.push(now_time_string());
+                    if times.len() == 5 {
+                        break;
+                    }
+                }
+            }
+        }
+        let times2: HashSet<String> = HashSet::from_iter(times.clone());
+        assert_eq!(times.len(), times2.len() + 3);
+    }
+
+    // ThrottledInterval tick less times than tokio interval, if there're sleeps
+    #[allow(non_snake_case)]
+    #[tokio::test]
+    async fn test_RustDesk_interval_sleep() {
+        let base_intervals = [interval_maker, interval_at_maker];
+        for maker in base_intervals.into_iter() {
+            let mut timer = rustdesk_interval(maker());
+            let mut times = Vec::new();
+            sleep(Duration::from_secs(3)).await;
+            loop {
+                tokio::select! {
+                    _ = timer.tick() => {
+                        times.push(now_time_string());
+                        if times.len() == 5 {
+                            break;
+                        }
+                    }
+                }
+            }
+            // No mutliple ticks in the `interval` time.
+            // Values in "times" are unique and are less than normal tokio interval.
+            // See previous test (test_tokio_time_interval_sleep) for comparison.
+            let times2: HashSet<String> = HashSet::from_iter(times.clone());
+            assert_eq!(times.len(), times2.len());
+        }
+    }
+
+    #[test]
+    fn test_duration_multiplication() {
+        let dur = Duration::from_secs(1);
+
+        assert_eq!(dur * 2, Duration::from_secs(2));
+        assert_eq!(
+            Duration::from_secs_f64(dur.as_secs_f64() * 0.9),
+            Duration::from_millis(900)
+        );
+        assert_eq!(
+            Duration::from_secs_f64(dur.as_secs_f64() * 0.923),
+            Duration::from_millis(923)
+        );
+        assert_eq!(
+            Duration::from_secs_f64(dur.as_secs_f64() * 0.923 * 1e-3),
+            Duration::from_micros(923)
+        );
+        assert_eq!(
+            Duration::from_secs_f64(dur.as_secs_f64() * 0.923 * 1e-6),
+            Duration::from_nanos(923)
+        );
+        assert_eq!(
+            Duration::from_secs_f64(dur.as_secs_f64() * 0.923 * 1e-9),
+            Duration::from_nanos(1)
+        );
+        assert_eq!(
+            Duration::from_secs_f64(dur.as_secs_f64() * 0.5 * 1e-9),
+            Duration::from_nanos(1)
+        );
+        assert_eq!(
+            Duration::from_secs_f64(dur.as_secs_f64() * 0.499 * 1e-9),
+            Duration::from_nanos(0)
+        );
+    }
+
+    #[tokio::test]
+    #[cfg(not(any(
+        target_os = "android",
+        target_os = "ios",
+        all(target_os = "linux", feature = "unix-file-copy-paste")
+    )))]
+    async fn test_clipboard_context() {
+        #[cfg(target_os = "linux")]
+        let dur = {
+            let dur = Duration::from_micros(500);
+            arboard::Clipboard::set_x11_server_conn_timeout(dur);
+            dur
+        };
+
+        let _ctx = ClipboardContext::new();
+        #[cfg(target_os = "linux")]
+        {
+            assert_eq!(
+                arboard::Clipboard::get_x11_server_conn_timeout(),
+                dur,
+                "Failed to restore x11 server conn timeout"
+            );
+        }
+    }
 }

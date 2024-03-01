@@ -13,7 +13,6 @@ import 'package:flutter_hbb/desktop/pages/remote_page.dart';
 import 'package:flutter_hbb/main.dart';
 import 'package:flutter_hbb/models/platform_model.dart';
 import 'package:flutter_hbb/models/state_model.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
 import 'package:get/get_rx/src/rx_workers/utils/debouncer.dart';
 import 'package:scroll_pos/scroll_pos.dart';
@@ -151,20 +150,22 @@ class DesktopTabController {
       return false;
     }
     state.update((val) {
-      val!.selected = index;
-      Future.delayed(Duration(milliseconds: 100), (() {
-        if (val.pageController.hasClients) {
-          val.pageController.jumpToPage(index);
-        }
-        val.scrollController.itemCount = val.tabs.length;
-        if (val.scrollController.hasClients &&
-            val.scrollController.itemCount > index) {
-          val.scrollController
-              .scrollToItem(index, center: false, animate: true);
-        }
-      }));
+      if (val != null) {
+        val.selected = index;
+        Future.delayed(Duration(milliseconds: 100), (() {
+          if (val.pageController.hasClients) {
+            val.pageController.jumpToPage(index);
+          }
+          val.scrollController.itemCount = val.tabs.length;
+          if (val.scrollController.hasClients &&
+              val.scrollController.itemCount > index) {
+            val.scrollController
+                .scrollToItem(index, center: false, animate: true);
+          }
+        }));
+      }
     });
-    if (callOnSelected) {
+    if ((isDesktop && bind.isQs()) || callOnSelected) {
       if (state.value.tabs.length > index) {
         final key = state.value.tabs[index].key;
         onSelected?.call(key);
@@ -397,12 +398,9 @@ class DesktopTab extends StatelessWidget {
                       offstage: kUseCompatibleUiMode || Platform.isMacOS,
                       child: Row(children: [
                         Offstage(
-                            offstage: !showLogo,
-                            child: SvgPicture.asset(
-                              'assets/logo.svg',
-                              width: 16,
-                              height: 16,
-                            )),
+                          offstage: !showLogo,
+                          child: loadLogo(16),
+                        ),
                         Offstage(
                             offstage: !showTitle,
                             child: const Text(
