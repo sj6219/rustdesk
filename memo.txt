@@ -103,7 +103,7 @@ ring = { git = "https://github.com/sj6219/ring", branch = "0.16.20_alpha" }
 adb shell dumpsys package com.carriez.flutter_hbb
 objdump -T ~/rustdesk/target/aarch64-linux-android/release/liblibrustdesk.so 
 
-cat /Users/sjpark/Library/Android/sdk/ndk/22.0.7026061/toolchains/llvm/prebuilt/darwin-x86_64/lib64/clang/11.0.5/lib/linux/aarch64/lldb-server | adb shell sh -c 'cat > /data/local/tmp/lldb-server && chmod 755 /data/local/tmp/lldb-server'
+cat /Users/sjpark/Library/Android/sdk/ndk/26.1.10909125/toolchains/llvm/prebuilt/darwin-x86_64/lib/clang/17.0.2/lib/linux/aarch64/lldb-server | adb shell sh -c 'cat > /data/local/tmp/lldb-server && chmod 755 /data/local/tmp/lldb-server'
 adb shell run-as com.carriez.flutter_hbb mkdir -p /data/data/com.carriez.flutter_hbb/lldb/bin/
 adb shell "cat /data/local/tmp/lldb-server | run-as com.carriez.flutter_hbb sh -c 'cat > /data/data/com.carriez.flutter_hbb/lldb/bin/lldb-server && chmod 755 /data/data/com.carriez.flutter_hbb/lldb/bin/lldb-server'"
 
@@ -111,7 +111,8 @@ adb shell ps -e -o PID -o NAME | grep com.carriez.flutter_hbb
 adb forward tcp:10086 tcp:10086
 adb shell run-as com.carriez.flutter_hbb /data/data/com.carriez.flutter_hbb/lldb/bin/lldb-server platform --listen "*:10086" --server 
 
-/Users/sjpark/Library/Android/sdk/ndk/22.0.7026061/toolchains/llvm/prebuilt/darwin-x86_64/bin/lldb
+cd /Users/sjpark/Library/Android/sdk/ndk/26.1.10909125/toolchains/llvm/prebuilt/darwin-x86_64/bin/
+lldb
 platform select remote-android
 platform connect connect://localhost:10086
 attach
