@@ -13,7 +13,6 @@ import 'package:flutter_hbb/desktop/pages/remote_page.dart';
 import 'package:flutter_hbb/main.dart';
 import 'package:flutter_hbb/models/platform_model.dart';
 import 'package:flutter_hbb/models/state_model.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
 import 'package:get/get_rx/src/rx_workers/utils/debouncer.dart';
 import 'package:scroll_pos/scroll_pos.dart';
@@ -166,7 +165,8 @@ class DesktopTabController {
         }));
       }
     });
-    if (callOnSelected) {
+    if ((isDesktop && (bind.isIncomingOnly() || bind.isOutgoingOnly())) ||
+        callOnSelected) {
       if (state.value.tabs.length > index) {
         final key = state.value.tabs[index].key;
         onSelected?.call(key);
@@ -375,7 +375,8 @@ class DesktopTab extends StatelessWidget {
         Expanded(
             child: GestureDetector(
                 // custom double tap handler
-                onTap: showMaximize
+                onTap: !(bind.isIncomingOnly() && isInHomePage()) &&
+                        showMaximize
                     ? () {
                         final current = DateTime.now().millisecondsSinceEpoch;
                         final elapsed = current - _lastClickTime;
@@ -399,12 +400,9 @@ class DesktopTab extends StatelessWidget {
                       offstage: kUseCompatibleUiMode || Platform.isMacOS,
                       child: Row(children: [
                         Offstage(
-                            offstage: !showLogo,
-                            child: SvgPicture.asset(
-                              'assets/logo.svg',
-                              width: 16,
-                              height: 16,
-                            )),
+                          offstage: !showLogo,
+                          child: loadIcon(16),
+                        ),
                         Offstage(
                             offstage: !showTitle,
                             child: const Text(
@@ -694,7 +692,9 @@ class WindowActionPanelState extends State<WindowActionPanel>
                         icon: stateGlobal.isMaximized.isTrue
                             ? IconFont.restore
                             : IconFont.max,
-                        onTap: _toggleMaximize,
+                        onTap: bind.isIncomingOnly() && isInHomePage()
+                            ? null
+                            : _toggleMaximize,
                         isClose: false,
                       ))),
               Offstage(
@@ -1110,7 +1110,7 @@ class _CloseButton extends StatelessWidget {
 class ActionIcon extends StatefulWidget {
   final String? message;
   final IconData icon;
-  final Function() onTap;
+  final GestureTapCallback? onTap;
   final bool isClose;
   final double iconSize;
   final double boxSize;
@@ -1119,7 +1119,7 @@ class ActionIcon extends StatefulWidget {
       {Key? key,
       this.message,
       required this.icon,
-      required this.onTap,
+      this.onTap,
       this.isClose = false,
       this.iconSize = _kActionIconSize,
       this.boxSize = _kTabBarHeight - 1})
@@ -1143,24 +1143,30 @@ class _ActionIconState extends State<ActionIcon> {
     return Tooltip(
       message: widget.message != null ? translate(widget.message!) : "",
       waitDuration: const Duration(seconds: 1),
-      child: Obx(
-        () => InkWell(
-          hoverColor: widget.isClose
-              ? const Color.fromARGB(255, 196, 43, 28)
-              : MyTheme.tabbar(context).hoverColor,
-          onHover: (value) => hover.value = value,
-          onTap: widget.onTap,
-          child: SizedBox(
-            height: widget.boxSize,
-            width: widget.boxSize,
-            child: Icon(
-              widget.icon,
-              color: hover.value && widget.isClose
-                  ? Colors.white
-                  : MyTheme.tabbar(context).unSelectedIconColor,
-              size: widget.iconSize,
-            ),
-          ),
+      child: InkWell(
+        hoverColor: widget.isClose
+            ? const Color.fromARGB(255, 196, 43, 28)
+            : MyTheme.tabbar(context).hoverColor,
+        onHover: (value) => hover.value = value,
+        onTap: widget.onTap,
+        child: SizedBox(
+          height: widget.boxSize,
+          width: widget.boxSize,
+          child: widget.onTap == null
+              ? Icon(
+                  widget.icon,
+                  color: Colors.grey,
+                  size: widget.iconSize,
+                )
+              : Obx(
+                  () => Icon(
+                    widget.icon,
+                    color: hover.value && widget.isClose
+                        ? Colors.white
+                        : MyTheme.tabbar(context).unSelectedIconColor,
+                    size: widget.iconSize,
+                  ),
+                ),
         ),
       ),
     );

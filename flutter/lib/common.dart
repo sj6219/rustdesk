@@ -1,12 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:ffi' hide Size;
 import 'dart:io';
 import 'dart:math';
 
 import 'package:back_button_interceptor/back_button_interceptor.dart';
 import 'package:desktop_multi_window/desktop_multi_window.dart';
-import 'package:ffi/ffi.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -25,7 +23,6 @@ import 'package:get/get.dart';
 import 'package:uni_links/uni_links.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:uuid/uuid.dart';
-import 'package:win32/win32.dart' as win32;
 import 'package:window_manager/window_manager.dart';
 import 'package:window_size/window_size.dart' as window_size;
 
@@ -37,16 +34,24 @@ import 'models/input_model.dart';
 import 'models/model.dart';
 import 'models/platform_model.dart';
 
+import 'package:flutter_hbb/native/win32.dart'
+    if (dart.library.html) 'package:flutter_hbb/web/win32.dart';
+import 'package:flutter_hbb/native/common.dart'
+    if (dart.library.html) 'package:flutter_hbb/web/common.dart';
+
 final globalKey = GlobalKey<NavigatorState>();
 final navigationBarKey = GlobalKey();
 
-final isAndroid = Platform.isAndroid;
-final isIOS = Platform.isIOS;
-final isDesktop = Platform.isWindows || Platform.isMacOS || Platform.isLinux;
-var isWeb = false;
+final isAndroid = isAndroid_;
+final isIOS = isIOS_;
+final isWindows = isWindows_;
+final isMacOS = isMacOS_;
+final isLinux = isLinux_;
+final isDesktop = isDesktop_;
+final isWeb = isWeb_;
 var isWebDesktop = false;
 var isMobile = isAndroid || isIOS;
-var version = "";
+var version = '';
 int androidVersion = 0;
 
 /// only available for Windows target
@@ -326,6 +331,8 @@ class MyTheme {
   );
 
   static ThemeData lightTheme = ThemeData(
+    // https://stackoverflow.com/questions/77537315/after-upgrading-to-flutter-3-16-the-app-bar-background-color-button-size-and
+    useMaterial3: false,
     brightness: Brightness.light,
     hoverColor: Color.fromARGB(255, 224, 224, 224),
     scaffoldBackgroundColor: Colors.white,
@@ -418,6 +425,7 @@ class MyTheme {
     ],
   );
   static ThemeData darkTheme = ThemeData(
+    useMaterial3: false,
     brightness: Brightness.dark,
     hoverColor: Color.fromARGB(255, 45, 46, 53),
     scaffoldBackgroundColor: Color(0xFF18191E),
@@ -1518,6 +1526,12 @@ class LastWindowPosition {
   }
 }
 
+String get windowFramePrefix =>
+    kWindowPrefix +
+    (bind.isIncomingOnly()
+        ? "incoming_"
+        : (bind.isOutgoingOnly() ? "outgoing_" : ""));
+
 /// Save window position and size on exit
 /// Note that windowId must be provided if it's subwindow
 Future<void> saveWindowPosition(WindowType type, {int? windowId}) async {
@@ -1533,7 +1547,7 @@ Future<void> saveWindowPosition(WindowType type, {int? windowId}) async {
       (Platform.isMacOS && stateGlobal.closeOnFullscreen == true);
   setFrameIfMaximized() {
     if (isMaximized) {
-      final pos = bind.getLocalFlutterOption(k: kWindowPrefix + type.name);
+      final pos = bind.getLocalFlutterOption(k: windowFramePrefix + type.name);
       var lpos = LastWindowPosition.loadFromString(pos);
       position = Offset(
           lpos?.offsetWidth ?? position.dx, lpos?.offsetHeight ?? position.dy);
@@ -1543,7 +1557,13 @@ Future<void> saveWindowPosition(WindowType type, {int? windowId}) async {
 
   switch (type) {
     case WindowType.Main:
-      isMaximized = await windowManager.isMaximized();
+      // Checking `bind.isIncomingOnly()` is a simple workaround for MacOS.
+      // `await windowManager.isMaximized()` will always return true
+      // if is not resizable. The reason is unknown.
+      //
+      // `windowManager.setResizable(!bind.isIncomingOnly());` in main.dart
+      isMaximized =
+          bind.isIncomingOnly() ? false : await windowManager.isMaximized();
       position = await windowManager.getPosition();
       sz = await windowManager.getSize();
       setFrameIfMaximized();
@@ -1581,7 +1601,7 @@ Future<void> saveWindowPosition(WindowType type, {int? windowId}) async {
       "Saving frame: $windowId: ${pos.width}/${pos.height}, offset:${pos.offsetWidth}/${pos.offsetHeight}, isMaximized:${pos.isMaximized}, isFullscreen:${pos.isFullscreen}");
 
   await bind.setLocalFlutterOption(
-      k: kWindowPrefix + type.name, v: pos.toString());
+      k: windowFramePrefix + type.name, v: pos.toString());
 
   if (type == WindowType.RemoteDesktop && windowId != null) {
     await _saveSessionWindowPosition(
@@ -1596,7 +1616,7 @@ Future _saveSessionWindowPosition(WindowType windowType, int windowId,
   getPeerPos(String peerId) {
     if (isMaximized) {
       final peerPos = bind.mainGetPeerFlutterOptionSync(
-          id: peerId, k: kWindowPrefix + windowType.name);
+          id: peerId, k: windowFramePrefix + windowType.name);
       var lpos = LastWindowPosition.loadFromString(peerPos);
       return LastWindowPosition(
               lpos?.width ?? pos.offsetWidth,
@@ -1615,7 +1635,7 @@ Future _saveSessionWindowPosition(WindowType windowType, int windowId,
     for (final peerId in remoteList.split(',')) {
       bind.mainSetPeerFlutterOptionSync(
           id: peerId,
-          k: kWindowPrefix + windowType.name,
+          k: windowFramePrefix + windowType.name,
           v: getPeerPos(peerId));
     }
   }
@@ -1733,14 +1753,14 @@ Future<bool> restoreWindowPosition(WindowType type,
     // Because the session may not be read at this time.
     if (desktopType == DesktopType.main) {
       pos = bind.mainGetPeerFlutterOptionSync(
-          id: peerId, k: kWindowPrefix + type.name);
+          id: peerId, k: windowFramePrefix + type.name);
     } else {
       pos = await bind.sessionGetFlutterOptionByPeerId(
-          id: peerId, k: kWindowPrefix + type.name);
+          id: peerId, k: windowFramePrefix + type.name);
     }
     isRemotePeerPos = pos != null;
   }
-  pos ??= bind.getLocalFlutterOption(k: kWindowPrefix + type.name);
+  pos ??= bind.getLocalFlutterOption(k: windowFramePrefix + type.name);
 
   var lpos = LastWindowPosition.loadFromString(pos);
   if (lpos == null) {
@@ -1787,9 +1807,13 @@ Future<bool> restoreWindowPosition(WindowType type,
       }
       if (lpos.isMaximized == true) {
         await restorePos();
-        await windowManager.maximize();
+        if (!(bind.isIncomingOnly() || bind.isOutgoingOnly())) {
+          await windowManager.maximize();
+        }
       } else {
-        await windowManager.setSize(size);
+        if (!bind.isIncomingOnly() || bind.isOutgoingOnly()) {
+          await windowManager.setSize(size);
+        }
         await restorePos();
       }
       return true;
@@ -1886,7 +1910,7 @@ bool handleUriLink({List<String>? cmdArgs, Uri? uri, String? uriString}) {
   if (cmdArgs != null && cmdArgs.isNotEmpty) {
     args = cmdArgs;
     // rustdesk <uri link>
-    if (args[0].startsWith(kUniLinksPrefix)) {
+    if (args[0].startsWith(bind.mainUriPrefixSync())) {
       final uri = Uri.tryParse(args[0]);
       if (uri != null) {
         args = urlLinkToCmdArgs(uri);
@@ -2076,19 +2100,28 @@ List<String>? urlLinkToCmdArgs(Uri uri) {
   return null;
 }
 
-connectMainDesktop(
-  String id, {
-  required bool isFileTransfer,
-  required bool isTcpTunneling,
-  required bool isRDP,
-  bool? forceRelay,
-}) async {
+connectMainDesktop(String id,
+    {required bool isFileTransfer,
+    required bool isTcpTunneling,
+    required bool isRDP,
+    bool? forceRelay,
+    String? password,
+    bool? isSharedPassword}) async {
   if (isFileTransfer) {
-    await rustDeskWinManager.newFileTransfer(id, forceRelay: forceRelay);
+    await rustDeskWinManager.newFileTransfer(id,
+        password: password,
+        isSharedPassword: isSharedPassword,
+        forceRelay: forceRelay);
   } else if (isTcpTunneling || isRDP) {
-    await rustDeskWinManager.newPortForward(id, isRDP, forceRelay: forceRelay);
+    await rustDeskWinManager.newPortForward(id, isRDP,
+        password: password,
+        isSharedPassword: isSharedPassword,
+        forceRelay: forceRelay);
   } else {
-    await rustDeskWinManager.newRemoteDesktop(id, forceRelay: forceRelay);
+    await rustDeskWinManager.newRemoteDesktop(id,
+        password: password,
+        isSharedPassword: isSharedPassword,
+        forceRelay: forceRelay);
   }
 }
 
@@ -2096,14 +2129,13 @@ connectMainDesktop(
 /// If [isFileTransfer], starts a session only for file transfer.
 /// If [isTcpTunneling], starts a session only for tcp tunneling.
 /// If [isRDP], starts a session only for rdp.
-connect(
-  BuildContext context,
-  String id, {
-  bool isFileTransfer = false,
-  bool isTcpTunneling = false,
-  bool isRDP = false,
-  bool forceRelay = false,
-}) async {
+connect(BuildContext context, String id,
+    {bool isFileTransfer = false,
+    bool isTcpTunneling = false,
+    bool isRDP = false,
+    bool forceRelay = false,
+    String? password,
+    bool? isSharedPassword}) async {
   if (id == '') return;
   if (!isDesktop || desktopType == DesktopType.main) {
     try {
@@ -2131,6 +2163,8 @@ connect(
         isFileTransfer: isFileTransfer,
         isTcpTunneling: isTcpTunneling,
         isRDP: isRDP,
+        password: password,
+        isSharedPassword: isSharedPassword,
         forceRelay: forceRelay2,
       );
     } else {
@@ -2139,6 +2173,8 @@ connect(
         'isFileTransfer': isFileTransfer,
         'isTcpTunneling': isTcpTunneling,
         'isRDP': isRDP,
+        'password': password,
+        'isSharedPassword': isSharedPassword,
         'forceRelay': forceRelay,
       });
     }
@@ -2152,14 +2188,16 @@ connect(
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (BuildContext context) => FileManagerPage(id: id),
+          builder: (BuildContext context) => FileManagerPage(
+              id: id, password: password, isSharedPassword: isSharedPassword),
         ),
       );
     } else {
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (BuildContext context) => RemotePage(id: id),
+          builder: (BuildContext context) => RemotePage(
+              id: id, password: password, isSharedPassword: isSharedPassword),
         ),
       );
     }
@@ -2284,35 +2322,7 @@ WindowsTarget getWindowsTarget(int buildNumber) {
 /// [Note]
 /// Please use this function wrapped with `Platform.isWindows`.
 int getWindowsTargetBuildNumber() {
-  final rtlGetVersion = DynamicLibrary.open('ntdll.dll').lookupFunction<
-      Void Function(Pointer<win32.OSVERSIONINFOEX>),
-      void Function(Pointer<win32.OSVERSIONINFOEX>)>('RtlGetVersion');
-  final osVersionInfo = getOSVERSIONINFOEXPointer();
-  rtlGetVersion(osVersionInfo);
-  int buildNumber = osVersionInfo.ref.dwBuildNumber;
-  calloc.free(osVersionInfo);
-  return buildNumber;
-}
-
-/// Get Windows OS version pointer
-///
-/// [Note]
-/// Please use this function wrapped with `Platform.isWindows`.
-Pointer<win32.OSVERSIONINFOEX> getOSVERSIONINFOEXPointer() {
-  final pointer = calloc<win32.OSVERSIONINFOEX>();
-  pointer.ref
-    ..dwOSVersionInfoSize = sizeOf<win32.OSVERSIONINFOEX>()
-    ..dwBuildNumber = 0
-    ..dwMajorVersion = 0
-    ..dwMinorVersion = 0
-    ..dwPlatformId = 0
-    ..szCSDVersion = ''
-    ..wServicePackMajor = 0
-    ..wServicePackMinor = 0
-    ..wSuiteMask = 0
-    ..wProductType = 0
-    ..wReserved = 0;
-  return pointer;
+  return getWindowsTargetBuildNumber_();
 }
 
 /// Indicating we need to use compatible ui mode.
@@ -2426,19 +2436,20 @@ int versionCmp(String v1, String v2) {
 }
 
 String getWindowName({WindowType? overrideType}) {
+  final name = bind.mainGetAppNameSync();
   switch (overrideType ?? kWindowType) {
     case WindowType.Main:
-      return "RustDesk";
+      return name;
     case WindowType.FileTransfer:
-      return "File Transfer - RustDesk";
+      return "File Transfer - $name";
     case WindowType.PortForward:
-      return "Port Forward - RustDesk";
+      return "Port Forward - $name";
     case WindowType.RemoteDesktop:
-      return "Remote Desktop - RustDesk";
+      return "Remote Desktop - $name";
     default:
       break;
   }
-  return "RustDesk";
+  return name;
 }
 
 String getWindowNameWithId(String id, {WindowType? overrideType}) {
@@ -2552,7 +2563,7 @@ Future<void> start_service(bool is_start) async {
   }
 }
 
-typedef Future<bool> WhetherUseRemoteBlock();
+typedef WhetherUseRemoteBlock = Future<bool> Function();
 Widget buildRemoteBlock({required Widget child, WhetherUseRemoteBlock? use}) {
   var block = false.obs;
   return Obx(() => MouseRegion(
@@ -2978,4 +2989,142 @@ Future<bool> setServerConfig(
     gFFI.userModel.logOut(apiServer: oldApiServer);
   }
   return true;
+}
+
+ColorFilter? svgColor(Color? color) {
+  if (color == null) {
+    return null;
+  } else {
+    return ColorFilter.mode(color, BlendMode.srcIn);
+  }
+}
+
+// ignore: must_be_immutable
+class ComboBox extends StatelessWidget {
+  late final List<String> keys;
+  late final List<String> values;
+  late final String initialKey;
+  late final Function(String key) onChanged;
+  late final bool enabled;
+  late String current;
+
+  ComboBox({
+    Key? key,
+    required this.keys,
+    required this.values,
+    required this.initialKey,
+    required this.onChanged,
+    this.enabled = true,
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    var index = keys.indexOf(initialKey);
+    if (index < 0) {
+      index = 0;
+    }
+    var ref = values[index].obs;
+    current = keys[index];
+    return Container(
+      decoration: BoxDecoration(
+        border: Border.all(
+          color: enabled
+              ? MyTheme.color(context).border2 ?? MyTheme.border
+              : MyTheme.border,
+        ),
+        borderRadius:
+            BorderRadius.circular(8), //border raiuds of dropdown button
+      ),
+      height: 42, // should be the height of a TextField
+      child: Obx(() => DropdownButton<String>(
+            isExpanded: true,
+            value: ref.value,
+            elevation: 16,
+            underline: Container(),
+            style: TextStyle(
+                color: enabled
+                    ? Theme.of(context).textTheme.titleMedium?.color
+                    : disabledTextColor(context, enabled)),
+            icon: const Icon(
+              Icons.expand_more_sharp,
+              size: 20,
+            ).marginOnly(right: 15),
+            onChanged: enabled
+                ? (String? newValue) {
+                    if (newValue != null && newValue != ref.value) {
+                      ref.value = newValue;
+                      current = newValue;
+                      onChanged(keys[values.indexOf(newValue)]);
+                    }
+                  }
+                : null,
+            items: values.map<DropdownMenuItem<String>>((String value) {
+              return DropdownMenuItem<String>(
+                value: value,
+                child: Text(
+                  value,
+                  style: const TextStyle(fontSize: 15),
+                  overflow: TextOverflow.ellipsis,
+                ).marginOnly(left: 15),
+              );
+            }).toList(),
+          )),
+    ).marginOnly(bottom: 5);
+  }
+}
+
+Color? disabledTextColor(BuildContext context, bool enabled) {
+  return enabled
+      ? null
+      : Theme.of(context).textTheme.titleLarge?.color?.withOpacity(0.6);
+}
+
+// max 300 x 60
+Widget loadLogo() {
+  return FutureBuilder<ByteData>(
+      future: rootBundle.load('assets/logo.png'),
+      builder: (BuildContext context, AsyncSnapshot<ByteData> snapshot) {
+        if (snapshot.hasData) {
+          final image = Image.asset(
+            'assets/logo.png',
+            fit: BoxFit.contain,
+            errorBuilder: (ctx, error, stackTrace) {
+              return Container();
+            },
+          );
+          return Container(
+            constraints: BoxConstraints(maxWidth: 300, maxHeight: 60),
+            child: image,
+          ).marginOnly(left: 12, right: 12, top: 12);
+        }
+        return const Offstage();
+      });
+}
+
+Widget loadIcon(double size) {
+  return Image.asset('assets/icon.png',
+      width: size,
+      height: size,
+      errorBuilder: (ctx, error, stackTrace) => SvgPicture.asset(
+            'assets/icon.svg',
+            width: size,
+            height: size,
+          ));
+}
+
+var imcomingOnlyHomeSize = Size(280, 300);
+Size getIncomingOnlyHomeSize() {
+  final magicWidth = Platform.isWindows ? 11.0 : 2.0;
+  final magicHeight = 10.0;
+  return imcomingOnlyHomeSize +
+      Offset(magicWidth, kDesktopRemoteTabBarHeight + magicHeight);
+}
+
+Size getIncomingOnlySettingsSize() {
+  return Size(768, 600);
+}
+
+bool isInHomePage() {
+  final controller = Get.find<DesktopTabController>();
+  return controller.state.value.selected == 0;
 }

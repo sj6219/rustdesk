@@ -9,6 +9,7 @@ import 'package:flutter_hbb/consts.dart';
 import 'package:flutter_hbb/common.dart';
 
 /// must keep the order
+// ignore: constant_identifier_names
 enum WindowType { Main, RemoteDesktop, FileTransfer, PortForward, Unknown }
 
 extension Index on int {
@@ -193,6 +194,7 @@ class RustDeskMultiWindowManager {
     bool? forceRelay,
     String? switchUuid,
     bool? isRDP,
+    bool? isSharedPassword,
   }) async {
     var params = {
       "type": type.index,
@@ -205,6 +207,9 @@ class RustDeskMultiWindowManager {
     }
     if (isRDP != null) {
       params['isRDP'] = isRDP;
+    }
+    if (isSharedPassword != null) {
+      params['isSharedPassword'] = isSharedPassword;
     }
     final msg = jsonEncode(params);
 
@@ -227,6 +232,7 @@ class RustDeskMultiWindowManager {
   Future<MultiWindowCallResult> newRemoteDesktop(
     String remoteId, {
     String? password,
+    bool? isSharedPassword,
     String? switchUuid,
     bool? forceRelay,
   }) async {
@@ -238,11 +244,12 @@ class RustDeskMultiWindowManager {
       password: password,
       forceRelay: forceRelay,
       switchUuid: switchUuid,
+      isSharedPassword: isSharedPassword,
     );
   }
 
   Future<MultiWindowCallResult> newFileTransfer(String remoteId,
-      {String? password, bool? forceRelay}) async {
+      {String? password, bool? isSharedPassword, bool? forceRelay}) async {
     return await newSession(
       WindowType.FileTransfer,
       kWindowEventNewFileTransfer,
@@ -250,11 +257,12 @@ class RustDeskMultiWindowManager {
       _fileTransferWindows,
       password: password,
       forceRelay: forceRelay,
+      isSharedPassword: isSharedPassword,
     );
   }
 
   Future<MultiWindowCallResult> newPortForward(String remoteId, bool isRDP,
-      {String? password, bool? forceRelay}) async {
+      {String? password, bool? isSharedPassword, bool? forceRelay}) async {
     return await newSession(
       WindowType.PortForward,
       kWindowEventNewPortForward,
@@ -263,6 +271,7 @@ class RustDeskMultiWindowManager {
       password: password,
       forceRelay: forceRelay,
       isRDP: isRDP,
+      isSharedPassword: isSharedPassword,
     );
   }
 

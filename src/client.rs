@@ -26,6 +26,8 @@ use hbb_common::tokio;
 #[cfg(not(feature = "flutter"))]
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 use hbb_common::tokio::sync::mpsc::UnboundedSender;
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+use hbb_common::tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver};
 use hbb_common::{
     allow_err,
     anyhow::{anyhow, Context},
@@ -65,7 +67,7 @@ use crate::{
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 use crate::ui_session_interface::SessionPermissionConfig;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
-use crate::{check_clipboard, ClipboardContext, CLIPBOARD_INTERVAL};
+use crate::{check_clipboard, CLIPBOARD_INTERVAL};
 
 pub use super::lang::*;
 
@@ -700,12 +702,9 @@ impl Client {
     }
 
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    fn try_stop_clipboard(_self_id: &str) {
+    fn try_stop_clipboard() {
         #[cfg(feature = "flutter")]
-        if crate::flutter::sessions::other_sessions_running(
-            _self_id.to_string(),
-            ConnType::DEFAULT_CONN,
-        ) {
+        if crate::flutter::sessions::has_sessions_running(ConnType::DEFAULT_CONN) {
             return;
         }
         TEXT_CLIPBOARD_STATE.lock().unwrap().running = false;
@@ -717,47 +716,48 @@ impl Client {
     //
     // If clipboard update is detected, the text will be sent to all sessions by `send_text_clipboard_msg`.
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    fn try_start_clipboard(_ctx: Option<ClientClipboardContext>) {
+    fn try_start_clipboard(_ctx: Option<ClientClipboardContext>) -> Option<UnboundedReceiver<()>> {
         let mut clipboard_lock = TEXT_CLIPBOARD_STATE.lock().unwrap();
         if clipboard_lock.running {
-            return;
+            return None;
         }
+        clipboard_lock.running = true;
+        let (tx, rx) = unbounded_channel();
 
-        match ClipboardContext::new() {
-            Ok(mut ctx) => {
-                clipboard_lock.running = true;
-                // ignore clipboard update before service start
-                check_clipboard(&mut ctx, Some(&OLD_CLIPBOARD_TEXT));
-                std::thread::spawn(move || {
-                    log::info!("Start text clipboard loop");
-                    loop {
-                        std::thread::sleep(Duration::from_millis(CLIPBOARD_INTERVAL));
-                        if !TEXT_CLIPBOARD_STATE.lock().unwrap().running {
-                            break;
-                        }
+        log::info!("Start text clipboard loop");
+        std::thread::spawn(move || {
+            let mut is_sent = false;
+            let mut ctx = None;
+            loop {
+                if !TEXT_CLIPBOARD_STATE.lock().unwrap().running {
+                    break;
+                }
+                if !TEXT_CLIPBOARD_STATE.lock().unwrap().is_required {
+                    continue;
+                }
 
-                        if !TEXT_CLIPBOARD_STATE.lock().unwrap().is_required {
-                            continue;
-                        }
-
-                        if let Some(msg) = check_clipboard(&mut ctx, Some(&OLD_CLIPBOARD_TEXT)) {
-                            #[cfg(feature = "flutter")]
-                            crate::flutter::send_text_clipboard_msg(msg);
-                            #[cfg(not(feature = "flutter"))]
-                            if let Some(ctx) = &_ctx {
-                                if ctx.cfg.is_text_clipboard_required() {
-                                    let _ = ctx.tx.send(Data::Message(msg));
-                                }
-                            }
+                if let Some(msg) = check_clipboard(&mut ctx, Some(&OLD_CLIPBOARD_TEXT)) {
+                    #[cfg(feature = "flutter")]
+                    crate::flutter::send_text_clipboard_msg(msg);
+                    #[cfg(not(feature = "flutter"))]
+                    if let Some(ctx) = &_ctx {
+                        if ctx.cfg.is_text_clipboard_required() {
+                            let _ = ctx.tx.send(Data::Message(msg));
                         }
                     }
-                    log::info!("Stop text clipboard loop");
-                });
+                }
+
+                if !is_sent {
+                    is_sent = true;
+                    tx.send(()).ok();
+                }
+
+                std::thread::sleep(Duration::from_millis(CLIPBOARD_INTERVAL));
             }
-            Err(err) => {
-                log::error!("Failed to start clipboard service of client: {}", err);
-            }
-        }
+            log::info!("Stop text clipboard loop");
+        });
+
+        Some(rx)
     }
 
     #[inline]
@@ -1149,6 +1149,9 @@ pub struct LoginConfigHandler {
     pub custom_fps: Arc<Mutex<Option<usize>>>,
     pub adapter_luid: Option<i64>,
     pub mark_unsupported: Vec<CodecFormat>,
+    pub selected_windows_session_id: Option<u32>,
+    pub peer_info: Option<PeerInfo>,
+    shared_password: Option<String>, // used to distinguish whether it is connected with a shared password
 }
 
 impl Deref for LoginConfigHandler {
@@ -1173,6 +1176,7 @@ impl LoginConfigHandler {
         switch_uuid: Option<String>,
         mut force_relay: bool,
         adapter_luid: Option<i64>,
+        shared_password: Option<String>,
     ) {
         let mut id = id;
         if id.contains("@") {
@@ -1235,6 +1239,8 @@ impl LoginConfigHandler {
         self.received = false;
         self.switch_uuid = switch_uuid;
         self.adapter_luid = adapter_luid;
+        self.selected_windows_session_id = None;
+        self.shared_password = shared_password;
     }
 
     /// Check if the client should auto login.
@@ -1511,22 +1517,25 @@ impl LoginConfigHandler {
     ///
     /// * `ignore_default` - If `true`, ignore the default value of the option.
     fn get_option_message(&self, ignore_default: bool) -> Option<OptionMessage> {
-        if self.conn_type.eq(&ConnType::FILE_TRANSFER)
-            || self.conn_type.eq(&ConnType::PORT_FORWARD)
-            || self.conn_type.eq(&ConnType::RDP)
-        {
+        if self.conn_type.eq(&ConnType::PORT_FORWARD) || self.conn_type.eq(&ConnType::RDP) {
             return None;
         }
         let mut n = 0;
         let mut msg = OptionMessage::new();
+        // Version 1.2.5 can remove this, and OptionMessage is not needed for file transfer
+        msg.support_windows_specific_session = BoolOption::Yes.into();
+        n += 1;
+
+        if self.conn_type.eq(&ConnType::FILE_TRANSFER) {
+            return Some(msg);
+        }
         let q = self.image_quality.clone();
         if let Some(q) = self.get_image_quality_enum(&q, ignore_default) {
             msg.image_quality = q.into();
             n += 1;
         } else if q == "custom" {
             let config = self.load_config();
-            let allow_more =
-                !crate::ui_interface::using_public_server() || self.direct == Some(true);
+            let allow_more = !crate::using_public_server() || self.direct == Some(true);
             let quality = if config.custom_image_quality.is_empty() {
                 50
             } else {
@@ -1581,7 +1590,6 @@ impl LoginConfigHandler {
                 &self.mark_unsupported,
             ));
         n += 1;
-
         if n > 0 {
             Some(msg)
         } else {
@@ -1823,6 +1831,8 @@ impl LoginConfigHandler {
             platform: pi.platform.clone(),
         };
         let mut config = self.load_config();
+        let connected_with_shared_password = self.is_connected_with_shared_password();
+        let old_config_password = config.password.clone();
         config.info = serde;
         let password = self.password.clone();
         let password0 = config.password.clone();
@@ -1855,15 +1865,17 @@ impl LoginConfigHandler {
         }
         #[cfg(feature = "flutter")]
         {
-            // sync ab password with PeerConfig password
-            let password = base64::encode(config.password.clone(), base64::Variant::Original);
-            let evt: HashMap<&str, String> = HashMap::from([
-                ("name", "sync_peer_password_to_ab".to_string()),
-                ("id", self.id.clone()),
-                ("password", password),
-            ]);
-            let evt = serde_json::ser::to_string(&evt).unwrap_or("".to_owned());
-            crate::flutter::push_global_event(crate::flutter::APP_TYPE_MAIN, evt);
+            if !connected_with_shared_password && remember && !config.password.is_empty() {
+                // sync ab password with PeerConfig password
+                let password = base64::encode(config.password.clone(), base64::Variant::Original);
+                let evt: HashMap<&str, String> = HashMap::from([
+                    ("name", "sync_peer_password_to_ab".to_string()),
+                    ("id", self.id.clone()),
+                    ("password", password),
+                ]);
+                let evt = serde_json::ser::to_string(&evt).unwrap_or("".to_owned());
+                crate::flutter::push_global_event(crate::flutter::APP_TYPE_MAIN, evt);
+            }
         }
         if config.keyboard_mode.is_empty() {
             if is_keyboard_mode_supported(
@@ -1883,10 +1895,25 @@ impl LoginConfigHandler {
                 config.keyboard_mode = KeyboardMode::Legacy.to_string();
             }
         }
+        // keep hash password unchanged if connected with shared password
+        if connected_with_shared_password {
+            config.password = old_config_password;
+        }
         // no matter if change, for update file time
         self.save_config(config);
         self.supported_encoding = pi.encoding.clone().unwrap_or_default();
         log::info!("peer info supported_encoding:{:?}", self.supported_encoding);
+    }
+
+    fn is_connected_with_shared_password(&self) -> bool {
+        if let Some(shared_password) = self.shared_password.as_ref() {
+            let mut hasher = Sha256::new();
+            hasher.update(shared_password);
+            hasher.update(&self.hash.salt);
+            let res = hasher.finalize();
+            return self.password.clone()[..] == res[..];
+        }
+        false
     }
 
     pub fn get_remote_dir(&self) -> String {
@@ -2596,7 +2623,7 @@ pub async fn handle_hash(
     peer: &mut Stream,
 ) {
     lc.write().unwrap().hash = hash.clone();
-    let uuid = lc.read().unwrap().switch_uuid.clone();
+    let uuid = lc.write().unwrap().switch_uuid.take();
     if let Some(uuid) = uuid {
         if let Ok(uuid) = uuid::Uuid::from_str(&uuid) {
             send_switch_login_request(lc.clone(), peer, uuid).await;
@@ -2621,15 +2648,17 @@ pub async fn handle_hash(
         let ab = hbb_common::config::Ab::load();
         if !access_token.is_empty() && access_token == ab.access_token {
             let id = lc.read().unwrap().id.clone();
-            if let Some(p) = ab
-                .peers
-                .iter()
-                .find_map(|p| if p.id == id { Some(p) } else { None })
-            {
-                if let Ok(hash) = base64::decode(p.hash.clone(), base64::Variant::Original) {
-                    if !hash.is_empty() {
-                        password = hash;
-                        lc.write().unwrap().save_ab_password_to_recent = true;
+            if let Some(ab) = ab.ab_entries.iter().find(|a| a.personal()) {
+                if let Some(p) = ab
+                    .peers
+                    .iter()
+                    .find_map(|p| if p.id == id { Some(p) } else { None })
+                {
+                    if let Ok(hash) = base64::decode(p.hash.clone(), base64::Variant::Original) {
+                        if !hash.is_empty() {
+                            password = hash;
+                            lc.write().unwrap().save_ab_password_to_recent = true;
+                        }
                     }
                 }
             }
@@ -2745,6 +2774,7 @@ pub trait Interface: Send + Clone + 'static + Sized {
     fn msgbox(&self, msgtype: &str, title: &str, text: &str, link: &str);
     fn handle_login_error(&self, err: &str) -> bool;
     fn handle_peer_info(&self, pi: PeerInfo);
+    fn set_multiple_windows_session(&self, sessions: Vec<WindowsSession>);
     fn on_error(&self, err: &str) {
         self.msgbox("error", "Error", err, "");
     }
