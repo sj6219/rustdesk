@@ -7,6 +7,7 @@ use std::{
     sync::{mpsc, Arc, Mutex, RwLock},
 };
 
+use async_trait::async_trait;
 use bytes::Bytes;
 #[cfg(not(any(target_os = "android", target_os = "linux")))]
 use cpal::{
@@ -33,7 +34,7 @@ use hbb_common::{
     anyhow::{anyhow, Context},
     bail,
     config::{
-        Config, LocalConfig, PeerConfig, PeerInfoSerde, Resolution, CONNECT_TIMEOUT,
+        self, Config, LocalConfig, PeerConfig, PeerInfoSerde, Resolution, CONNECT_TIMEOUT,
         PUBLIC_RS_PUB_KEY, READ_TIMEOUT, RELAY_PORT, RENDEZVOUS_PORT, RENDEZVOUS_SERVERS,
     },
     get_version_number, log,
@@ -251,6 +252,9 @@ impl Client {
         conn_type: ConnType,
         interface: impl Interface,
     ) -> ResultType<(Stream, bool, Option<Vec<u8>>)> {
+        if config::is_incoming_only() {
+            bail!("Incoming only mode");
+        }
         // to-do: remember the port for each peer, so that we can retry easier
         if hbb_common::is_ip_str(peer) {
             return Ok((
@@ -1481,12 +1485,7 @@ impl LoginConfigHandler {
                 .map(|o| !o.is_empty())
                 .unwrap_or(false);
             if is_set {
-                if name == "zoom-cursor" {
-                    self.config.options.insert(name, "".to_owned());
-                } else {
-                    // Notice: When PeerConfig loads, the default value is taken when the option key does not exist.
-                    self.config.options.remove(&name);
-                }
+                self.config.options.remove(&name);
             } else {
                 self.config.options.insert(name, "Y".to_owned());
             }
@@ -2768,6 +2767,7 @@ async fn send_switch_login_request(
 }
 
 /// Interface for client to send data and commands.
+#[async_trait]
 pub trait Interface: Send + Clone + 'static + Sized {
     /// Send message data to remote peer.
     fn send(&self, data: Data);

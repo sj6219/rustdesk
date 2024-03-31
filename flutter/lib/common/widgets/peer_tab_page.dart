@@ -37,7 +37,7 @@ class _TabEntry {
 }
 
 EdgeInsets? _menuPadding() {
-  return isDesktop ? kDesktopMenuPadding : null;
+  return (isDesktop || isWebDesktop) ? kDesktopMenuPadding : null;
 }
 
 class _PeerTabPageState extends State<PeerTabPage>
@@ -62,7 +62,9 @@ class _PeerTabPageState extends State<PeerTabPage>
         AddressBook(
           menuPadding: _menuPadding(),
         ),
-        ({dynamic hint}) => gFFI.abModel.pullAb(force: hint == null)),
+        ({dynamic hint}) => gFFI.abModel.pullAb(
+            force: hint == null ? ForcePullAb.listAndCurrent : null,
+            quiet: false)),
     _TabEntry(
       MyGroup(
         menuPadding: _menuPadding(),
@@ -111,7 +113,9 @@ class _PeerTabPageState extends State<PeerTabPage>
         SizedBox(
           height: 32,
           child: Container(
-            padding: isDesktop ? null : EdgeInsets.symmetric(horizontal: 2),
+            padding: (isDesktop || isWebDesktop)
+                ? null
+                : EdgeInsets.symmetric(horizontal: 2),
             child: selectionWrap(Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
@@ -125,7 +129,7 @@ class _PeerTabPageState extends State<PeerTabPage>
               ],
             )),
           ),
-        ).paddingOnly(right: isDesktop ? 12 : 0),
+        ).paddingOnly(right: (isDesktop || isWebDesktop) ? 12 : 0),
         _createPeersView(),
       ],
     );
@@ -151,24 +155,25 @@ class _PeerTabPageState extends State<PeerTabPage>
               border: Border(
             bottom: BorderSide(width: 2, color: color!),
           ));
-          return Obx(() => InkWell(
-                child: Container(
-                  decoration: (hover.value
-                      ? (selected ? decoBorder : deco)
-                      : (selected ? decoBorder : null)),
-                  child: Tooltip(
-                    preferBelow: false,
-                    message: model.tabTooltip(t),
-                    onTriggered: isMobile ? mobileShowTabVisibilityMenu : null,
-                    child: Icon(model.tabIcon(t), color: color),
+          return Obx(() => Tooltip(
+                preferBelow: false,
+                message: model.tabTooltip(t),
+                onTriggered: isMobile ? mobileShowTabVisibilityMenu : null,
+                child: InkWell(
+                  child: Container(
+                    decoration: (hover.value
+                        ? (selected ? decoBorder : deco)
+                        : (selected ? decoBorder : null)),
+                    child: Icon(model.tabIcon(t), color: color)
+                        .paddingSymmetric(horizontal: 4),
                   ).paddingSymmetric(horizontal: 4),
-                ).paddingSymmetric(horizontal: 4),
-                onTap: () async {
-                  await handleTabSelection(t);
-                  await bind.setLocalFlutterOption(
-                      k: 'peer-tab-index', v: t.toString());
-                },
-                onHover: (value) => hover.value = value,
+                  onTap: () async {
+                    await handleTabSelection(t);
+                    await bind.setLocalFlutterOption(
+                        k: 'peer-tab-index', v: t.toString());
+                  },
+                  onHover: (value) => hover.value = value,
+                ),
               ));
         }).toList());
   }
@@ -192,7 +197,8 @@ class _PeerTabPageState extends State<PeerTabPage>
       }
     }
     return Expanded(
-        child: child.marginSymmetric(vertical: isDesktop ? 12.0 : 6.0));
+        child: child.marginSymmetric(
+            vertical: (isDesktop || isWebDesktop) ? 12.0 : 6.0));
   }
 
   Widget _createRefresh(
@@ -201,22 +207,23 @@ class _PeerTabPageState extends State<PeerTabPage>
     final textColor = Theme.of(context).textTheme.titleLarge?.color;
     return Offstage(
       offstage: model.currentTab != index.index,
-      child: RefreshWidget(
-          onPressed: () {
-            if (gFFI.peerTabModel.currentTab < entries.length) {
-              entries[gFFI.peerTabModel.currentTab].load();
-            }
-          },
-          spinning: loading,
-          child: RotatedBox(
-              quarterTurns: 2,
-              child: Tooltip(
-                  message: translate('Refresh'),
-                  child: Icon(
-                    Icons.refresh,
-                    size: 18,
-                    color: textColor,
-                  )))),
+      child: Tooltip(
+        message: translate('Refresh'),
+        child: RefreshWidget(
+            onPressed: () {
+              if (gFFI.peerTabModel.currentTab < entries.length) {
+                entries[gFFI.peerTabModel.currentTab].load();
+              }
+            },
+            spinning: loading,
+            child: RotatedBox(
+                quarterTurns: 2,
+                child: Icon(
+                  Icons.refresh,
+                  size: 18,
+                  color: textColor,
+                ))),
+      ),
     );
   }
 
@@ -228,6 +235,7 @@ class _PeerTabPageState extends State<PeerTabPage>
     final textColor = Theme.of(context).textTheme.titleLarge?.color;
     final model = Provider.of<PeerTabModel>(context);
     return _hoverAction(
+      toolTip: translate('Select'),
       context: context,
       onTap: () {
         model.setMultiSelectionMode(true);
@@ -235,14 +243,12 @@ class _PeerTabPageState extends State<PeerTabPage>
           Navigator.pop(context);
         }
       },
-      child: Tooltip(
-          message: translate('Select'),
-          child: SvgPicture.asset(
-            "assets/checkbox-outline.svg",
-            width: 18,
-            height: 18,
-            colorFilter: svgColor(textColor),
-          )),
+      child: SvgPicture.asset(
+        "assets/checkbox-outline.svg",
+        width: 18,
+        height: 18,
+        colorFilter: svgColor(textColor),
+      ),
     );
   }
 
@@ -368,6 +374,7 @@ class _PeerTabPageState extends State<PeerTabPage>
     }
     return _hoverAction(
         context: context,
+        toolTip: translate('Delete'),
         onTap: () {
           onSubmit() async {
             final peers = model.selectedPeers;
@@ -404,9 +411,7 @@ class _PeerTabPageState extends State<PeerTabPage>
 
           deleteConfirmDialog(onSubmit, translate('Delete'));
         },
-        child: Tooltip(
-            message: translate('Delete'),
-            child: Icon(Icons.delete, color: Colors.red)));
+        child: Icon(Icons.delete, color: Colors.red));
   }
 
   Widget addSelectionToFav() {
@@ -416,6 +421,7 @@ class _PeerTabPageState extends State<PeerTabPage>
           model.currentTab != PeerTabIndex.recent.index, // show based on recent
       child: _hoverAction(
         context: context,
+        toolTip: translate('Add to Favorites'),
         onTap: () async {
           final peers = model.selectedPeers;
           final favs = (await bind.mainGetFav()).toList();
@@ -428,9 +434,7 @@ class _PeerTabPageState extends State<PeerTabPage>
           model.setMultiSelectionMode(false);
           showToast(translate('Successful'));
         },
-        child: Tooltip(
-            message: translate('Add to Favorites'),
-            child: Icon(model.icons[PeerTabIndex.fav.index])),
+        child: Icon(model.icons[PeerTabIndex.fav.index]),
       ).marginOnly(left: isMobile ? 11 : 6),
     );
   }
@@ -445,14 +449,13 @@ class _PeerTabPageState extends State<PeerTabPage>
       offstage: !gFFI.userModel.isLogin || addressbooks.isEmpty,
       child: _hoverAction(
         context: context,
+        toolTip: translate('Add to address book'),
         onTap: () {
           final peers = model.selectedPeers.map((e) => Peer.copy(e)).toList();
           addPeersToAbDialog(peers);
           model.setMultiSelectionMode(false);
         },
-        child: Tooltip(
-            message: translate('Add to address book'),
-            child: Icon(model.icons[PeerTabIndex.ab.index])),
+        child: Icon(model.icons[PeerTabIndex.ab.index]),
       ).marginOnly(left: isMobile ? 11 : 6),
     );
   }
@@ -465,6 +468,7 @@ class _PeerTabPageState extends State<PeerTabPage>
           gFFI.abModel.currentAbTags.isEmpty,
       child: _hoverAction(
               context: context,
+              toolTip: translate('Edit Tag'),
               onTap: () {
                 editAbTagDialog(List.empty(), (selectedTags) async {
                   final peers = model.selectedPeers;
@@ -474,8 +478,7 @@ class _PeerTabPageState extends State<PeerTabPage>
                   showToast(translate('Successful'));
                 });
               },
-              child: Tooltip(
-                  message: translate('Edit Tag'), child: Icon(Icons.tag)))
+              child: Icon(Icons.tag))
           .marginOnly(left: isMobile ? 11 : 6),
     );
   }
@@ -494,11 +497,11 @@ class _PeerTabPageState extends State<PeerTabPage>
           model.selectedPeers.length >= model.currentTabCachedPeers.length,
       child: _hoverAction(
         context: context,
+        toolTip: translate('Select All'),
         onTap: () {
           model.selectAll();
         },
-        child: Tooltip(
-            message: translate('Select All'), child: Icon(Icons.select_all)),
+        child: Icon(Icons.select_all),
       ).marginOnly(left: 6),
     );
   }
@@ -507,24 +510,23 @@ class _PeerTabPageState extends State<PeerTabPage>
     final model = Provider.of<PeerTabModel>(context);
     return _hoverAction(
             context: context,
+            toolTip: translate('Close'),
             onTap: () {
               model.setMultiSelectionMode(false);
             },
-            child:
-                Tooltip(message: translate('Close'), child: Icon(Icons.clear)))
+            child: Icon(Icons.clear))
         .marginOnly(left: 6);
   }
 
   Widget _toggleTags() {
     return _hoverAction(
         context: context,
+        toolTip: translate('Toggle tags'),
         hoverableWhenfalse: hideAbTagsPanel,
-        child: Tooltip(
-            message: translate('Toggle Tags'),
-            child: Icon(
-              Icons.tag_rounded,
-              size: 18,
-            )),
+        child: Icon(
+          Icons.tag_rounded,
+          size: 18,
+        ),
         onTap: () async {
           await bind.mainSetLocalOption(
               key: "hideAbTagsPanel", value: hideAbTagsPanel.value ? "" : "Y");
@@ -574,14 +576,13 @@ class _PeerTabPageState extends State<PeerTabPage>
             (BuildContext context, Future<void> Function() showMenu) {
           return _hoverAction(
             context: context,
-            child: Tooltip(
-                message: translate('More'),
-                child: SvgPicture.asset(
-                  "assets/chevron_up_chevron_down.svg",
-                  width: 18,
-                  height: 18,
-                  colorFilter: svgColor(textColor),
-                )),
+            toolTip: translate('More'),
+            child: SvgPicture.asset(
+              "assets/chevron_up_chevron_down.svg",
+              width: 18,
+              height: 18,
+              colorFilter: svgColor(textColor),
+            ),
             onTap: showMenu,
           );
         },
@@ -656,18 +657,17 @@ class _PeerSearchBarState extends State<PeerSearchBar> {
         ? _buildSearchBar()
         : _hoverAction(
             context: context,
+            toolTip: translate('Search'),
             padding: const EdgeInsets.only(right: 2),
             onTap: () {
               setState(() {
                 drawer = true;
               });
             },
-            child: Tooltip(
-                message: translate('Search'),
-                child: Icon(
-                  Icons.search_rounded,
-                  color: Theme.of(context).hintColor,
-                )));
+            child: Icon(
+              Icons.search_rounded,
+              color: Theme.of(context).hintColor,
+            ));
   }
 
   Widget _buildSearchBar() {
@@ -808,16 +808,15 @@ class _PeerViewDropdownState extends State<PeerViewDropdown> {
     var menuPos = RelativeRect.fromLTRB(0, 0, 0, 0);
     return _hoverAction(
         context: context,
-        child: Tooltip(
-            message: translate('Change view'),
-            child: Icon(
-              peerCardUiType.value == PeerUiType.grid
-                  ? Icons.grid_view_rounded
-                  : peerCardUiType.value == PeerUiType.tile
-                      ? Icons.view_list_rounded
-                      : Icons.view_agenda_rounded,
-              size: 18,
-            )),
+        toolTip: translate('Change view'),
+        child: Icon(
+          peerCardUiType.value == PeerUiType.grid
+              ? Icons.grid_view_rounded
+              : peerCardUiType.value == PeerUiType.tile
+                  ? Icons.view_list_rounded
+                  : Icons.view_agenda_rounded,
+          size: 18,
+        ),
         onTapDown: (details) {
           final x = details.globalPosition.dx;
           final y = details.globalPosition.dy;
@@ -887,12 +886,11 @@ class _PeerSortDropdownState extends State<PeerSortDropdown> {
     var menuPos = RelativeRect.fromLTRB(0, 0, 0, 0);
     return _hoverAction(
       context: context,
-      child: Tooltip(
-          message: translate('Sort by'),
-          child: Icon(
-            Icons.sort_rounded,
-            size: 18,
-          )),
+      toolTip: translate('Sort by'),
+      child: Icon(
+        Icons.sort_rounded,
+        size: 18,
+      ),
       onTapDown: (details) {
         final x = details.globalPosition.dx;
         final y = details.globalPosition.dy;
@@ -974,6 +972,7 @@ Widget _hoverAction(
     {required BuildContext context,
     required Widget child,
     required Function() onTap,
+    required String toolTip,
     GestureTapDownCallback? onTapDown,
     RxBool? hoverableWhenfalse,
     EdgeInsetsGeometry padding = const EdgeInsets.all(4.0)}) {
@@ -982,16 +981,19 @@ Widget _hoverAction(
     color: Theme.of(context).colorScheme.background,
     borderRadius: BorderRadius.circular(6),
   );
-  return Obx(
-    () => Container(
-        margin: EdgeInsets.symmetric(horizontal: 1),
-        decoration:
-            (hover.value || hoverableWhenfalse?.value == false) ? deco : null,
-        child: InkWell(
-            onHover: (value) => hover.value = value,
-            onTap: onTap,
-            onTapDown: onTapDown,
-            child: Container(padding: padding, child: child))),
+  return Tooltip(
+    message: toolTip,
+    child: Obx(
+      () => Container(
+          margin: EdgeInsets.symmetric(horizontal: 1),
+          decoration:
+              (hover.value || hoverableWhenfalse?.value == false) ? deco : null,
+          child: InkWell(
+              onHover: (value) => hover.value = value,
+              onTap: onTap,
+              onTapDown: onTapDown,
+              child: Container(padding: padding, child: child))),
+    ),
   );
 }
 
