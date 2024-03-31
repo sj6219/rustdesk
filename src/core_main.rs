@@ -3,10 +3,10 @@ use crate::client::translate;
 #[cfg(not(debug_assertions))]
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 use crate::platform::breakdown_callback;
-use hbb_common::log;
 #[cfg(not(debug_assertions))]
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 use hbb_common::platform::register_breakdown_handler;
+use hbb_common::{config, log};
 #[cfg(windows)]
 use tauri_winrt_notification::{Duration, Sound, Toast};
 
@@ -69,6 +69,7 @@ pub fn core_main() -> Option<Vec<String>> {
         }
     }
 
+    crate::load_custom_client();
     #[cfg(windows)]
     crate::platform::windows::bootstrap();
     let mut args = Vec::new();
@@ -93,11 +94,7 @@ pub fn core_main() -> Option<Vec<String>> {
             ]
             .contains(&arg.as_str())
             {
-                if crate::flutter_ffi::is_qs().0 {
-                    return None;
-                } else {
-                    _is_flutter_invoke_new_connection = true;
-                }
+                _is_flutter_invoke_new_connection = true;
             }
             if arg == "--elevate" {
                 _is_elevate = true;
@@ -126,7 +123,7 @@ pub fn core_main() -> Option<Vec<String>> {
     #[cfg(feature = "flutter")]
     {
         let (k, v) = ("LIBGL_ALWAYS_SOFTWARE", "1");
-        if !hbb_common::config::Config::get_option("allow-always-software-render").is_empty() {
+        if !config::Config::get_option("allow-always-software-render").is_empty() {
             std::env::set_var(k, v);
         } else {
             std::env::remove_var(k);
@@ -141,7 +138,7 @@ pub fn core_main() -> Option<Vec<String>> {
         return core_main_invoke_new_connection(std::env::args());
     }
     let click_setup = cfg!(windows) && args.is_empty() && crate::common::is_setup(&arg_exe);
-    if click_setup {
+    if click_setup && !config::is_disable_installation() {
         args.push("--install".to_owned());
         flutter_args.push("--install".to_string());
     }
@@ -218,6 +215,9 @@ pub fn core_main() -> Option<Vec<String>> {
                 }
                 return None;
             } else if args[0] == "--silent-install" {
+                if config::is_disable_installation() {
+                    return None;
+                }
                 let res = platform::install_me(
                     "desktopicon startmenu",
                     "".to_owned(),
@@ -232,7 +232,7 @@ pub fn core_main() -> Option<Vec<String>> {
                     }
                 };
                 Toast::new(Toast::POWERSHELL_APP_ID)
-                    .title(&hbb_common::config::APP_NAME.read().unwrap())
+                    .title(&config::APP_NAME.read().unwrap())
                     .text1(&text)
                     .sound(Some(Sound::Default))
                     .duration(Duration::Short)
@@ -296,10 +296,9 @@ pub fn core_main() -> Option<Vec<String>> {
             return None;
         } else if args[0] == "--uninstall-service" {
             log::info!("start --uninstall-service");
-            crate::platform::uninstall_service(false);
+            crate::platform::uninstall_service(false, true);
+            return None;
         } else if args[0] == "--service" {
-            #[cfg(target_os = "macos")]
-            crate::platform::macos::hide_dock();
             log::info!("start --service");
             crate::start_os_service();
             return None;
@@ -310,7 +309,6 @@ pub fn core_main() -> Option<Vec<String>> {
             #[cfg(any(target_os = "linux", target_os = "windows"))]
             {
                 crate::start_server(true);
-                return None;
             }
             #[cfg(target_os = "macos")]
             {
@@ -319,6 +317,7 @@ pub fn core_main() -> Option<Vec<String>> {
                 // prevent server exit when encountering errors from tray
                 hbb_common::allow_err!(handler.join());
             }
+            return None;
         } else if args[0] == "--import-config" {
             if args.len() == 2 {
                 let filepath;

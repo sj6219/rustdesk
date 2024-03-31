@@ -29,9 +29,10 @@ pub fn make_tray() -> hbb_common::ResultType<()> {
     {
         icon = include_bytes!("../res/tray-icon.ico");
     }
+
     let (icon_rgba, icon_width, icon_height) = {
-        let image = image::load_from_memory(icon)
-            .context("Failed to open icon path")?
+        let image = load_icon_from_asset()
+            .unwrap_or(image::load_from_memory(icon).context("Failed to open icon path")?)
             .into_rgba8();
         let (width, height) = image.dimensions();
         let rgba = image.into_raw();
@@ -87,14 +88,11 @@ pub fn make_tray() -> hbb_common::ResultType<()> {
         crate::platform::macos::handle_application_should_open_untitled_file();
         #[cfg(target_os = "windows")]
         {
-            use std::os::windows::process::CommandExt;
-            use std::process::Command;
-            Command::new("cmd")
-                .arg("/c")
-                .arg(&format!("start {}", crate::get_uri_prefix()))
-                .creation_flags(winapi::um::winbase::CREATE_NO_WINDOW)
-                .spawn()
-                .ok();
+            // Do not use "start uni link" way, it may not work on some Windows, and pop out error
+            // dialog, I found on one user's desktop, but no idea why, Windows is shit.
+            // Use `run_me` instead.
+            // `allow_multiple_instances` in `flutter/windows/runner/main.cpp` allows only one instance without args.
+            crate::run_me::<&str>(vec![]).ok();
         }
         #[cfg(target_os = "linux")]
         if !std::process::Command::new("xdg-open")
@@ -130,7 +128,7 @@ pub fn make_tray() -> hbb_common::ResultType<()> {
                     return;
                 }
                 */
-                if !crate::platform::uninstall_service(false) {
+                if !crate::platform::uninstall_service(false, false) {
                     *control_flow = ControlFlow::Exit;
                 }
             } else if event.id == open_i.id() {
@@ -201,4 +199,21 @@ async fn start_query_session_count(sender: std::sync::mpsc::Sender<Data>) {
         }
         hbb_common::sleep(1.).await;
     }
+}
+
+fn load_icon_from_asset() -> Option<image::DynamicImage> {
+    let Some(path) = std::env::current_exe().map_or(None, |x| x.parent().map(|x| x.to_path_buf()))
+    else {
+        return None;
+    };
+    #[cfg(target_os = "macos")]
+    let path = path.join("../Frameworks/App.framework/Resources/flutter_assets/assets/icon.png");
+    #[cfg(windows)]
+    let path = path.join(r"data\flutter_assets\assets\icon.png");
+    if path.exists() {
+        if let Ok(image) = image::open(path) {
+            return Some(image);
+        }
+    }
+    None
 }
