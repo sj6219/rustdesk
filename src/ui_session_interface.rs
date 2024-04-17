@@ -1233,7 +1233,7 @@ impl<T: InvokeUiSession> Session<T> {
     #[inline]
     fn try_change_init_resolution(&self, display: i32) {
         if let Some((w, h)) = self.lc.read().unwrap().get_custom_resolution(display) {
-            self.do_change_resolution(w, h);
+            self.change_resolution(display, w, h);
         }
     }
 
@@ -1355,7 +1355,7 @@ pub trait InvokeUiSession: Send + Sync + Clone + 'static + Sized + Default {
     fn on_voice_call_incoming(&self);
     fn get_rgba(&self, display: usize) -> *const u8;
     fn next_rgba(&self, display: usize);
-    #[cfg(all(feature = "gpucodec", feature = "flutter"))]
+    #[cfg(all(feature = "vram", feature = "flutter"))]
     fn on_texture(&self, display: usize, texture: *mut c_void);
     fn set_multiple_windows_session(&self, sessions: Vec<WindowsSession>);
 }
@@ -1673,7 +1673,7 @@ pub async fn io_loop<T: InvokeUiSession>(handler: Session<T>, round: u32) {
                     //..m::::::+5.4
                     ui_handler.on_rgba(display, data);
                 } else {
-                    #[cfg(all(feature = "gpucodec", feature = "flutter"))]
+                    #[cfg(all(feature = "vram", feature = "flutter"))]
                     ui_handler.on_texture(display, _texture);
                 }
             },
