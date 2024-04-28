@@ -1,0 +1,51 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Launch RustDesk",
+            "args": [],
+            "args": ["--connect", "192.168.111.2"],
+            "cwd": "${workspaceFolder}",
+            "sourceLanguages": ["rust"],     
+            // "cargo": {
+            //     "args": [
+            //         "build",
+            //         "--bin=rustdesk",
+            //         "--package=rustdesk"
+            //     ],
+            //     "filter": {
+            //         "name": "rustdesk",
+            //         "kind": "bin"
+            //     }
+            // },        
+            "program" : "${workspaceFolder}/flutter/build/macos/Build/Products/Debug/RustDesk.app/Contents/MacOS/RustDesk",
+            //"program" : "${workspaceFolder}/target/debug/rustdesk",
+            //"program" : "/Applications/RustDesk.app/Contents/MacOS/rustdesk"
+        //    "preLaunchTask": "build",   
+        },
+        {
+            "type": "lldb",
+            "request": "attach",
+            "name": "Attach RustDesk",
+            "sourceLanguages": ["rust"],        
+            "program" : "${workspaceFolder}/target/debug/rustdesk",
+            "program" : "/Applications/RustDesk.app/Contents/MacOS/rustdesk"
+            "pid" : "${command:pickProcess}",
+        },
+        {
+            "name": "Python Build",
+            "type": "python",
+            "request": "launch",
+            "program" : "${workspaceFolder}/build.py",
+            "args": [
+                "--flutter",
+            ],
+            "justMyCode": false,
+        },   
+    ] 
+}
