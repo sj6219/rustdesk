@@ -221,7 +221,6 @@ impl Encoder {
         let h265_useable =
             _all_support_h265_decoding && (h265vram_encoding || h265hw_encoding.is_some());
         let mut name = ENCODE_CODEC_NAME.lock().unwrap();
-        let mut preference = PreferCodec::Auto;
         let preferences: Vec<_> = decodings
             .iter()
             .filter(|(_, s)| {
@@ -233,9 +232,20 @@ impl Encoder {
             })
             .map(|(_, s)| s.prefer)
             .collect();
-        if preferences.len() > 0 && preferences.iter().all(|&p| p == preferences[0]) {
-            preference = preferences[0].enum_value_or(PreferCodec::Auto);
+        // find the most frequent preference
+        let mut counts = Vec::new();
+        for pref in &preferences {
+            match counts.iter_mut().find(|(p, _)| p == pref) {
+                Some((_, count)) => *count += 1,
+                None => counts.push((pref.clone(), 1)),
+            }
         }
+        let max_count = counts.iter().map(|(_, count)| *count).max().unwrap_or(0);
+        let (most_frequent, _) = counts
+            .into_iter()
+            .find(|(_, count)| *count == max_count)
+            .unwrap_or((PreferCodec::Auto.into(), 0));
+        let preference = most_frequent.enum_value_or(PreferCodec::Auto);
 
         #[allow(unused_mut)]
         let mut auto_codec = CodecName::VP9;
@@ -399,7 +409,7 @@ impl Decoder {
             ..Default::default()
         };
         #[cfg(feature = "hwcodec")]
-        if enable_hwcodec_option() {
+        {
             let best = HwRamDecoder::best();
             decoding.ability_h264 |= if best.h264.is_some() { 1 } else { 0 };
             decoding.ability_h265 |= if best.h265.is_some() { 1 } else { 0 };
@@ -492,7 +502,7 @@ impl Decoder {
                     valid = h264_vram.is_some();
                 }
                 #[cfg(feature = "hwcodec")]
-                if !valid && enable_hwcodec_option() {
+                if !valid {
                     match HwRamDecoder::new(format) {
                         Ok(v) => h264_ram = Some(v),
                         Err(e) => log::error!("create H264 ram decoder failed: {}", e),
@@ -518,7 +528,7 @@ impl Decoder {
                     valid = h265_vram.is_some();
                 }
                 #[cfg(feature = "hwcodec")]
-                if !valid && enable_hwcodec_option() {
+                if !valid {
                     match HwRamDecoder::new(format) {
                         Ok(v) => h265_ram = Some(v),
                         Err(e) => log::error!("create H265 ram decoder failed: {}", e),
@@ -792,10 +802,13 @@ impl Decoder {
 
 #[cfg(any(feature = "hwcodec", feature = "mediacodec"))]
 pub fn enable_hwcodec_option() -> bool {
-    if let Some(v) = Config2::get().options.get("enable-hwcodec") {
-        return v != "N";
+    if cfg!(windows) || cfg!(target_os = "linux") || cfg!(feature = "mediacodec") {
+        if let Some(v) = Config2::get().options.get("enable-hwcodec") {
+            return v != "N";
+        }
+        return true; // default is true
     }
-    return true; // default is true
+    false
 }
 #[cfg(feature = "vram")]
 pub fn enable_vram_option() -> bool {

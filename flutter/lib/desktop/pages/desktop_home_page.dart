@@ -69,44 +69,6 @@ class _DesktopHomePageState extends State<DesktopHomePage>
     );
   }
 
-  Widget buildPresetPasswordWarning() {
-    return FutureBuilder<bool>(
-      future: bind.isPresetPassword(),
-      builder: (BuildContext context, AsyncSnapshot<bool> snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return CircularProgressIndicator(); // Show a loading spinner while waiting for the Future to complete
-        } else if (snapshot.hasError) {
-          return Text(
-              'Error: ${snapshot.error}'); // Show an error message if the Future completed with an error
-        } else if (snapshot.hasData && snapshot.data == true) {
-          return Container(
-            color: Colors.yellow,
-            child: Column(
-              children: [
-                Align(
-                    child: Text(
-                  translate("Security Alert"),
-                  style: TextStyle(
-                    color: Colors.red,
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
-                )).paddingOnly(bottom: 8),
-                Text(
-                  translate("preset_password_warning"),
-                  style: TextStyle(color: Colors.red),
-                )
-              ],
-            ).paddingAll(8),
-          ); // Show a warning message if the Future completed with true
-        } else {
-          return SizedBox
-              .shrink(); // Show nothing if the Future completed with false or null
-        }
-      },
-    );
-  }
-
   Widget buildLeftPane(BuildContext context) {
     final isIncomingOnly = bind.isIncomingOnly();
     final isOutgoingOnly = bind.isOutgoingOnly();
@@ -191,7 +153,13 @@ class _DesktopHomePageState extends State<DesktopHomePage>
                           size: 22,
                         ),
                       ),
-                      onTap: () => DesktopSettingPage.switch2page(0),
+                      onTap: () => {
+                        if (DesktopSettingPage.tabKeys.isNotEmpty)
+                          {
+                            DesktopSettingPage.switch2page(
+                                DesktopSettingPage.tabKeys[0])
+                          }
+                      },
                       onHover: (value) => _editHover.value = value,
                     ),
                   ),
@@ -385,7 +353,8 @@ class _DesktopHomePageState extends State<DesktopHomePage>
                               ).marginOnly(right: 8, top: 4),
                             ),
                           ),
-                          onTap: () => DesktopSettingPage.switch2page(0),
+                          onTap: () => DesktopSettingPage.switch2page(
+                              SettingsTabKey.safety),
                           onHover: (value) => editHover.value = value,
                         ),
                     ],
@@ -812,6 +781,12 @@ class _DesktopHomePageState extends State<DesktopHomePage>
         final screenRect = parseParamScreenRect(args);
         await rustDeskWinManager.openMonitorSession(
             windowId, peerId, display, displayCount, screenRect);
+      } else if (call.method == kWindowEventRemoteWindowCoords) {
+        final windowId = int.tryParse(call.arguments);
+        if (windowId != null) {
+          return jsonEncode(
+              await rustDeskWinManager.getOtherRemoteWindowCoords(windowId));
+        }
       }
     });
     _uniLinksSubscription = listenUniLinks();

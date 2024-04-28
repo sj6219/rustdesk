@@ -192,6 +192,11 @@ impl<T: InvokeUiSession> Session<T> {
         self.lc.read().unwrap().conn_type.eq(&ConnType::RDP)
     }
 
+    #[cfg(feature = "flutter")]
+    pub fn is_multi_ui_session(&self) -> bool {
+        self.ui_handler.is_multi_ui_session()
+    }
+
     pub fn get_view_style(&self) -> String {
         self.lc.read().unwrap().view_style.clone()
     }
@@ -1227,7 +1232,7 @@ impl<T: InvokeUiSession> Session<T> {
     pub fn change_resolution(&self, display: i32, width: i32, height: i32) {
         *self.last_change_display.lock().unwrap() =
             ChangeDisplayRecord::new(display, width, height);
-        self.do_change_resolution(width, height);
+        self.do_change_resolution(display, width, height);
     }
 
     #[inline]
@@ -1237,13 +1242,22 @@ impl<T: InvokeUiSession> Session<T> {
         }
     }
 
-    fn do_change_resolution(&self, width: i32, height: i32) {
+    fn do_change_resolution(&self, display: i32, width: i32, height: i32) {
         let mut misc = Misc::new();
-        misc.set_change_resolution(Resolution {
+        let resolution = Resolution {
             width,
             height,
             ..Default::default()
-        });
+        };
+        if crate::common::is_support_multi_ui_session_num(self.lc.read().unwrap().version) {
+            misc.set_change_display_resolution(DisplayResolution {
+                display,
+                resolution: Some(resolution).into(),
+                ..Default::default()
+            });
+        } else {
+            misc.set_change_resolution(resolution);
+        }
         let mut msg = Message::new();
         msg.set_misc(misc);
         self.send(Data::Message(msg));
@@ -1297,6 +1311,22 @@ impl<T: InvokeUiSession> Session<T> {
         } else {
             log::error!("selected invalid sid: {}", sid);
         }
+    }
+
+    #[inline]
+    pub fn request_init_msgs(&self, display: usize) {
+        self.send_message_query(display);
+    }
+
+    fn send_message_query(&self, display: usize) {
+        let mut misc = Misc::new();
+        misc.set_message_query(MessageQuery {
+            switch_display: display as _,
+            ..Default::default()
+        });
+        let mut msg = Message::new();
+        msg.set_misc(misc);
+        self.send(Data::Message(msg));
     }
 }
 
@@ -1358,6 +1388,9 @@ pub trait InvokeUiSession: Send + Sync + Clone + 'static + Sized + Default {
     #[cfg(all(feature = "vram", feature = "flutter"))]
     fn on_texture(&self, display: usize, texture: *mut c_void);
     fn set_multiple_windows_session(&self, sessions: Vec<WindowsSession>);
+    fn set_current_display(&self, disp_idx: i32);
+    #[cfg(feature = "flutter")]
+    fn is_multi_ui_session(&self) -> bool;
 }
 
 impl<T: InvokeUiSession> Deref for Session<T> {

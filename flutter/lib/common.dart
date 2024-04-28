@@ -2978,16 +2978,16 @@ Future<bool> setServerConfig(
   }
   // id
   if (config.idServer.isNotEmpty && errMsgs != null) {
-    errMsgs[0].value =
-        translate(await bind.mainTestIfValidServer(server: config.idServer));
+    errMsgs[0].value = translate(await bind.mainTestIfValidServer(
+        server: config.idServer, testWithProxy: true));
     if (errMsgs[0].isNotEmpty) {
       return false;
     }
   }
   // relay
   if (config.relayServer.isNotEmpty && errMsgs != null) {
-    errMsgs[1].value =
-        translate(await bind.mainTestIfValidServer(server: config.relayServer));
+    errMsgs[1].value = translate(await bind.mainTestIfValidServer(
+        server: config.relayServer, testWithProxy: true));
     if (errMsgs[1].isNotEmpty) {
       return false;
     }
@@ -3175,4 +3175,42 @@ Size getIncomingOnlySettingsSize() {
 bool isInHomePage() {
   final controller = Get.find<DesktopTabController>();
   return controller.state.value.selected == 0;
+}
+
+Widget buildPresetPasswordWarning() {
+  return FutureBuilder<bool>(
+    future: bind.isPresetPassword(),
+    builder: (BuildContext context, AsyncSnapshot<bool> snapshot) {
+      if (snapshot.connectionState == ConnectionState.waiting) {
+        return CircularProgressIndicator(); // Show a loading spinner while waiting for the Future to complete
+      } else if (snapshot.hasError) {
+        return Text(
+            'Error: ${snapshot.error}'); // Show an error message if the Future completed with an error
+      } else if (snapshot.hasData && snapshot.data == true) {
+        return Container(
+          color: Colors.yellow,
+          child: Column(
+            children: [
+              Align(
+                  child: Text(
+                translate("Security Alert"),
+                style: TextStyle(
+                  color: Colors.red,
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
+              )).paddingOnly(bottom: 8),
+              Text(
+                translate("preset_password_warning"),
+                style: TextStyle(color: Colors.red),
+              )
+            ],
+          ).paddingAll(8),
+        ); // Show a warning message if the Future completed with true
+      } else {
+        return SizedBox
+            .shrink(); // Show nothing if the Future completed with false or null
+      }
+    },
+  );
 }
