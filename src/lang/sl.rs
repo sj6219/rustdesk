@@ -239,6 +239,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Empty", "Prazno"),
         ("Invalid folder name", "Napačno ime mape"),
         ("Socks5 Proxy", "Socks5 posredniški strežnik"),
+        ("Socks5/Http(s) Proxy", "Socks5/Http(s) posredniški strežnik"),
         ("Discovered", "Odkriti"),
         ("install_daemon_tip", "Za samodejni zagon ob vklopu računalnika je potrebno dodati sistemsko storitev"),
         ("Remote ID", "Oddaljeni ID"),
@@ -601,5 +602,8 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Everyone", ""),
         ("ab_web_console_tip", ""),
         ("allow-only-conn-window-open-tip", ""),
+        ("no_need_privacy_mode_no_physical_displays_tip", ""),
+        ("Follow remote cursor", ""),
+        ("Follow remote window focus", ""),
     ].iter().cloned().collect();
 }

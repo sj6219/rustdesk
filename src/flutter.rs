@@ -882,6 +882,21 @@ impl InvokeUiSession for FlutterHandler {
         );
     }
 
+    fn is_multi_ui_session(&self) -> bool {
+        self.session_handlers.read().unwrap().len() > 1
+    }
+
+    fn set_current_display(&self, disp_idx: i32) {
+        if self.is_multi_ui_session() {
+            return;
+        }
+        self.push_event(
+            "follow_current_display",
+            &[("display_idx", &disp_idx.to_string())],
+            &[],
+        );
+    }
+
     fn on_connected(&self, _conn_type: ConnType) {}
 
     fn msgbox(&self, msgtype: &str, title: &str, text: &str, link: &str, retry: bool) {
@@ -1052,7 +1067,7 @@ pub fn session_add(
 
     let mut preset_password = password.clone();
     let shared_password = if is_shared_password {
-        // To achieve a flexible password application order, we dont' treat shared password as a preset password.
+        // To achieve a flexible password application order, we don't treat shared password as a preset password.
         preset_password = Default::default();
         Some(password)
     } else {
@@ -1106,7 +1121,7 @@ pub fn session_start_(
 ) -> ResultType<()> {
     // is_connected is used to indicate whether to start a peer connection. For two cases:
     // 1. "Move tab to new window"
-    // 2. multi ui session within the same peer connnection.
+    // 2. multi ui session within the same peer connection.
     let mut is_connected = false;
     let mut is_found = false;
     for s in sessions::get_sessions() {

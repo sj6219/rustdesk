@@ -1045,7 +1045,6 @@ class _DisplayMenuState extends State<_DisplayMenu> {
   @override
   Widget build(BuildContext context) {
     _screenAdjustor.updateScreen();
-
     menuChildrenGetter() {
       final menuChildren = <Widget>[
         _screenAdjustor.adjustWindow(context),
@@ -1058,11 +1057,18 @@ class _DisplayMenuState extends State<_DisplayMenu> {
           ffi: widget.ffi,
           screenAdjustor: _screenAdjustor,
         ),
-        // We may add this feature if it is needed and we have an EV certificate.
-        // _VirtualDisplayMenu(
-        //   id: widget.id,
-        //   ffi: widget.ffi,
-        // ),
+        if (pi.isRustDeskIdd)
+          _RustDeskVirtualDisplayMenu(
+            id: widget.id,
+            ffi: widget.ffi,
+          ),
+        if (pi.isAmyuniIdd)
+          _AmyuniVirtualDisplayMenu(
+            id: widget.id,
+            ffi: widget.ffi,
+          ),
+        Divider(),
+        cursorToggles(),
         Divider(),
         toggles(),
       ];
@@ -1200,6 +1206,23 @@ class _DisplayMenuState extends State<_DisplayMenu> {
                   .map((e) => RdoMenuButton(
                       value: e.value,
                       groupValue: e.groupValue,
+                      onChanged: e.onChanged,
+                      child: e.child,
+                      ffi: ffi))
+                  .toList());
+        });
+  }
+
+  cursorToggles() {
+    return futureBuilder(
+        future: toolbarCursor(context, id, ffi),
+        hasData: (data) {
+          final v = data as List<TToggleMenu>;
+          if (v.isEmpty) return Offstage();
+          return Column(
+              children: v
+                  .map((e) => CkbMenuButton(
+                      value: e.value,
                       onChanged: e.onChanged,
                       child: e.child,
                       ffi: ffi))
@@ -1540,21 +1563,23 @@ class _ResolutionsMenuState extends State<_ResolutionsMenu> {
   }
 }
 
-class _VirtualDisplayMenu extends StatefulWidget {
+class _RustDeskVirtualDisplayMenu extends StatefulWidget {
   final String id;
   final FFI ffi;
 
-  _VirtualDisplayMenu({
+  _RustDeskVirtualDisplayMenu({
     Key? key,
     required this.id,
     required this.ffi,
   }) : super(key: key);
 
   @override
-  State<_VirtualDisplayMenu> createState() => _VirtualDisplayMenuState();
+  State<_RustDeskVirtualDisplayMenu> createState() =>
+      _RustDeskVirtualDisplayMenuState();
 }
 
-class _VirtualDisplayMenuState extends State<_VirtualDisplayMenu> {
+class _RustDeskVirtualDisplayMenuState
+    extends State<_RustDeskVirtualDisplayMenu> {
   @override
   void initState() {
     super.initState();
@@ -1569,7 +1594,7 @@ class _VirtualDisplayMenuState extends State<_VirtualDisplayMenu> {
       return Offstage();
     }
 
-    final virtualDisplays = widget.ffi.ffiModel.pi.virtualDisplays;
+    final virtualDisplays = widget.ffi.ffiModel.pi.RustDeskVirtualDisplays;
     final privacyModeState = PrivacyModeState.find(widget.id);
 
     final children = <Widget>[];
@@ -1603,6 +1628,82 @@ class _VirtualDisplayMenuState extends State<_VirtualDisplayMenu> {
           ffi: widget.ffi,
           child: Text(translate('Plug out all')),
         )));
+    return _SubmenuButton(
+      ffi: widget.ffi,
+      menuChildren: children,
+      child: Text(translate("Virtual display")),
+    );
+  }
+}
+
+class _AmyuniVirtualDisplayMenu extends StatefulWidget {
+  final String id;
+  final FFI ffi;
+
+  _AmyuniVirtualDisplayMenu({
+    Key? key,
+    required this.id,
+    required this.ffi,
+  }) : super(key: key);
+
+  @override
+  State<_AmyuniVirtualDisplayMenu> createState() =>
+      _AmiyuniVirtualDisplayMenuState();
+}
+
+class _AmiyuniVirtualDisplayMenuState extends State<_AmyuniVirtualDisplayMenu> {
+  @override
+  void initState() {
+    super.initState();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.ffi.ffiModel.pi.platform != kPeerPlatformWindows) {
+      return Offstage();
+    }
+    if (!widget.ffi.ffiModel.pi.isInstalled) {
+      return Offstage();
+    }
+
+    final count = widget.ffi.ffiModel.pi.amyuniVirtualDisplayCount;
+    final privacyModeState = PrivacyModeState.find(widget.id);
+
+    final children = <Widget>[
+      Obx(() => Row(
+            children: [
+              TextButton(
+                onPressed: privacyModeState.isNotEmpty || count == 0
+                    ? null
+                    : () => bind.sessionToggleVirtualDisplay(
+                        sessionId: widget.ffi.sessionId, index: 0, on: false),
+                child: Icon(Icons.remove),
+              ),
+              Text(count.toString()),
+              TextButton(
+                onPressed: privacyModeState.isNotEmpty || count == 4
+                    ? null
+                    : () => bind.sessionToggleVirtualDisplay(
+                        sessionId: widget.ffi.sessionId, index: 0, on: true),
+                child: Icon(Icons.add),
+              ),
+            ],
+          )),
+      Divider(),
+      Obx(() => MenuButton(
+            onPressed: privacyModeState.isNotEmpty || count == 0
+                ? null
+                : () {
+                    bind.sessionToggleVirtualDisplay(
+                        sessionId: widget.ffi.sessionId,
+                        index: kAllVirtualDisplay,
+                        on: false);
+                  },
+            ffi: widget.ffi,
+            child: Text(translate('Plug out all')),
+          )),
+    ];
+
     return _SubmenuButton(
       ffi: widget.ffi,
       menuChildren: children,

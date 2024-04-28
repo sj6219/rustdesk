@@ -4,7 +4,7 @@ use hbb_common::{
     allow_err,
     bytes::Bytes,
     config::{
-        self, Config, LocalConfig, PeerConfig, CONNECT_TIMEOUT, HARD_SETTINGS, RENDEZVOUS_PORT,
+        self, Config, LocalConfig, PeerConfig, CONNECT_TIMEOUT, RENDEZVOUS_PORT,
     },
     directories_next,
     futures::future::join_all,
@@ -65,6 +65,7 @@ lazy_static::lazy_static! {
         id: "".to_owned(),
     }));
     static ref ASYNC_JOB_STATUS : Arc<Mutex<String>> = Default::default();
+    static ref ASYNC_HTTP_STATUS : Arc<Mutex<HashMap<String, String>>> = Arc::new(Mutex::new(HashMap::new()));
     static ref TEMPORARY_PASSWD : Arc<Mutex<String>> = Arc::new(Mutex::new("".to_owned()));
 }
 
@@ -279,8 +280,8 @@ pub fn get_options() -> String {
 }
 
 #[inline]
-pub fn test_if_valid_server(host: String) -> String {
-    hbb_common::socket_client::test_if_valid_server(&host)
+pub fn test_if_valid_server(host: String, test_with_proxy: bool) -> String {
+    hbb_common::socket_client::test_if_valid_server(&host, test_with_proxy)
 }
 
 #[inline]
@@ -419,6 +420,16 @@ pub fn set_socks(proxy: String, username: String, password: String) {
         password,
     })
     .ok();
+}
+
+#[inline]
+pub fn get_proxy_status() -> bool {
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    return ipc::get_proxy_status();
+    
+    // Currently, only the desktop version has proxy settings.
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    return false;
 }
 
 #[cfg(any(target_os = "android", target_os = "ios"))]
@@ -709,6 +720,28 @@ pub fn change_id(id: String) {
 }
 
 #[inline]
+pub fn http_request(url: String, method: String, body: Option<String>, header: String) {
+    // Respond to concurrent requests for resources
+    let current_request = ASYNC_HTTP_STATUS.clone();
+    current_request.lock().unwrap().insert(url.clone()," ".to_owned());
+    std::thread::spawn(move || {
+          let res =  match crate::http_request_sync(url.clone(), method, body, header) {
+                Err(err) => { log::error!("{}", err); err.to_string() },
+                Ok(text) => text,
+            };
+        current_request.lock().unwrap().insert(url,res);
+    });
+}
+#[inline]
+pub fn get_async_http_status(url: String) -> Option<String> {
+    match ASYNC_HTTP_STATUS.lock().unwrap().get(&url) {
+        None => {None}
+        Some(_str) => {Some(_str.to_string())}
+    }
+}
+
+
+#[inline]
 pub fn post_request(url: String, body: String, header: String) {
     *ASYNC_JOB_STATUS.lock().unwrap() = " ".to_owned();
     std::thread::spawn(move || {
@@ -829,10 +862,9 @@ pub fn get_api_server() -> String {
 
 #[inline]
 pub fn has_hwcodec() -> bool {
-    #[cfg(not(any(feature = "hwcodec", feature = "mediacodec")))]
-    return false;
-    #[cfg(any(feature = "hwcodec", feature = "mediacodec"))]
-    return true;
+    // Has real hardware codec using gpu
+    (cfg!(feature = "hwcodec") && (cfg!(windows) || cfg!(target_os = "linux")))
+        || cfg!(feature = "mediacodec")
 }
 
 #[inline]
@@ -1314,4 +1346,15 @@ pub fn verify2fa(code: String) -> bool {
         refresh_options();
     }
     res
+}
+
+pub fn check_hwcodec() {
+    #[cfg(feature = "hwcodec")]
+    #[cfg(any(target_os = "windows", target_os = "linux"))]
+    {
+        scrap::hwcodec::start_check_process(true);
+        if crate::platform::is_installed() {
+            ipc::notify_server_to_check_hwcodec().ok();
+        }
+    }
 }
