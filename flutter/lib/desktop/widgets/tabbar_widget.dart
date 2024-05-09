@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 import 'dart:math';
 import 'dart:ui' as ui;
 
@@ -17,6 +16,7 @@ import 'package:get/get.dart';
 import 'package:get/get_rx/src/rx_workers/utils/debouncer.dart';
 import 'package:scroll_pos/scroll_pos.dart';
 import 'package:window_manager/window_manager.dart';
+import 'package:visibility_detector/visibility_detector.dart';
 
 import '../../utils/multi_window_manager.dart';
 
@@ -257,6 +257,8 @@ class DesktopTab extends StatelessWidget {
   late final DesktopTabType tabType;
   late final bool isMainWindow;
 
+  final RxList<String> invisibleTabKeys = RxList.empty();
+
   DesktopTab({
     Key? key,
     required this.controller,
@@ -392,12 +394,12 @@ class DesktopTab extends StatelessWidget {
                 child: Row(
                   children: [
                     Offstage(
-                        offstage: !Platform.isMacOS,
+                        offstage: !isMacOS,
                         child: const SizedBox(
                           width: 78,
                         )),
                     Offstage(
-                      offstage: kUseCompatibleUiMode || Platform.isMacOS,
+                      offstage: kUseCompatibleUiMode || isMacOS,
                       child: Row(children: [
                         Offstage(
                           offstage: !showLogo,
@@ -431,6 +433,7 @@ class DesktopTab extends StatelessWidget {
                             },
                             child: _ListView(
                               controller: controller,
+                              invisibleTabKeys: invisibleTabKeys,
                               tabBuilder: tabBuilder,
                               tabMenuBuilder: tabMenuBuilder,
                               labelGetter: labelGetter,
@@ -449,12 +452,14 @@ class DesktopTab extends StatelessWidget {
           tabType: tabType,
           state: state,
           tabController: controller,
+          invisibleTabKeys: invisibleTabKeys,
           tail: tail,
           showMinimize: showMinimize,
           showMaximize: showMaximize,
           showClose: showClose,
           onClose: onWindowCloseButton,
-        )
+          labelGetter: labelGetter,
+        ).paddingOnly(left: 10)
       ],
     );
   }
@@ -472,17 +477,22 @@ class WindowActionPanel extends StatefulWidget {
   final Widget? tail;
   final Future<bool> Function()? onClose;
 
+  final RxList<String> invisibleTabKeys;
+  final LabelGetter? labelGetter;
+
   const WindowActionPanel(
       {Key? key,
       required this.isMainWindow,
       required this.tabType,
       required this.state,
       required this.tabController,
+      required this.invisibleTabKeys,
       this.tail,
       this.showMinimize = true,
       this.showMaximize = true,
       this.showClose = true,
-      this.onClose})
+      this.onClose,
+      this.labelGetter})
       : super(key: key);
 
   @override
@@ -539,6 +549,16 @@ class WindowActionPanelState extends State<WindowActionPanel>
   }
 
   @override
+  void onWindowFocus() {
+    stateGlobal.isFocused.value = true;
+  }
+
+  @override
+  void onWindowBlur() {
+    stateGlobal.isFocused.value = false;
+  }
+
+  @override
   void onWindowMinimize() {
     stateGlobal.setMinimized(true);
     stateGlobal.setMaximized(false);
@@ -584,8 +604,8 @@ class WindowActionPanelState extends State<WindowActionPanel>
     mainWindowClose() async => await windowManager.hide();
     notMainWindowClose(WindowController controller) async {
       if (widget.tabController.length != 0) {
-        debugPrint("close not emtpy multiwindow from taskbar");
-        if (Platform.isWindows) {
+        debugPrint("close not empty multiwindow from taskbar");
+        if (isWindows) {
           await controller.show();
           await controller.focus();
           final res = await widget.onClose?.call() ?? true;
@@ -620,7 +640,7 @@ class WindowActionPanelState extends State<WindowActionPanel>
         await rustDeskWinManager.unregisterActiveWindow(kMainWindowId);
       }
       // macOS specific workaround, the window is not hiding when in fullscreen.
-      if (Platform.isMacOS && await windowManager.isFullScreen()) {
+      if (isMacOS && await windowManager.isFullScreen()) {
         stateGlobal.closeOnFullscreen ??= true;
         await windowManager.setFullScreen(false);
         await macOSWindowClose(
@@ -634,7 +654,7 @@ class WindowActionPanelState extends State<WindowActionPanel>
     } else {
       // it's safe to hide the subwindow
       final controller = WindowController.fromWindowId(kWindowId!);
-      if (Platform.isMacOS) {
+      if (isMacOS) {
         // onWindowClose() maybe called multiple times because of loopCloseWindow() in remote_tab_page.dart.
         // use ??=  to make sure the value is set on first call.
 
@@ -659,18 +679,41 @@ class WindowActionPanelState extends State<WindowActionPanel>
     super.onWindowClose();
   }
 
+  bool showTabDowndown() {
+    return widget.tabController.state.value.tabs.length > 1 &&
+        (widget.tabController.tabType == DesktopTabType.remoteScreen ||
+            widget.tabController.tabType == DesktopTabType.fileTransfer ||
+            widget.tabController.tabType == DesktopTabType.portForward ||
+            widget.tabController.tabType == DesktopTabType.cm);
+  }
+
+  List<String> existingInvisibleTab() {
+    return widget.invisibleTabKeys
+        .where((key) =>
+            widget.tabController.state.value.tabs.any((tab) => tab.key == key))
+        .toList();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.end,
       children: [
+        Obx(() => Offstage(
+              offstage:
+                  !(showTabDowndown() && existingInvisibleTab().isNotEmpty),
+              child: _TabDropDownButton(
+                  controller: widget.tabController,
+                  labelGetter: widget.labelGetter,
+                  tabkeys: existingInvisibleTab()),
+            )),
         Offstage(offstage: widget.tail == null, child: widget.tail),
         Offstage(
           offstage: kUseCompatibleUiMode,
           child: Row(
             children: [
               Offstage(
-                  offstage: !widget.showMinimize || Platform.isMacOS,
+                  offstage: !widget.showMinimize || isMacOS,
                   child: ActionIcon(
                     message: 'Minimize',
                     icon: IconFont.min,
@@ -684,7 +727,7 @@ class WindowActionPanelState extends State<WindowActionPanel>
                     isClose: false,
                   )),
               Offstage(
-                  offstage: !widget.showMaximize || Platform.isMacOS,
+                  offstage: !widget.showMaximize || isMacOS,
                   child: Obx(() => ActionIcon(
                         message: stateGlobal.isMaximized.isTrue
                             ? 'Restore'
@@ -698,7 +741,7 @@ class WindowActionPanelState extends State<WindowActionPanel>
                         isClose: false,
                       ))),
               Offstage(
-                  offstage: !widget.showClose || Platform.isMacOS,
+                  offstage: !widget.showClose || isMacOS,
                   child: ActionIcon(
                     message: 'Close',
                     icon: IconFont.close,
@@ -815,6 +858,7 @@ Future<bool> closeConfirmDialog() async {
 
 class _ListView extends StatelessWidget {
   final DesktopTabController controller;
+  final RxList<String> invisibleTabKeys;
 
   final TabBuilder? tabBuilder;
   final TabMenuBuilder? tabMenuBuilder;
@@ -826,8 +870,9 @@ class _ListView extends StatelessWidget {
 
   Rx<DesktopTabState> get state => controller.state;
 
-  const _ListView({
+  _ListView({
     required this.controller,
+    required this.invisibleTabKeys,
     this.tabBuilder,
     this.tabMenuBuilder,
     this.labelGetter,
@@ -847,6 +892,19 @@ class _ListView extends StatelessWidget {
         controller.tabType == DesktopTabType.install;
   }
 
+  onVisibilityChanged(VisibilityInfo info) {
+    final key = (info.key as ValueKey).value;
+    if (info.visibleFraction < 0.75) {
+      if (!invisibleTabKeys.contains(key)) {
+        invisibleTabKeys.add(key);
+      }
+      invisibleTabKeys.removeWhere((key) =>
+          controller.state.value.tabs.where((e) => e.key == key).isEmpty);
+    } else {
+      invisibleTabKeys.remove(key);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Obx(() => ListView(
@@ -859,35 +917,41 @@ class _ListView extends StatelessWidget {
             : state.value.tabs.asMap().entries.map((e) {
                 final index = e.key;
                 final tab = e.value;
-                return _Tab(
+                final label = labelGetter == null
+                    ? Rx<String>(tab.label)
+                    : labelGetter!(tab.label);
+                return VisibilityDetector(
                   key: ValueKey(tab.key),
-                  index: index,
-                  tabInfoKey: tab.key,
-                  label: labelGetter == null
-                      ? Rx<String>(tab.label)
-                      : labelGetter!(tab.label),
-                  selectedIcon: tab.selectedIcon,
-                  unselectedIcon: tab.unselectedIcon,
-                  closable: tab.closable,
-                  selected: state.value.selected,
-                  onClose: () {
-                    if (tab.onTabCloseButton != null) {
-                      tab.onTabCloseButton!();
-                    } else {
-                      controller.remove(index);
-                    }
-                  },
-                  onTap: () {
-                    controller.jumpTo(index);
-                    tab.onTap?.call();
-                  },
-                  tabBuilder: tabBuilder,
-                  tabMenuBuilder: tabMenuBuilder,
-                  maxLabelWidth: maxLabelWidth,
-                  selectedTabBackgroundColor: selectedTabBackgroundColor ??
-                      MyTheme.tabbar(context).selectedTabBackgroundColor,
-                  unSelectedTabBackgroundColor: unSelectedTabBackgroundColor,
-                  selectedBorderColor: selectedBorderColor,
+                  onVisibilityChanged: onVisibilityChanged,
+                  child: _Tab(
+                    key: ValueKey(tab.key),
+                    index: index,
+                    tabInfoKey: tab.key,
+                    label: label,
+                    tabType: controller.tabType,
+                    selectedIcon: tab.selectedIcon,
+                    unselectedIcon: tab.unselectedIcon,
+                    closable: tab.closable,
+                    selected: state.value.selected,
+                    onClose: () {
+                      if (tab.onTabCloseButton != null) {
+                        tab.onTabCloseButton!();
+                      } else {
+                        controller.remove(index);
+                      }
+                    },
+                    onTap: () {
+                      controller.jumpTo(index);
+                      tab.onTap?.call();
+                    },
+                    tabBuilder: tabBuilder,
+                    tabMenuBuilder: tabMenuBuilder,
+                    maxLabelWidth: maxLabelWidth,
+                    selectedTabBackgroundColor: selectedTabBackgroundColor ??
+                        MyTheme.tabbar(context).selectedTabBackgroundColor,
+                    unSelectedTabBackgroundColor: unSelectedTabBackgroundColor,
+                    selectedBorderColor: selectedBorderColor,
+                  ),
                 );
               }).toList()));
   }
@@ -897,6 +961,7 @@ class _Tab extends StatefulWidget {
   final int index;
   final String tabInfoKey;
   final Rx<String> label;
+  final DesktopTabType tabType;
   final IconData? selectedIcon;
   final IconData? unselectedIcon;
   final bool closable;
@@ -915,6 +980,7 @@ class _Tab extends StatefulWidget {
     required this.index,
     required this.tabInfoKey,
     required this.label,
+    required this.tabType,
     this.selectedIcon,
     this.unselectedIcon,
     this.tabBuilder,
@@ -954,7 +1020,9 @@ class _TabState extends State<_Tab> with RestorationMixin {
       return ConstrainedBox(
           constraints: BoxConstraints(maxWidth: widget.maxLabelWidth ?? 200),
           child: Tooltip(
-            message: translate(widget.label.value),
+            message: widget.tabType == DesktopTabType.main
+                ? ''
+                : translate(widget.label.value),
             child: Text(
               translate(widget.label.value),
               textAlign: TextAlign.center,
@@ -1111,6 +1179,7 @@ class ActionIcon extends StatefulWidget {
   final String? message;
   final IconData icon;
   final GestureTapCallback? onTap;
+  final GestureTapDownCallback? onTapDown;
   final bool isClose;
   final double iconSize;
   final double boxSize;
@@ -1120,6 +1189,7 @@ class ActionIcon extends StatefulWidget {
       this.message,
       required this.icon,
       this.onTap,
+      this.onTapDown,
       this.isClose = false,
       this.iconSize = _kActionIconSize,
       this.boxSize = _kTabBarHeight - 1})
@@ -1149,6 +1219,7 @@ class _ActionIconState extends State<ActionIcon> {
             : MyTheme.tabbar(context).hoverColor,
         onHover: (value) => hover.value = value,
         onTap: widget.onTap,
+        onTapDown: widget.onTapDown,
         child: SizedBox(
           height: widget.boxSize,
           width: widget.boxSize,
@@ -1186,6 +1257,103 @@ class AddButton extends StatelessWidget {
         onTap: () => rustDeskWinManager.call(
             WindowType.Main, kWindowMainWindowOnTop, ""),
         isClose: false);
+  }
+}
+
+class _TabDropDownButton extends StatefulWidget {
+  final DesktopTabController controller;
+  final List<String> tabkeys;
+  final LabelGetter? labelGetter;
+
+  const _TabDropDownButton(
+      {required this.controller, required this.tabkeys, this.labelGetter});
+
+  @override
+  State<_TabDropDownButton> createState() => _TabDropDownButtonState();
+}
+
+class _TabDropDownButtonState extends State<_TabDropDownButton> {
+  var position = RelativeRect.fromLTRB(0, 0, 0, 0);
+
+  @override
+  Widget build(BuildContext context) {
+    List<String> sortedKeys = widget.controller.state.value.tabs
+        .where((e) => widget.tabkeys.contains(e.key))
+        .map((e) => e.key)
+        .toList();
+    return ActionIcon(
+      onTapDown: (details) {
+        final x = details.globalPosition.dx;
+        final y = details.globalPosition.dy;
+        position = RelativeRect.fromLTRB(x, y, x, y);
+      },
+      icon: Icons.arrow_drop_down,
+      onTap: () {
+        showMenu(
+          context: context,
+          position: position,
+          items: sortedKeys.map((e) {
+            var label = e;
+            final tabInfo = widget.controller.state.value.tabs
+                .firstWhereOrNull((element) => element.key == e);
+            if (tabInfo != null) {
+              label = tabInfo.label;
+            }
+            if (widget.labelGetter != null) {
+              label = widget.labelGetter!(e).value;
+            }
+            var index = widget.controller.state.value.tabs
+                .indexWhere((t) => t.key == e);
+            label = '${index + 1}. $label';
+            final menuHover = false.obs;
+            final btnHover = false.obs;
+            return PopupMenuItem<String>(
+              value: e,
+              height: 32,
+              onTap: () {
+                widget.controller.jumpToByKey(e);
+                if (Navigator.of(context).canPop()) {
+                  Navigator.of(context).pop();
+                }
+              },
+              child: MouseRegion(
+                onHover: (event) => setState(() => menuHover.value = true),
+                onExit: (event) => setState(() => menuHover.value = false),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: InkWell(child: Text(label)),
+                    ),
+                    Obx(
+                      () => Offstage(
+                        offstage: !(tabInfo?.onTabCloseButton != null &&
+                            menuHover.value),
+                        child: InkWell(
+                            onTap: () {
+                              tabInfo?.onTabCloseButton?.call();
+                              if (Navigator.of(context).canPop()) {
+                                Navigator.of(context).pop();
+                              }
+                            },
+                            child: MouseRegion(
+                                cursor: SystemMouseCursors.click,
+                                onHover: (event) =>
+                                    setState(() => btnHover.value = true),
+                                onExit: (event) =>
+                                    setState(() => btnHover.value = false),
+                                child: Icon(Icons.close,
+                                    color:
+                                        btnHover.value ? Colors.red : null))),
+                      ),
+                    )
+                  ],
+                ),
+              ),
+            );
+          }).toList(),
+        );
+      },
+    );
   }
 }
 

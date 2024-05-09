@@ -18,7 +18,7 @@ typedef HandleEvent = Future<void> Function(Map<String, dynamic> evt);
 
 class PlatformFFI {
   final _eventHandlers = <String, Map<String, HandleEvent>>{};
-  late RustdeskImpl _ffiBind;
+  final RustdeskImpl _ffiBind = RustdeskImpl();
 
   static String getByName(String name, [String arg = '']) {
     return context.callMethod('getByName', [name, arg]);
@@ -98,9 +98,20 @@ class PlatformFFI {
           sessionId: sessionId, display: display, ptr: ptr);
 
   Future<void> init(String appType) async {
-    isWebDesktop = !context.callMethod('isMobile');
     context.callMethod('init');
     version = getByName('version');
+    window.onContextMenu.listen((event) {
+      event.preventDefault();
+    });
+
+    context['onRegisteredEvent'] = (String message) {
+      try {
+        Map<String, dynamic> event = json.decode(message);
+        tryHandle(event);
+      } catch (e) {
+        print('json.decode fail(): $e');
+      }
+    };
   }
 
   void setEventCallback(void Function(Map<String, dynamic>) fun) {
@@ -114,10 +125,10 @@ class PlatformFFI {
     };
   }
 
-  void setRgbaCallback(void Function(Uint8List) fun) {
-    context["onRgba"] = (Uint8List? rgba) {
+  void setRgbaCallback(void Function(int, Uint8List) fun) {
+    context["onRgba"] = (int display, Uint8List? rgba) {
       if (rgba != null) {
-        fun(rgba);
+        fun(display, rgba);
       }
     };
   }
@@ -145,7 +156,5 @@ class PlatformFFI {
   }
 
   // just for compilation
-  void syncAndroidServiceAppDirConfigPath() {
-    throw UnimplementedError();
-  }
+  void syncAndroidServiceAppDirConfigPath() {}
 }

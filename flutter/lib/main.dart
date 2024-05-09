@@ -48,7 +48,7 @@ Future<void> main(List<String> args) async {
   if (args.isNotEmpty && args.first == 'multi_window') {
     kWindowId = int.parse(args[1]);
     stateGlobal.setWindowId(kWindowId!);
-    if (!Platform.isMacOS) {
+    if (!isMacOS) {
       WindowController.fromWindowId(kWindowId!).showTitleBar(false);
     }
     final argument = args[2].isEmpty
@@ -125,6 +125,7 @@ void runMainApp(bool startService) async {
   await Future.wait([gFFI.abModel.loadCache(), gFFI.groupModel.loadCache()]);
   gFFI.userModel.refreshCurrentUser();
   runApp(App());
+
   // Set window option.
   WindowOptions windowOptions = getHiddenTitleBarWindowOptions();
   windowManager.waitUntilReadyToShow(windowOptions, () async {
@@ -150,11 +151,11 @@ void runMainApp(bool startService) async {
 void runMobileApp() async {
   await initEnv(kAppTypeMain);
   if (isAndroid) androidChannelInit();
-  platformFFI.syncAndroidServiceAppDirConfigPath();
+  if (isAndroid) platformFFI.syncAndroidServiceAppDirConfigPath();
   await Future.wait([gFFI.abModel.loadCache(), gFFI.groupModel.loadCache()]);
   gFFI.userModel.refreshCurrentUser();
   runApp(App());
-  await initUniLinks();
+  if (!isWeb) await initUniLinks();
 }
 
 void runMultiWindow(
@@ -247,7 +248,7 @@ bool _isCmReadyToShow = false;
 showCmWindow({bool isStartup = false}) async {
   if (isStartup) {
     WindowOptions windowOptions = getHiddenTitleBarWindowOptions(
-        size: kConnectionManagerWindowSizeClosedChat);
+        size: kConnectionManagerWindowSizeClosedChat, alwaysOnTop: true);
     await windowManager.waitUntilReadyToShow(windowOptions, null);
     bind.mainHideDocker();
     await Future.wait([
@@ -341,7 +342,7 @@ void runInstallPage() async {
 }
 
 WindowOptions getHiddenTitleBarWindowOptions(
-    {Size? size, bool center = false}) {
+    {Size? size, bool center = false, bool? alwaysOnTop}) {
   var defaultTitleBarStyle = TitleBarStyle.hidden;
   // we do not hide titlebar on win7 because of the frame overflow.
   if (kUseCompatibleUiMode) {
@@ -353,6 +354,7 @@ WindowOptions getHiddenTitleBarWindowOptions(
     backgroundColor: Colors.transparent,
     skipTaskbar: false,
     titleBarStyle: defaultTitleBarStyle,
+    alwaysOnTop: alwaysOnTop,
   );
 }
 
@@ -438,6 +440,9 @@ class _AppState extends State<App> {
                   child = botToastBuilder(context, child);
                   if (isDesktop && desktopType == DesktopType.main) {
                     child = keyListenerBuilder(context, child);
+                  }
+                  if (isLinux) {
+                    child = buildVirtualWindowFrame(context, child);
                   }
                   return child;
                 },

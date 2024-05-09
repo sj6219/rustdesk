@@ -53,7 +53,7 @@ class _ConnectionPageState extends State<ConnectionPage> {
   @override
   void initState() {
     super.initState();
-    _uniLinksSubscription = listenUniLinks();
+    if (!isWeb) _uniLinksSubscription = listenUniLinks();
     if (_idController.text.isEmpty) {
       () async {
         final lastRemoteId = await bind.mainGetLastRemoteId();
@@ -84,7 +84,7 @@ class _ConnectionPageState extends State<ConnectionPage> {
       slivers: [
         SliverList(
             delegate: SliverChildListDelegate([
-          _buildUpdateUI(),
+          if (!bind.isCustomClient()) _buildUpdateUI(),
           _buildRemoteIDTextField(),
         ])),
         SliverFillRemaining(

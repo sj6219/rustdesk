@@ -1,5 +1,7 @@
 package com.carriez.flutter_hbb
 
+import ffi.FFI
+
 /**
  * Capture screen,get video and audio,send to rust.
  * Dispatch notifications
@@ -67,11 +69,7 @@ const val AUDIO_ENCODING = AudioFormat.ENCODING_PCM_FLOAT //  ENCODING_OPUS need
 const val AUDIO_SAMPLE_RATE = 48000
 const val AUDIO_CHANNEL_MASK = AudioFormat.CHANNEL_IN_STEREO
 
-class MainService : Service() /* , ClipboardManager.OnPrimaryClipChangedListener */ {
-
-    init {
-        System.loadLibrary("rustdesk")
-    }
+class MainService : Service() {
 
     @Keep
     @RequiresApi(Build.VERSION_CODES.N)
@@ -164,34 +162,12 @@ class MainService : Service() /* , ClipboardManager.OnPrimaryClipChangedListener
     private var serviceHandler: Handler? = null
 
     private val powerManager: PowerManager by lazy { applicationContext.getSystemService(Context.POWER_SERVICE) as PowerManager }
-    private val wakeLock: PowerManager.WakeLock by lazy { powerManager.newWakeLock(PowerManager.ACQUIRE_CAUSES_WAKEUP or PowerManager.SCREEN_BRIGHT_WAKE_LOCK or PowerManager.ON_AFTER_RELEASE, "rustdesk:wakelock")}
+    private val wakeLock: PowerManager.WakeLock by lazy { powerManager.newWakeLock(PowerManager.ACQUIRE_CAUSES_WAKEUP or PowerManager.SCREEN_BRIGHT_WAKE_LOCK, "rustdesk:wakelock")}
     private val clipboardManager: ClipboardManager by lazy { applicationContext.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager }
-    private var timerTask: Timer? = null
-    // override fun   onPrimaryClipChanged() {
-    //     Log.d(logTag, "Clipboard===")
-    //     val clip : ClipData? = clipboardManager.getPrimaryClip();
-    //     if (clip != null && clip.getItemCount() > 0) {
-    //         val str : String = clip.getItemAt(0).coerceToText(this).toString();
-    //             Log.d(logTag, "Clipboard:$str")
-    // }
-    
-    // jvm call rust
-    private external fun init(ctx: Context)
-
-    /// When app start on boot, app_dir will not be passed from flutter
-    /// so pass a app_dir here to rust server
-    private external fun startServer(app_dir: String)
-    private external fun startService()
-    private external fun onVideoFrameUpdate(buf: ByteBuffer)
-    private external fun onAudioFrameUpdate(buf: ByteBuffer)
-    private external fun translateLocale(localeName: String, input: String): String
-    private external fun refreshScreen()
-    private external fun setFrameRawEnable(name: String, value: Boolean)
-    // private external fun sendVp9(data: ByteArray)
 
     private fun translate(input: String): String {
         Log.d(logTag, "translate:$LOCAL_NAME")
-        return translateLocale(LOCAL_NAME, input)
+        return FFI.translateLocale(LOCAL_NAME, input)
     }
 
     companion object {
@@ -230,7 +206,7 @@ class MainService : Service() /* , ClipboardManager.OnPrimaryClipChangedListener
     override fun onCreate() {
         super.onCreate()
         Log.d(logTag,"MainService onCreate")
-        init(this)
+        FFI.init(this)
         HandlerThread("Service", Process.THREAD_PRIORITY_BACKGROUND).apply {
             start()
             serviceLooper = looper
@@ -242,7 +218,7 @@ class MainService : Service() /* , ClipboardManager.OnPrimaryClipChangedListener
         // keep the config dir same with flutter
         val prefs = applicationContext.getSharedPreferences(KEY_SHARED_PREFERENCES, FlutterActivity.MODE_PRIVATE)
         val configPath = prefs.getString(KEY_APP_DIR_CONFIG_PATH, "") ?: ""
-        startServer(configPath)
+        FFI.startServer(configPath, "")
 
         createForegroundNotification()
     }
@@ -297,7 +273,7 @@ class MainService : Service() /* , ClipboardManager.OnPrimaryClipChangedListener
                 SCREEN_INFO.dpi = dpi
                 if (isStart) {
                     stopCapture()
-                    refreshScreen()
+                    FFI.refreshScreen()
                     startCapture()
                 }
             }
@@ -325,7 +301,7 @@ class MainService : Service() /* , ClipboardManager.OnPrimaryClipChangedListener
             createForegroundNotification()
 
             if (intent.getBooleanExtra(EXT_INIT_FROM_BOOT, false)) {
-                startService()
+                FFI.startService()
             }
             Log.d(logTag, "service starting: ${startId}:${Thread.currentThread()}")
             val mediaProjectionManager =
@@ -373,12 +349,15 @@ class MainService : Service() /* , ClipboardManager.OnPrimaryClipChangedListener
                 ).apply {
                     setOnImageAvailableListener({ imageReader: ImageReader ->
                         try {
+                            if (!isStart) {
+                                return@setOnImageAvailableListener
+                            }
                             imageReader.acquireLatestImage().use { image ->
-                                if (image == null) return@setOnImageAvailableListener
+                                if (image == null || !isStart) return@setOnImageAvailableListener
                                 val planes = image.planes
                                 val buffer = planes[0].buffer
                                 buffer.rewind()
-                                onVideoFrameUpdate(buffer)
+                                FFI.onVideoFrameUpdate(buffer)
                             }
                         } catch (ignored: java.lang.Exception) {
                         }
@@ -413,36 +392,24 @@ class MainService : Service() /* , ClipboardManager.OnPrimaryClipChangedListener
         }
         checkMediaPermission()
         _isStart = true
-        setFrameRawEnable("video",true)
-        setFrameRawEnable("audio",true)
-        
-        // timerTask = kotlin.concurrent.timer(initialDelay = 2000, period = 2000) {	
-        //     if (!powerManager.isInteractive) {
-        //         Log.d(logTag,"Turn on Screen!!!")
-        //     }
-        //     if (wakeLock.isHeld) {
-        //         //Log.d(logTag,"Turn on Screen, WakeLock release")
-        //         wakeLock.release()
-        //     }
-        //     //Log.d(logTag,"Turn on Screen")
-        //     wakeLock.acquire(5000)   
-        // }
+        FFI.setFrameRawEnable("video",true)
+        FFI.setFrameRawEnable("audio",true)
         return true
     }
 
     @Synchronized
     fun stopCapture() {
-        timerTask?.cancel()
-        timerTask = null
-        
         Log.d(logTag, "Stop Capture")
-        setFrameRawEnable("video",false)
-        setFrameRawEnable("audio",false)
+        FFI.setFrameRawEnable("video",false)
+        FFI.setFrameRawEnable("audio",false)
         _isStart = false
         // release video
         virtualDisplay?.release()
-        surface?.release()
         imageReader?.close()
+        imageReader = null
+        // suface needs to be release after imageReader.close to imageReader access released surface
+        // https://github.com/rustdesk/rustdesk/issues/4118#issuecomment-1515666629
+        surface?.release()
         videoEncoder?.let {
             it.signalEndOfInputStream()
             it.stop()
@@ -453,10 +420,6 @@ class MainService : Service() /* , ClipboardManager.OnPrimaryClipChangedListener
 
         // release audio
         audioRecordStat = false
-        audioRecorder?.release()
-        audioRecorder = null
-        minBufferSize = 0
-        //clipboardManager.removePrimaryClipChangedListener(this)
     }
 
     fun destroy() {
@@ -464,8 +427,6 @@ class MainService : Service() /* , ClipboardManager.OnPrimaryClipChangedListener
         _isReady = false
 
         stopCapture()
-        imageReader?.close()
-        imageReader = null
 
         mediaProjection = null
         checkMediaPermission()
@@ -573,9 +534,13 @@ class MainService : Service() /* , ClipboardManager.OnPrimaryClipChangedListener
                 thread {
                     while (audioRecordStat) {
                         audioReader!!.readSync(audioRecorder!!)?.let {
-                            onAudioFrameUpdate(it)
+                            FFI.onAudioFrameUpdate(it)
                         }
                     }
+                    // let's release here rather than onDestroy to avoid threading issue
+                    audioRecorder?.release()
+                    audioRecorder = null
+                    minBufferSize = 0
                     Log.d(logTag, "Exit audio thread")
                 }
             } catch (e: Exception) {
