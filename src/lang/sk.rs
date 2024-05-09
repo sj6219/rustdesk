@@ -605,5 +605,12 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("no_need_privacy_mode_no_physical_displays_tip", "Žiadne fyzické displeje, nie je potrebné používať režim ochrany osobných údajov."),
         ("Follow remote cursor", "Nasledovať vzdialený kurzor"),
         ("Follow remote window focus", "Nasledovať vzdialené zameranie okna"),
+        ("default_proxy_tip", "Predvolený protokol a port sú Socks5 a 1080"),
+        ("no_audio_input_device_tip", "Nenašlo sa žiadne vstupné zvukové zariadenie."),
+        ("Incoming", ""),
+        ("Outgoing", ""),
+        ("Clear Wayland screen selection", ""),
+        ("clear_Wayland_screen_selection_tip", ""),
+        ("confirm_clear_Wayland_screen_selection_tip", ""),
     ].iter().cloned().collect();
 }
