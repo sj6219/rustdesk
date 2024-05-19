@@ -144,7 +144,8 @@ void runMainApp(bool startService) async {
     }
     windowManager.setOpacity(1);
     windowManager.setTitle(getWindowName());
-    windowManager.setResizable(!bind.isIncomingOnly());
+    // Do not use `windowManager.setResizable()` here.
+    setResizable(!bind.isIncomingOnly());
   });
 }
 
@@ -238,7 +239,7 @@ void runConnectionManagerScreen() async {
   } else {
     await showCmWindow(isStartup: true);
   }
-  windowManager.setResizable(false);
+  setResizable(false);
   // Start the uni links handler and redirect links to Native, not for Flutter.
   listenUniLinks(handleByFlutter: false);
 }
