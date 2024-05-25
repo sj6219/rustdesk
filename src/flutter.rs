@@ -4,7 +4,7 @@ use crate::{
     ui_session_interface::{io_loop, InvokeUiSession, Session},
 };
 use flutter_rust_bridge::StreamSink;
-#[cfg(any(feature = "flutter_texture_render", feature = "gpucodec"))]
+#[cfg(any(feature = "flutter_texture_render", feature = "vram"))]
 use hbb_common::dlopen::{
     symbor::{Library, Symbol},
     Error as LibError,
@@ -16,7 +16,7 @@ use hbb_common::{
 use serde::Serialize;
 use serde_json::json;
 
-#[cfg(any(feature = "flutter_texture_render", feature = "gpucodec"))]
+#[cfg(any(feature = "flutter_texture_render", feature = "vram"))]
 use std::os::raw::c_void;
 
 use std::{
@@ -63,7 +63,7 @@ lazy_static::lazy_static! {
     pub static ref TEXTURE_RGBA_RENDERER_PLUGIN: Result<Library, LibError> = Library::open_self();
 }
 
-#[cfg(all(target_os = "windows", feature = "gpucodec"))]
+#[cfg(all(target_os = "windows", feature = "vram"))]
 lazy_static::lazy_static! {
     pub static ref TEXTURE_GPU_RENDERER_PLUGIN: Result<Library, LibError> = Library::open("flutter_gpu_texture_renderer_plugin.dll");
 }
@@ -154,18 +154,29 @@ pub unsafe extern "C" fn free_c_args(ptr: *mut *mut c_char, len: c_int) {
     // Afterwards the vector will be dropped and thus freed.
 }
 
+#[cfg(windows)]
+#[no_mangle]
+pub unsafe extern "C" fn get_rustdesk_app_name(buffer: *mut u16, length: i32) -> i32 {
+    let name = crate::platform::wide_string(&crate::get_app_name());
+    if length > name.len() as i32 {
+        std::ptr::copy_nonoverlapping(name.as_ptr(), buffer, name.len());
+        return 0;
+    }
+    -1
+}
+
 #[derive(Default)]
 struct SessionHandler {
     event_stream: Option<StreamSink<EventToUI>>,
-    #[cfg(any(feature = "flutter_texture_render", feature = "gpucodec"))]
+    #[cfg(any(feature = "flutter_texture_render", feature = "vram"))]
     renderer: VideoRenderer,
 }
 
-#[cfg(any(feature = "flutter_texture_render", feature = "gpucodec"))]
+#[cfg(any(feature = "flutter_texture_render", feature = "vram"))]
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 enum RenderType {
     PixelBuffer,
-    #[cfg(feature = "gpucodec")]
+    #[cfg(feature = "vram")]
     Texture,
 }
 
@@ -203,41 +214,41 @@ pub type FlutterRgbaRendererPluginOnRgba = unsafe extern "C" fn(
     dst_rgba_stride: c_int,
 );
 
-#[cfg(feature = "gpucodec")]
+#[cfg(feature = "vram")]
 pub type FlutterGpuTextureRendererPluginCApiSetTexture =
     unsafe extern "C" fn(output: *mut c_void, texture: *mut c_void);
 
-#[cfg(feature = "gpucodec")]
+#[cfg(feature = "vram")]
 pub type FlutterGpuTextureRendererPluginCApiGetAdapterLuid = unsafe extern "C" fn() -> i64;
 
 #[cfg(feature = "flutter_texture_render")]
 pub(super) type TextureRgbaPtr = usize;
 
-#[cfg(any(feature = "flutter_texture_render", feature = "gpucodec"))]
+#[cfg(any(feature = "flutter_texture_render", feature = "vram"))]
 struct DisplaySessionInfo {
     // TextureRgba pointer in flutter native.
     #[cfg(feature = "flutter_texture_render")]
     texture_rgba_ptr: TextureRgbaPtr,
     #[cfg(feature = "flutter_texture_render")]
     size: (usize, usize),
-    #[cfg(feature = "gpucodec")]
+    #[cfg(feature = "vram")]
     gpu_output_ptr: usize,
     notify_render_type: Option<RenderType>,
 }
 
 // Video Texture Renderer in Flutter
-#[cfg(any(feature = "flutter_texture_render", feature = "gpucodec"))]
+#[cfg(any(feature = "flutter_texture_render", feature = "vram"))]
 #[derive(Clone)]
 struct VideoRenderer {
     is_support_multi_ui_session: bool,
     map_display_sessions: Arc<RwLock<HashMap<usize, DisplaySessionInfo>>>,
     #[cfg(feature = "flutter_texture_render")]
     on_rgba_func: Option<Symbol<'static, FlutterRgbaRendererPluginOnRgba>>,
-    #[cfg(feature = "gpucodec")]
+    #[cfg(feature = "vram")]
     on_texture_func: Option<Symbol<'static, FlutterGpuTextureRendererPluginCApiSetTexture>>,
 }
 
-#[cfg(any(feature = "flutter_texture_render", feature = "gpucodec"))]
+#[cfg(any(feature = "flutter_texture_render", feature = "vram"))]
 impl Default for VideoRenderer {
     fn default() -> Self {
         #[cfg(feature = "flutter_texture_render")]
@@ -259,7 +270,7 @@ impl Default for VideoRenderer {
                 None
             }
         };
-        #[cfg(feature = "gpucodec")]
+        #[cfg(feature = "vram")]
         let on_texture_func = match &*TEXTURE_GPU_RENDERER_PLUGIN {
             Ok(lib) => {
                 let find_sym_res = unsafe {
@@ -286,13 +297,13 @@ impl Default for VideoRenderer {
             is_support_multi_ui_session: false,
             #[cfg(feature = "flutter_texture_render")]
             on_rgba_func,
-            #[cfg(feature = "gpucodec")]
+            #[cfg(feature = "vram")]
             on_texture_func,
         }
     }
 }
 
-#[cfg(any(feature = "flutter_texture_render", feature = "gpucodec"))]
+#[cfg(any(feature = "flutter_texture_render", feature = "vram"))]
 impl VideoRenderer {
     #[inline]
     #[cfg(feature = "flutter_texture_render")]
@@ -307,7 +318,7 @@ impl VideoRenderer {
                 DisplaySessionInfo {
                     texture_rgba_ptr: usize::default(),
                     size: (width, height),
-                    #[cfg(feature = "gpucodec")]
+                    #[cfg(feature = "vram")]
                     gpu_output_ptr: usize::default(),
                     notify_render_type: None,
                 },
@@ -319,11 +330,26 @@ impl VideoRenderer {
     fn register_pixelbuffer_texture(&self, display: usize, ptr: usize) {
         let mut sessions_lock = self.map_display_sessions.write().unwrap();
         if ptr == 0 {
+            if let Some(info) = sessions_lock.get_mut(&display) {
+                if info.texture_rgba_ptr != usize::default() {
+                    info.texture_rgba_ptr = usize::default();
+                }
+                #[cfg(feature = "vram")]
+                if info.gpu_output_ptr != usize::default() {
+                    return;
+                }
+            }
             sessions_lock.remove(&display);
         } else {
             if let Some(info) = sessions_lock.get_mut(&display) {
-                if info.texture_rgba_ptr != 0 && info.texture_rgba_ptr != ptr as TextureRgbaPtr {
-                    log::error!("unreachable, texture_rgba_ptr is not null and not equal to ptr");
+                if info.texture_rgba_ptr != usize::default()
+                    && info.texture_rgba_ptr != ptr as TextureRgbaPtr
+                {
+                    log::warn!(
+                        "texture_rgba_ptr is not null and not equal to ptr, replace {} to {}",
+                        info.texture_rgba_ptr,
+                        ptr
+                    );
                 }
                 info.texture_rgba_ptr = ptr as _;
                 info.notify_render_type = None;
@@ -334,7 +360,7 @@ impl VideoRenderer {
                         DisplaySessionInfo {
                             texture_rgba_ptr: ptr as _,
                             size: (0, 0),
-                            #[cfg(feature = "gpucodec")]
+                            #[cfg(feature = "vram")]
                             gpu_output_ptr: usize::default(),
                             notify_render_type: None,
                         },
@@ -344,25 +370,38 @@ impl VideoRenderer {
         }
     }
 
-    #[cfg(feature = "gpucodec")]
+    #[cfg(feature = "vram")]
     pub fn register_gpu_output(&self, display: usize, ptr: usize) {
         let mut sessions_lock = self.map_display_sessions.write().unwrap();
         if ptr == 0 {
+            if let Some(info) = sessions_lock.get_mut(&display) {
+                if info.gpu_output_ptr != usize::default() {
+                    info.gpu_output_ptr = usize::default();
+                }
+                #[cfg(feature = "flutter_texture_render")]
+                if info.texture_rgba_ptr != usize::default() {
+                    return;
+                }
+            }
             sessions_lock.remove(&display);
         } else {
             if let Some(info) = sessions_lock.get_mut(&display) {
-                if info.gpu_output_ptr != 0 && info.gpu_output_ptr != ptr {
-                    log::error!("unreachable, gpu_output_ptr is not null and not equal to ptr");
+                if info.gpu_output_ptr != usize::default() && info.gpu_output_ptr != ptr {
+                    log::error!(
+                        "gpu_output_ptr is not null and not equal to ptr, relace {} to {}",
+                        info.gpu_output_ptr,
+                        ptr
+                    );
                 }
                 info.gpu_output_ptr = ptr as _;
                 info.notify_render_type = None;
             } else {
-                if ptr != 0 {
+                if ptr != usize::default() {
                     sessions_lock.insert(
                         display,
                         DisplaySessionInfo {
                             #[cfg(feature = "flutter_texture_render")]
-                            texture_rgba_ptr: 0,
+                            texture_rgba_ptr: usize::default(),
                             #[cfg(feature = "flutter_texture_render")]
                             size: (0, 0),
                             gpu_output_ptr: ptr,
@@ -389,7 +428,6 @@ impl VideoRenderer {
             return false;
         }
 
-        // It is also Ok to skip this check.
         if info.size.0 != rgba.w || info.size.1 != rgba.h {
             log::error!(
                 "width/height mismatch: ({},{}) != ({},{})",
@@ -398,7 +436,11 @@ impl VideoRenderer {
                 rgba.w,
                 rgba.h
             );
-            return false;
+            // Peer info's handling is async and may be late than video frame's handling
+            // Allow peer info not set, but not allow wrong width/height for correct local cursor position
+            if info.size != (0, 0) {
+                return false;
+            }
         }
         if let Some(func) = &self.on_rgba_func {
             unsafe {
@@ -420,7 +462,7 @@ impl VideoRenderer {
         }
     }
 
-    #[cfg(feature = "gpucodec")]
+    #[cfg(feature = "vram")]
     pub fn on_texture(&self, display: usize, texture: *mut c_void) -> bool {
         let mut write_lock = self.map_display_sessions.write().unwrap();
         let opt_info = if !self.is_support_multi_ui_session {
@@ -752,6 +794,7 @@ impl InvokeUiSession for FlutterHandler {
         } else {
             let mut rgba_data = RgbaData::default();
             std::mem::swap::<Vec<u8>>(&mut rgba.raw, &mut rgba_data.data);
+            rgba_data.valid = true;
             rgba_write_lock.insert(display, rgba_data);
         }
         drop(rgba_write_lock);
@@ -778,7 +821,7 @@ impl InvokeUiSession for FlutterHandler {
     }
 
     #[inline]
-    #[cfg(feature = "gpucodec")]
+    #[cfg(feature = "vram")]
     fn on_texture(&self, display: usize, texture: *mut c_void) {
         for (_, session) in self.session_handlers.read().unwrap().iter() {
             if session.renderer.on_texture(display, texture) {
@@ -863,6 +906,21 @@ impl InvokeUiSession for FlutterHandler {
                 "windows_sessions",
                 &serde_json::ser::to_string(&msg_vec).unwrap_or("".to_owned()),
             )],
+            &[],
+        );
+    }
+
+    fn is_multi_ui_session(&self) -> bool {
+        self.session_handlers.read().unwrap().len() > 1
+    }
+
+    fn set_current_display(&self, disp_idx: i32) {
+        if self.is_multi_ui_session() {
+            return;
+        }
+        self.push_event(
+            "follow_current_display",
+            &[("display_idx", &disp_idx.to_string())],
             &[],
         );
     }
@@ -1010,6 +1068,7 @@ pub fn session_add(
     switch_uuid: &str,
     force_relay: bool,
     password: String,
+    is_shared_password: bool,
 ) -> ResultType<FlutterSession> {
     let conn_type = if is_file_transfer {
         ConnType::FILE_TRANSFER
@@ -1034,8 +1093,17 @@ pub fn session_add(
 
     LocalConfig::set_remote_id(&id);
 
+    let mut preset_password = password.clone();
+    let shared_password = if is_shared_password {
+        // To achieve a flexible password application order, we don't treat shared password as a preset password.
+        preset_password = Default::default();
+        Some(password)
+    } else {
+        None
+    };
+
     let session: Session<FlutterHandler> = Session {
-        password,
+        password: preset_password,
         server_keyboard_enabled: Arc::new(RwLock::new(true)),
         server_file_transfer_enabled: Arc::new(RwLock::new(true)),
         server_clipboard_enabled: Arc::new(RwLock::new(true)),
@@ -1048,9 +1116,9 @@ pub fn session_add(
         Some(switch_uuid.to_string())
     };
 
-    #[cfg(feature = "gpucodec")]
+    #[cfg(feature = "vram")]
     let adapter_luid = get_adapter_luid();
-    #[cfg(not(feature = "gpucodec"))]
+    #[cfg(not(feature = "vram"))]
     let adapter_luid = None;
 
     session.lc.write().unwrap().initialize(
@@ -1059,6 +1127,7 @@ pub fn session_add(
         switch_uuid,
         force_relay,
         adapter_luid,
+        shared_password,
     );
 
     let session = Arc::new(session.clone());
@@ -1080,7 +1149,7 @@ pub fn session_start_(
 ) -> ResultType<()> {
     // is_connected is used to indicate whether to start a peer connection. For two cases:
     // 1. "Move tab to new window"
-    // 2. multi ui session within the same peer connnection.
+    // 2. multi ui session within the same peer connection.
     let mut is_connected = false;
     let mut is_found = false;
     for s in sessions::get_sessions() {
@@ -1170,11 +1239,11 @@ pub mod connection_manager {
         fn add_connection(&self, client: &crate::ui_cm_interface::Client) {
             let client_json = serde_json::to_string(&client).unwrap_or("".into());
             // send to Android service, active notification no matter UI is shown or not.
-            #[cfg(any(target_os = "android"))]
+            #[cfg(target_os = "android")]
             if let Err(e) =
                 call_main_service_set_by_name("add_connection", Some(&client_json), None)
             {
-                log::debug!("call_service_set_by_name fail,{}", e);
+                log::debug!("call_main_service_set_by_name fail,{}", e);
             }
             // send to UI, refresh widget
             self.push_event("add_connection", &[("client", &client_json)]);
@@ -1208,6 +1277,13 @@ pub mod connection_manager {
 
         fn update_voice_call_state(&self, client: &crate::ui_cm_interface::Client) {
             let client_json = serde_json::to_string(&client).unwrap_or("".into());
+            // send to Android service, active notification no matter UI is shown or not.
+            #[cfg(target_os = "android")]
+            if let Err(e) =
+                call_main_service_set_by_name("update_voice_call_state", Some(&client_json), None)
+            {
+                log::debug!("call_main_service_set_by_name fail,{}", e);
+            }
             self.push_event("update_voice_call_state", &[("client", &client_json)]);
         }
 
@@ -1427,7 +1503,7 @@ pub fn session_register_pixelbuffer_texture(_session_id: SessionID, _display: us
 
 #[inline]
 pub fn session_register_gpu_texture(_session_id: SessionID, _display: usize, _output_ptr: usize) {
-    #[cfg(feature = "gpucodec")]
+    #[cfg(feature = "vram")]
     for s in sessions::get_sessions() {
         if let Some(h) = s
             .ui_handler
@@ -1442,7 +1518,7 @@ pub fn session_register_gpu_texture(_session_id: SessionID, _display: usize, _ou
     }
 }
 
-#[cfg(feature = "gpucodec")]
+#[cfg(feature = "vram")]
 pub fn get_adapter_luid() -> Option<i64> {
     let get_adapter_luid_func = match &*TEXTURE_GPU_RENDERER_PLUGIN {
         Ok(lib) => {

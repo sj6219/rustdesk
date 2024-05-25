@@ -39,9 +39,15 @@ lazy_static::lazy_static! {
     static ref TEXTURE_RENDER_KEY: Arc<AtomicI32> = Arc::new(AtomicI32::new(0));
 }
 
-fn initialize(app_dir: &str) {
+fn initialize(app_dir: &str, custom_client_config: &str) {
     flutter::async_tasks::start_flutter_async_runner();
     *config::APP_DIR.write().unwrap() = app_dir.to_owned();
+    // core_main's load_custom_client does not work for flutter since it is only applied to its load_library in main.c
+    if custom_client_config.is_empty() {
+        crate::load_custom_client();
+    } else {
+        crate::read_custom_client(custom_client_config);
+    }
     #[cfg(target_os = "android")]
     {
         // flexi_logger can't work when android_logger initialized.
@@ -63,6 +69,11 @@ fn initialize(app_dir: &str) {
     {
         use hbb_common::env_logger::*;
         init_from_env(Env::default().filter_or(DEFAULT_FILTER_ENV, "debug"));
+    }
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        // core_main's init_log does not work for flutter since it is only applied to its load_library in main.c
+        hbb_common::init_log(false, "flutter_ffi");
     }
 }
 
@@ -115,6 +126,7 @@ pub fn session_add_sync(
     switch_uuid: String,
     force_relay: bool,
     password: String,
+    is_shared_password: bool,
 ) -> SyncReturn<String> {
     if let Err(e) = session_add(
         &session_id,
@@ -125,6 +137,7 @@ pub fn session_add_sync(
         &switch_uuid,
         force_relay,
         password,
+        is_shared_password,
     ) {
         SyncReturn(format!("Failed to add session with id {}, {}", &id, e))
     } else {
@@ -200,6 +213,14 @@ pub fn session_refresh(session_id: SessionID, display: usize) {
     }
 }
 
+pub fn session_is_multi_ui_session(session_id: SessionID) -> SyncReturn<bool> {
+    if let Some(session) = sessions::get_session_by_session_id(&session_id) {
+        SyncReturn(session.is_multi_ui_session())
+    } else {
+        SyncReturn(false)
+    }
+}
+
 pub fn session_record_screen(
     session_id: SessionID,
     start: bool,
@@ -254,15 +275,6 @@ pub fn session_get_flutter_option(session_id: SessionID, k: String) -> Option<St
 pub fn session_set_flutter_option(session_id: SessionID, k: String, v: String) {
     if let Some(session) = sessions::get_session_by_session_id(&session_id) {
         session.save_flutter_option(k, v);
-    }
-}
-
-// This function is only used for the default connection session.
-pub fn session_get_flutter_option_by_peer_id(id: String, k: String) -> Option<String> {
-    if let Some(session) = sessions::get_session_by_peer_id(id, ConnType::DEFAULT_CONN) {
-        Some(session.get_flutter_option(k))
-    } else {
-        None
     }
 }
 
@@ -736,6 +748,10 @@ pub fn main_get_async_status() -> String {
     get_async_job_status()
 }
 
+pub fn main_get_http_status(url: String) -> Option<String> {
+    get_async_http_status(url)
+}
+
 pub fn main_get_option(key: String) -> String {
     get_option(key)
 }
@@ -749,9 +765,8 @@ pub fn main_get_error() -> String {
 }
 
 pub fn main_show_option(_key: String) -> SyncReturn<bool> {
-    #[cfg(all(target_os = "linux", feature = "linux_headless"))]
-    #[cfg(not(any(feature = "flatpak", feature = "appimage")))]
-    if _key.eq(config::CONFIG_OPTION_ALLOW_LINUX_HEADLESS) {
+    #[cfg(target_os = "linux")]
+    if _key.eq(config::keys::OPTION_ALLOW_LINUX_HEADLESS) {
         return SyncReturn(true);
     }
     SyncReturn(false)
@@ -784,12 +799,16 @@ pub fn main_set_options(json: String) {
     }
 }
 
-pub fn main_test_if_valid_server(server: String) -> String {
-    test_if_valid_server(server)
+pub fn main_test_if_valid_server(server: String, test_with_proxy: bool) -> String {
+    test_if_valid_server(server, test_with_proxy)
 }
 
 pub fn main_set_socks(proxy: String, username: String, password: String) {
     set_socks(proxy, username, password)
+}
+
+pub fn main_get_proxy_status() -> bool {
+    get_proxy_status()
 }
 
 pub fn main_get_socks() -> Vec<String> {
@@ -865,8 +884,8 @@ pub fn main_get_api_server() -> String {
     get_api_server()
 }
 
-pub fn main_post_request(url: String, body: String, header: String) {
-    post_request(url, body, header)
+pub fn main_http_request(url: String, method: String, body: Option<String>, header: String) {
+    http_request(url, method, body, header)
 }
 
 pub fn main_get_local_option(key: String) -> SyncReturn<String> {
@@ -879,6 +898,38 @@ pub fn main_get_env(key: String) -> SyncReturn<String> {
 
 pub fn main_set_local_option(key: String, value: String) {
     set_local_option(key, value)
+}
+
+// We do use use `main_get_local_option` and `main_set_local_option`.
+//
+// 1. For get, the value is stored in the server process.
+// 2. For clear, we need to need to return the error mmsg from the server process to flutter.
+pub fn main_handle_wayland_screencast_restore_token(_key: String, _value: String) -> String {
+    #[cfg(not(target_os = "linux"))]
+    {
+        return "".to_owned();
+    }
+    #[cfg(target_os = "linux")]
+    if _value == "get" {
+        match crate::ipc::get_wayland_screencast_restore_token(_key) {
+            Ok(v) => v,
+            Err(e) => {
+                log::error!("Failed to get wayland screencast restore token, {}", e);
+                "".to_owned()
+            }
+        }
+    } else if _value == "clear" {
+        match crate::ipc::clear_wayland_screencast_restore_token(_key.clone()) {
+            Ok(true) => {
+                set_local_option(_key, "".to_owned());
+                "".to_owned()
+            }
+            Ok(false) => "Failed to clear, please try again.".to_owned(),
+            Err(e) => format!("Failed to clear, {}", e),
+        }
+    } else {
+        "".to_owned()
+    }
 }
 
 pub fn main_get_input_source() -> SyncReturn<String> {
@@ -1011,14 +1062,6 @@ pub fn main_load_lan_peers_sync() -> SyncReturn<String> {
     return SyncReturn(serde_json::ser::to_string(&data).unwrap_or("".to_owned()));
 }
 
-pub fn main_load_ab_sync() -> SyncReturn<String> {
-    return SyncReturn(serde_json::to_string(&config::Ab::load()).unwrap_or_default());
-}
-
-pub fn main_load_group_sync() -> SyncReturn<String> {
-    return SyncReturn(serde_json::to_string(&config::Group::load()).unwrap_or_default());
-}
-
 pub fn main_load_recent_peers_for_ab(filter: String) -> String {
     let id_filters = serde_json::from_str::<Vec<String>>(&filter).unwrap_or_default();
     let id_filters = if id_filters.is_empty() {
@@ -1125,8 +1168,8 @@ pub fn main_change_language(lang: String) {
     send_to_cm(&crate::ipc::Data::Language(lang));
 }
 
-pub fn main_default_video_save_directory() -> String {
-    default_video_save_directory()
+pub fn main_video_save_directory(root: bool) -> String {
+    video_save_directory(root)
 }
 
 pub fn main_set_user_default_option(key: String, value: String) {
@@ -1139,6 +1182,23 @@ pub fn main_get_user_default_option(key: String) -> SyncReturn<String> {
 
 pub fn main_handle_relay_id(id: String) -> String {
     handle_relay_id(&id).to_owned()
+}
+
+pub fn main_is_option_fixed(key: String) -> SyncReturn<bool> {
+    SyncReturn(
+        config::OVERWRITE_DISPLAY_SETTINGS
+            .read()
+            .unwrap()
+            .contains_key(&key)
+            || config::OVERWRITE_LOCAL_SETTINGS
+                .read()
+                .unwrap()
+                .contains_key(&key)
+            || config::OVERWRITE_SETTINGS
+                .read()
+                .unwrap()
+                .contains_key(&key),
+    )
 }
 
 pub fn main_get_main_display() -> SyncReturn<String> {
@@ -1273,8 +1333,8 @@ pub fn cm_get_clients_length() -> usize {
     crate::ui_cm_interface::get_clients_length()
 }
 
-pub fn main_init(app_dir: String) {
-    initialize(&app_dir);
+pub fn main_init(app_dir: String, custom_client_config: String) {
+    initialize(&app_dir, &custom_client_config);
 }
 
 pub fn main_device_id(id: String) {
@@ -1293,8 +1353,8 @@ pub fn main_has_hwcodec() -> SyncReturn<bool> {
     SyncReturn(has_hwcodec())
 }
 
-pub fn main_has_gpucodec() -> SyncReturn<bool> {
-    SyncReturn(has_gpucodec())
+pub fn main_has_vram() -> SyncReturn<bool> {
+    SyncReturn(has_vram())
 }
 
 pub fn main_supported_hwdecodings() -> SyncReturn<String> {
@@ -1780,7 +1840,7 @@ pub fn main_has_file_clipboard() -> SyncReturn<bool> {
 }
 
 pub fn main_has_gpu_texture_render() -> SyncReturn<bool> {
-    SyncReturn(cfg!(feature = "gpucodec"))
+    SyncReturn(cfg!(feature = "vram"))
 }
 
 pub fn cm_init() {
@@ -1813,11 +1873,49 @@ pub fn main_support_remove_wallpaper() -> bool {
     support_remove_wallpaper()
 }
 
-pub fn is_qs() -> SyncReturn<bool> {
-    SyncReturn(false)
+pub fn is_incoming_only() -> SyncReturn<bool> {
+    SyncReturn(config::is_incoming_only())
 }
 
-/// Send a url scheme throught the ipc.
+pub fn is_outgoing_only() -> SyncReturn<bool> {
+    SyncReturn(config::is_outgoing_only())
+}
+
+pub fn is_custom_client() -> SyncReturn<bool> {
+    SyncReturn(get_app_name() != "RustDesk")
+}
+
+pub fn is_disable_settings() -> SyncReturn<bool> {
+    SyncReturn(config::is_disable_settings())
+}
+
+pub fn is_disable_ab() -> SyncReturn<bool> {
+    SyncReturn(config::is_disable_ab())
+}
+
+pub fn is_disable_account() -> SyncReturn<bool> {
+    SyncReturn(config::is_disable_account())
+}
+
+// windows only
+pub fn is_disable_installation() -> SyncReturn<bool> {
+    SyncReturn(config::is_disable_installation())
+}
+
+pub fn is_preset_password() -> bool {
+    config::HARD_SETTINGS
+        .read()
+        .unwrap()
+        .get("password")
+        .map_or(false, |p| {
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
+            return p == &crate::ipc::get_permanent_password();
+            #[cfg(any(target_os = "android", target_os = "ios"))]
+            return p == &config::Config::get_permanent_password();
+        })
+}
+
+/// Send a url scheme through the ipc.
 ///
 /// * macOS only
 #[allow(unused_variables)]
@@ -2052,6 +2150,20 @@ pub fn main_has_valid_2fa_sync() -> SyncReturn<bool> {
     SyncReturn(has_valid_2fa())
 }
 
+pub fn main_get_hard_option(key: String) -> SyncReturn<String> {
+    SyncReturn(get_hard_option(key))
+}
+
+pub fn main_check_hwcodec() {
+    check_hwcodec()
+}
+
+pub fn session_request_new_display_init_msgs(session_id: SessionID, display: usize) {
+    if let Some(session) = sessions::get_session_by_session_id(&session_id) {
+        session.request_init_msgs(display);
+    }
+}
+
 #[cfg(target_os = "android")]
 pub mod server_side {
     use hbb_common::{config, log};
@@ -2064,31 +2176,35 @@ pub mod server_side {
     use crate::start_server;
 
     #[no_mangle]
-    pub unsafe extern "system" fn Java_com_carriez_flutter_1hbb_MainService_startServer(
+    pub unsafe extern "system" fn Java_ffi_FFI_startServer(
         env: JNIEnv,
         _class: JClass,
         app_dir: JString,
+        custom_client_config: JString,
     ) {
         log::debug!("startServer from jvm");
         let mut env = env;
         if let Ok(app_dir) = env.get_string(&app_dir) {
             *config::APP_DIR.write().unwrap() = app_dir.into();
         }
+        if let Ok(custom_client_config) = env.get_string(&custom_client_config) {
+            if !custom_client_config.is_empty() {
+                let custom_client_config: String = custom_client_config.into();
+                crate::read_custom_client(&custom_client_config);
+            }
+        }
         std::thread::spawn(move || start_server(true));
     }
 
     #[no_mangle]
-    pub unsafe extern "system" fn Java_com_carriez_flutter_1hbb_MainService_startService(
-        _env: JNIEnv,
-        _class: JClass,
-    ) {
+    pub unsafe extern "system" fn Java_ffi_FFI_startService(_env: JNIEnv, _class: JClass) {
         log::debug!("startService from jvm");
         config::Config::set_option("stop-service".into(), "".into());
         crate::rendezvous_mediator::RendezvousMediator::restart();
     }
 
     #[no_mangle]
-    pub unsafe extern "system" fn Java_com_carriez_flutter_1hbb_MainService_translateLocale(
+    pub unsafe extern "system" fn Java_ffi_FFI_translateLocale(
         env: JNIEnv,
         _class: JClass,
         locale: JString,
@@ -2107,10 +2223,7 @@ pub mod server_side {
     }
 
     #[no_mangle]
-    pub unsafe extern "system" fn Java_com_carriez_flutter_1hbb_MainService_refreshScreen(
-        _env: JNIEnv,
-        _class: JClass,
-    ) {
+    pub unsafe extern "system" fn Java_ffi_FFI_refreshScreen(_env: JNIEnv, _class: JClass) {
         crate::server::video_service::refresh()
     }
 }

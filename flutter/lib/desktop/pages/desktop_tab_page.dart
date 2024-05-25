@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_hbb/common.dart';
 import 'package:flutter_hbb/consts.dart';
@@ -19,7 +17,8 @@ class DesktopTabPage extends StatefulWidget {
   @override
   State<DesktopTabPage> createState() => _DesktopTabPageState();
 
-  static void onAddSetting({int initialPage = 0}) {
+  static void onAddSetting(
+      {SettingsTabKey initialPage = SettingsTabKey.general}) {
     try {
       DesktopTabController tabController = Get.find();
       tabController.add(TabInfo(
@@ -29,7 +28,7 @@ class DesktopTabPage extends StatefulWidget {
           unselectedIcon: Icons.build_outlined,
           page: DesktopSettingPage(
             key: const ValueKey(kTabLabelSettingPage),
-            initialPage: initialPage,
+            initialTabkey: initialPage,
           )));
     } catch (e) {
       debugPrintStack(label: '$e');
@@ -54,14 +53,14 @@ class _DesktopTabPageState extends State<DesktopTabPage> {
         page: DesktopHomePage(
           key: const ValueKey(kTabLabelHomePage),
         )));
-    if (bind.isQs()) {
+    if (bind.isIncomingOnly()) {
       tabController.onSelected = (key) {
         if (key == kTabLabelHomePage) {
-          windowManager.setSize(getDesktopQsHomeSize());
-          windowManager.setResizable(false);
+          windowManager.setSize(getIncomingOnlyHomeSize());
+          setResizable(false);
         } else {
-          windowManager.setSize(getDesktopQsSettingsSize());
-          windowManager.setResizable(true);
+          windowManager.setSize(getIncomingOnlySettingsSize());
+          setResizable(true);
         }
       };
     }
@@ -81,7 +80,7 @@ class _DesktopTabPageState extends State<DesktopTabPage> {
             body: DesktopTab(
               controller: tabController,
               tail: Offstage(
-                offstage: bind.isQs(),
+                offstage: bind.isIncomingOnly() || bind.isDisableSettings(),
                 child: ActionIcon(
                   message: 'Settings',
                   icon: IconFont.menu,
@@ -90,7 +89,7 @@ class _DesktopTabPageState extends State<DesktopTabPage> {
                 ),
               ),
             )));
-    return Platform.isMacOS || kUseCompatibleUiMode
+    return isMacOS || kUseCompatibleUiMode
         ? tabWidget
         : Obx(
             () => DragToResizeArea(

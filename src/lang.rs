@@ -15,6 +15,8 @@ mod es;
 mod et;
 mod fa;
 mod fr;
+mod he;
+mod hr;
 mod hu;
 mod id;
 mod it;
@@ -79,15 +81,18 @@ pub const LANGS: &[(&str, &str)] = &[
     ("lt", "Lietuvių"),
     ("lv", "Latviešu"),
     ("ar", "العربية"),
+    ("he", "עברית"),
+    ("hr", "Hrvatski"),
 ];
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub fn translate(name: String) -> String {
-    let locale = sys_locale::get_locale().unwrap_or_default().to_lowercase();
+    let locale = sys_locale::get_locale().unwrap_or_default();
     translate_locale(name, &locale)
 }
 
 pub fn translate_locale(name: String, locale: &str) -> String {
+    let locale = locale.to_lowercase();
     let mut lang = hbb_common::config::LocalConfig::get_option("lang").to_lowercase();
     if lang.is_empty() {
         // zh_CN on Linux, zh-Hans-CN on mac, zh_CN_#Hans on Android
@@ -148,6 +153,8 @@ pub fn translate_locale(name: String, locale: &str) -> String {
         "lv" => lv::T.deref(),
         "ar" => ar::T.deref(),
         "bg" => bg::T.deref(),
+        "he" => he::T.deref(),
+        "hr" => hr::T.deref(),
         _ => en::T.deref(),
     };
     let (name, placeholder_value) = extract_placeholder(&name);
@@ -157,21 +164,25 @@ pub fn translate_locale(name: String, locale: &str) -> String {
             s = s.replace("{}", &value);
         }
         if !crate::is_rustdesk() {
-            if s.contains("RustDesk") && !name.starts_with("upgrade_rustdesk_server_pro") {
+            if s.contains("RustDesk")
+                && !name.starts_with("upgrade_rustdesk_server_pro")
+                && name != "powered_by_me"
+            {
                 s = s.replace("RustDesk", &crate::get_app_name());
             }
         }
         s
     };
     if let Some(v) = m.get(&name as &str) {
-        if v.is_empty() {
-            if lang != "en" {
-                if let Some(v) = en::T.get(&name as &str) {
-                    return replace(v);
-                }
-            }
-        } else {
+        if !v.is_empty() {
             return replace(v);
+        }
+    }
+    if lang != "en" {
+        if let Some(v) = en::T.get(&name as &str) {
+            if !v.is_empty() {
+                return replace(v);
+            }
         }
     }
     replace(&name.as_str())

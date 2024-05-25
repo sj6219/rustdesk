@@ -1,9 +1,12 @@
 use std::{
     borrow::Cow,
+    collections::HashMap,
     future::Future,
     sync::{Arc, Mutex, RwLock},
     task::Poll,
 };
+
+use serde_json::Value;
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum GrabState {
@@ -124,7 +127,7 @@ use hbb_common::compress::decompress;
 use hbb_common::{
     allow_err,
     anyhow::{anyhow, Context},
-    bail,
+    bail, base64,
     bytes::Bytes,
     compress::compress as compress_func,
     config::{self, Config, CONNECT_TIMEOUT, READ_TIMEOUT},
@@ -146,7 +149,10 @@ use hbb_common::{
 // #[cfg(any(target_os = "android", target_os = "ios", feature = "cli"))]
 use hbb_common::{config::RENDEZVOUS_PORT, futures::future::join_all};
 
-use crate::ui_interface::{get_option, set_option};
+use crate::{
+    hbbs_http::create_http_client_async,
+    ui_interface::{get_option, set_option},
+};
 
 //..
 #[cfg(target_os = "android")]
@@ -859,18 +865,16 @@ pub fn refresh_rendezvous_server() {
 }
 
 pub fn run_me<T: AsRef<std::ffi::OsStr>>(args: Vec<T>) -> std::io::Result<std::process::Child> {
-    #[cfg(not(feature = "appimage"))]
-    {
-        let cmd = std::env::current_exe()?;
-        return std::process::Command::new(cmd).args(&args).spawn();
-    }
-    #[cfg(feature = "appimage")]
-    {
-        let appdir = std::env::var("APPDIR").map_err(|_| std::io::ErrorKind::Other)?;
+    #[cfg(target_os = "linux")]
+    if let Ok(appdir) = std::env::var("APPDIR") {
         let appimage_cmd = std::path::Path::new(&appdir).join("AppRun");
-        log::info!("path: {:?}", appimage_cmd);
-        return std::process::Command::new(appimage_cmd).args(&args).spawn();
+        if appimage_cmd.exists() {
+            log::info!("path: {:?}", appimage_cmd);
+            return std::process::Command::new(appimage_cmd).args(&args).spawn();
+        }
     }
+    let cmd = std::env::current_exe()?;
+    return std::process::Command::new(cmd).args(&args).spawn();
 }
 
 #[inline]
@@ -885,7 +889,16 @@ pub fn username() -> String {
 #[inline]
 pub fn hostname() -> String {
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    return whoami::hostname();
+    {
+        #[allow(unused_mut)]
+        let mut name = whoami::hostname();
+        // some time, there is .local, some time not, so remove it for osx
+        #[cfg(target_os = "macos")]
+        if name.ends_with(".local") {
+            name = name.trim_end_matches(".local").to_owned();
+        }
+        name
+    }
     #[cfg(any(target_os = "android", target_os = "ios"))]
     return DEVICE_NAME.lock().unwrap().clone();
 }
@@ -983,7 +996,7 @@ pub fn check_software_update() {
 #[tokio::main(flavor = "current_thread")]
 async fn check_software_update_() -> hbb_common::ResultType<()> {
     let url = "https://github.com/rustdesk/rustdesk/releases/latest";
-    let latest_release_response = reqwest::get(url).await?;
+    let latest_release_response = create_http_client_async().get(url).send().await?;
     let latest_release_version = latest_release_response
         .url()
         .path()
@@ -1078,7 +1091,7 @@ pub fn get_audit_server(api: String, custom: String, typ: String) -> String {
 }
 
 pub async fn post_request(url: String, body: String, header: &str) -> ResultType<String> {
-    let mut req = reqwest::Client::new().post(url);
+    let mut req = create_http_client_async().post(url);
     if !header.is_empty() {
         let tmp: Vec<&str> = header.split(": ").collect();
         if tmp.len() == 2 {
@@ -1093,6 +1106,65 @@ pub async fn post_request(url: String, body: String, header: &str) -> ResultType
 #[tokio::main(flavor = "current_thread")]
 pub async fn post_request_sync(url: String, body: String, header: &str) -> ResultType<String> {
     post_request(url, body, header).await
+}
+
+#[tokio::main(flavor = "current_thread")]
+pub async fn http_request_sync(
+    url: String,
+    method: String,
+    body: Option<String>,
+    header: String,
+) -> ResultType<String> {
+    let http_client = create_http_client_async();
+    let mut http_client = match method.as_str() {
+        "get" => http_client.get(url),
+        "post" => http_client.post(url),
+        "put" => http_client.put(url),
+        "delete" => http_client.delete(url),
+        _ => return Err(anyhow!("The HTTP request method is not supported!")),
+    };
+    let v = serde_json::from_str(header.as_str())?;
+
+    if let Value::Object(obj) = v {
+        for (key, value) in obj.iter() {
+            http_client = http_client.header(key, value.as_str().unwrap_or_default());
+        }
+    } else {
+        return Err(anyhow!("HTTP header information parsing failed!"));
+    }
+
+    if let Some(b) = body {
+        http_client = http_client.body(b);
+    }
+
+    let response = http_client
+        .timeout(std::time::Duration::from_secs(12))
+        .send()
+        .await?;
+
+    // Serialize response headers
+    let mut response_headers = serde_json::map::Map::new();
+    for (key, value) in response.headers() {
+        response_headers.insert(
+            key.to_string(),
+            serde_json::json!(value.to_str().unwrap_or("")),
+        );
+    }
+
+    let status_code = response.status().as_u16();
+    let response_body = response.text().await?;
+
+    // Construct the JSON object
+    let mut result = serde_json::map::Map::new();
+    result.insert("status_code".to_string(), serde_json::json!(status_code));
+    result.insert(
+        "headers".to_string(),
+        serde_json::Value::Object(response_headers),
+    );
+    result.insert("body".to_string(), serde_json::json!(response_body));
+
+    // Convert map to JSON string
+    serde_json::to_string(&result).map_err(|e| anyhow!("Failed to serialize response: {}", e))
 }
 
 #[inline]
@@ -1251,8 +1323,14 @@ pub async fn get_next_nonkeyexchange_msg(
     None
 }
 
+#[allow(unused_mut)]
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
-pub fn check_process(arg: &str, same_uid: bool) -> bool {
+pub fn check_process(arg: &str, mut same_uid: bool) -> bool {
+    #[cfg(target_os = "macos")]
+    if !crate::platform::is_root() && !same_uid {
+        log::warn!("Can not get other process's command line arguments on macos without root");
+        same_uid = true;
+    }
     use hbb_common::sysinfo::System;
     let mut sys = System::new();
     sys.refresh_processes();
@@ -1279,8 +1357,13 @@ pub fn check_process(arg: &str, same_uid: bool) -> bool {
         if same_uid && p.user_id() != my_uid {
             continue;
         }
+        // on mac, p.cmd() get "/Applications/RustDesk.app/Contents/MacOS/RustDesk", "XPC_SERVICE_NAME=com.carriez.RustDesk_server"
         let parg = if p.cmd().len() <= 1 { "" } else { &p.cmd()[1] };
-        if arg == parg {
+        if arg.is_empty() {
+            if !parg.starts_with("--") {
+                return true;
+            }
+        } else if arg == parg {
             return true;
         }
     }
@@ -1487,10 +1570,148 @@ impl ClipboardContext {
     }
 }
 
+pub fn load_custom_client() {
+    #[cfg(debug_assertions)]
+    if let Ok(data) = std::fs::read_to_string("./custom.txt") {
+        read_custom_client(data.trim());
+        return;
+    }
+    let Some(path) = std::env::current_exe().map_or(None, |x| x.parent().map(|x| x.to_path_buf()))
+    else {
+        return;
+    };
+    #[cfg(target_os = "macos")]
+    let path = path.join("../Resources");
+    let path = path.join("custom.txt");
+    if path.is_file() {
+        let Ok(data) = std::fs::read_to_string(&path) else {
+            log::error!("Failed to read custom client config");
+            return;
+        };
+        read_custom_client(&data.trim());
+    }
+}
+
+fn read_custom_client_advanced_settings(
+    settings: serde_json::Value,
+    map_display_settings: &HashMap<String, &&str>,
+    map_local_settings: &HashMap<String, &&str>,
+    map_settings: &HashMap<String, &&str>,
+    is_override: bool,
+) {
+    let mut display_settings = if is_override {
+        config::OVERWRITE_DISPLAY_SETTINGS.write().unwrap()
+    } else {
+        config::DEFAULT_DISPLAY_SETTINGS.write().unwrap()
+    };
+    let mut local_settings = if is_override {
+        config::OVERWRITE_LOCAL_SETTINGS.write().unwrap()
+    } else {
+        config::DEFAULT_LOCAL_SETTINGS.write().unwrap()
+    };
+    let mut server_settings = if is_override {
+        config::OVERWRITE_SETTINGS.write().unwrap()
+    } else {
+        config::DEFAULT_SETTINGS.write().unwrap()
+    };
+    if let Some(settings) = settings.as_object() {
+        for (k, v) in settings {
+            let Some(v) = v.as_str() else {
+                continue;
+            };
+            if let Some(k2) = map_display_settings.get(k) {
+                display_settings.insert(k2.to_string(), v.to_owned());
+            } else if let Some(k2) = map_local_settings.get(k) {
+                local_settings.insert(k2.to_string(), v.to_owned());
+            } else if let Some(k2) = map_settings.get(k) {
+                server_settings.insert(k2.to_string(), v.to_owned());
+            } else {
+                let k2 = k.replace("_", "-");
+                let k = k2.replace("-", "_");
+                // display
+                display_settings.insert(k.clone(), v.to_owned());
+                display_settings.insert(k2.clone(), v.to_owned());
+                // local
+                local_settings.insert(k.clone(), v.to_owned());
+                local_settings.insert(k2.clone(), v.to_owned());
+                // server
+                server_settings.insert(k.clone(), v.to_owned());
+                server_settings.insert(k2.clone(), v.to_owned());
+            }
+        }
+    }
+}
+
+pub fn read_custom_client(config: &str) {
+    let Ok(data) = decode64(config) else {
+        log::error!("Failed to decode custom client config");
+        return;
+    };
+    const KEY: &str = "5Qbwsde3unUcJBtrx9ZkvUmwFNoExHzpryHuPUdqlWM=";
+    let Some(pk) = get_rs_pk(KEY) else {
+        log::error!("Failed to parse public key of custom client");
+        return;
+    };
+    let Ok(data) = sign::verify(&data, &pk) else {
+        log::error!("Failed to dec custom client config");
+        return;
+    };
+    let Ok(mut data) =
+        serde_json::from_slice::<std::collections::HashMap<String, serde_json::Value>>(&data)
+    else {
+        log::error!("Failed to parse custom client config");
+        return;
+    };
+
+    if let Some(app_name) = data.remove("app-name") {
+        if let Some(app_name) = app_name.as_str() {
+            *config::APP_NAME.write().unwrap() = app_name.to_owned();
+        }
+    }
+
+    let mut map_display_settings = HashMap::new();
+    for s in config::keys::KEYS_DISPLAY_SETTINGS {
+        map_display_settings.insert(s.replace("_", "-"), s);
+    }
+    let mut map_local_settings = HashMap::new();
+    for s in config::keys::KEYS_LOCAL_SETTINGS {
+        map_local_settings.insert(s.replace("_", "-"), s);
+    }
+    let mut map_settings = HashMap::new();
+    for s in config::keys::KEYS_SETTINGS {
+        map_settings.insert(s.replace("_", "-"), s);
+    }
+    if let Some(default_settings) = data.remove("default-settings") {
+        read_custom_client_advanced_settings(
+            default_settings,
+            &map_display_settings,
+            &map_local_settings,
+            &map_settings,
+            false,
+        );
+    }
+    if let Some(overwrite_settings) = data.remove("override-settings") {
+        read_custom_client_advanced_settings(
+            overwrite_settings,
+            &map_display_settings,
+            &map_local_settings,
+            &map_settings,
+            true,
+        );
+    }
+    for (k, v) in data {
+        if let Some(v) = v.as_str() {
+            config::HARD_SETTINGS
+                .write()
+                .unwrap()
+                .insert(k, v.to_owned());
+        };
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::{format::StrftimeItems, Local};
     use hbb_common::tokio::{
         self,
         time::{interval, interval_at, sleep, Duration, Instant, Interval},
@@ -1498,9 +1719,13 @@ mod tests {
     use std::collections::HashSet;
 
     #[inline]
-    fn now_time_string() -> String {
-        let format = StrftimeItems::new("%Y-%m-%d %H:%M:%S");
-        Local::now().format_with_items(format).to_string()
+    fn get_timestamp_secs() -> u128 {
+        (std::time::SystemTime::UNIX_EPOCH
+            .elapsed()
+            .unwrap()
+            .as_millis()
+            + 500)
+            / 1000
     }
 
     fn interval_maker() -> Interval {
@@ -1530,13 +1755,13 @@ mod tests {
                         if tokio_times.len() >= 10 && times.len() >= 10 {
                             break;
                         }
-                        times.push(now_time_string());
+                        times.push(get_timestamp_secs());
                     }
                     _ = tokio_timer.tick() => {
                         if tokio_times.len() >= 10 && times.len() >= 10 {
                             break;
                         }
-                        tokio_times.push(now_time_string());
+                        tokio_times.push(get_timestamp_secs());
                     }
                 }
             }
@@ -1552,14 +1777,14 @@ mod tests {
         loop {
             tokio::select! {
                 _ = timer.tick() => {
-                    times.push(now_time_string());
+                    times.push(get_timestamp_secs());
                     if times.len() == 5 {
                         break;
                     }
                 }
             }
         }
-        let times2: HashSet<String> = HashSet::from_iter(times.clone());
+        let times2: HashSet<u128> = HashSet::from_iter(times.clone());
         assert_eq!(times.len(), times2.len() + 3);
     }
 
@@ -1568,25 +1793,25 @@ mod tests {
     #[tokio::test]
     async fn test_RustDesk_interval_sleep() {
         let base_intervals = [interval_maker, interval_at_maker];
-        for maker in base_intervals.into_iter() {
+        for (i, maker) in base_intervals.into_iter().enumerate() {
             let mut timer = rustdesk_interval(maker());
             let mut times = Vec::new();
             sleep(Duration::from_secs(3)).await;
             loop {
                 tokio::select! {
                     _ = timer.tick() => {
-                        times.push(now_time_string());
+                        times.push(get_timestamp_secs());
                         if times.len() == 5 {
                             break;
                         }
                     }
                 }
             }
-            // No mutliple ticks in the `interval` time.
+            // No multiple ticks in the `interval` time.
             // Values in "times" are unique and are less than normal tokio interval.
             // See previous test (test_tokio_time_interval_sleep) for comparison.
-            let times2: HashSet<String> = HashSet::from_iter(times.clone());
-            assert_eq!(times.len(), times2.len());
+            let times2: HashSet<u128> = HashSet::from_iter(times.clone());
+            assert_eq!(times.len(), times2.len(), "test: {}", i);
         }
     }
 

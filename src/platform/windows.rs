@@ -12,7 +12,7 @@ use hbb_common::{
     bail,
     config::{self, Config},
     log,
-    message_proto::{Resolution, WindowsSession},
+    message_proto::{DisplayInfo, Resolution, WindowsSession},
     sleep, timeout, tokio,
 };
 use std::process::{Command, Stdio};
@@ -29,6 +29,7 @@ use std::{
     time::{Duration, Instant},
 };
 use wallpaper;
+use winapi::um::sysinfoapi::{GetNativeSystemInfo, SYSTEM_INFO};
 use winapi::{
     ctypes::c_void,
     shared::{minwindef::*, ntdef::NULL, windef::*, winerror::*},
@@ -64,7 +65,25 @@ use windows_service::{
 use winreg::enums::*;
 use winreg::RegKey;
 
-pub const DRIVER_CERT_FILE: &str = "RustDeskIddDriver.cer";
+pub const FLUTTER_RUNNER_WIN32_WINDOW_CLASS: &'static str = "FLUTTER_RUNNER_WIN32_WINDOW"; // main window, install window
+
+pub fn get_focused_display(displays: Vec<DisplayInfo>) -> Option<usize> {
+    unsafe {
+        let hwnd = GetForegroundWindow();
+        let mut rect: RECT = mem::zeroed();
+        if GetWindowRect(hwnd, &mut rect as *mut RECT) == 0 {
+            return None;
+        }
+        displays.iter().position(|display| {
+            let center_x = rect.left + (rect.right - rect.left) / 2;
+            let center_y = rect.top + (rect.bottom - rect.top) / 2;
+            center_x >= display.x
+                && center_x <= display.x + display.width
+                && center_y >= display.y
+                && center_y <= display.y + display.height
+        })
+    }
+}
 
 pub fn get_cursor_pos() -> Option<(i32, i32)> {
     unsafe {
@@ -462,6 +481,7 @@ extern "C" {
     fn is_win_down() -> BOOL;
     fn is_local_system() -> BOOL;
     fn alloc_console_and_redirect();
+    fn is_service_running_w(svc_name: *const u16) -> bool;
 }
 
 extern "system" {
@@ -1187,23 +1207,21 @@ if exist \"{tmp_path}\\{app_name} Tray.lnk\" del /f /q \"{tmp_path}\\{app_name} 
     );
     let src_exe = std::env::current_exe()?.to_str().unwrap_or("").to_string();
 
-    let install_cert = if options.contains("driverCert") {
-        let s = format!(r#""{}" --install-cert"#, src_exe);
-        if silent {
-            format!("{} silent", s)
-        } else {
-            s
-        }
-    } else {
-        "".to_owned()
-    };
-
     // potential bug here: if run_cmd cancelled, but config file is changed.
     if let Some(lic) = get_license() {
         Config::set_option("key".into(), lic.key);
         Config::set_option("custom-rendezvous-server".into(), lic.host);
         Config::set_option("api-server".into(), lic.api);
     }
+
+    let tray_shortcuts = if config::is_outgoing_only() {
+        "".to_owned()
+    } else {
+        format!("
+cscript \"{tray_shortcut}\"
+copy /Y \"{tmp_path}\\{app_name} Tray.lnk\" \"%PROGRAMDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\\"
+")
+    };
 
     let cmds = format!(
         "
@@ -1227,29 +1245,19 @@ reg add {subkey} /f /v EstimatedSize /t REG_DWORD /d {size}
 reg add {subkey} /f /v WindowsInstaller /t REG_DWORD /d 0
 cscript \"{mk_shortcut}\"
 cscript \"{uninstall_shortcut}\"
-cscript \"{tray_shortcut}\"
-copy /Y \"{tmp_path}\\{app_name} Tray.lnk\" \"%PROGRAMDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\\"
+{tray_shortcuts}
 {shortcuts}
 copy /Y \"{tmp_path}\\Uninstall {app_name}.lnk\" \"{path}\\\"
 {dels}
 {import_config}
-{install_cert}
 {after_install}
 {sleep}
     ",
-        version=crate::VERSION,
-        build_date=crate::BUILD_DATE,
-        after_install=get_after_install(&exe),
-        sleep=if debug {
-            "timeout 300"
-        } else {
-            ""
-        },
-        dels=if debug {
-            ""
-        } else {
-            &dels
-        },
+        version = crate::VERSION.replace("-", "."),
+        build_date = crate::BUILD_DATE,
+        after_install = get_after_install(&exe),
+        sleep = if debug { "timeout 300" } else { "" },
+        dels = if debug { "" } else { &dels },
         copy_exe = copy_exe_cmd(&src_exe, &exe, &path)?,
         import_config = get_import_config(&exe),
     );
@@ -1291,6 +1299,11 @@ fn get_before_uninstall(kill_self: bool) -> String {
 }
 
 fn get_uninstall(kill_self: bool) -> String {
+    let reg_uninstall_string = get_reg("UninstallString");
+    if reg_uninstall_string.to_lowercase().contains("msiexec.exe") {
+        return reg_uninstall_string;
+    }
+
     let mut uninstall_cert_cmd = "".to_string();
     if let Ok(exe) = std::env::current_exe() {
         if let Some(exe_path) = exe.to_str() {
@@ -1303,12 +1316,14 @@ fn get_uninstall(kill_self: bool) -> String {
     {before_uninstall}
     {uninstall_cert_cmd}
     reg delete {subkey} /f
+    {uninstall_amyuni_idd}
     if exist \"{path}\" rd /s /q \"{path}\"
     if exist \"{start_menu}\" rd /s /q \"{start_menu}\"
     if exist \"%PUBLIC%\\Desktop\\{app_name}.lnk\" del /f /q \"%PUBLIC%\\Desktop\\{app_name}.lnk\"
     if exist \"%PROGRAMDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\{app_name} Tray.lnk\" del /f /q \"%PROGRAMDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\{app_name} Tray.lnk\"
     ",
         before_uninstall=get_before_uninstall(kill_self),
+        uninstall_amyuni_idd=get_uninstall_amyuni_idd(),
         app_name = crate::get_app_name(),
     )
 }
@@ -1432,24 +1447,6 @@ pub fn add_recent_document(path: &str) {
 pub fn is_installed() -> bool {
     let (_, _, _, exe) = get_install_info();
     std::fs::metadata(exe).is_ok()
-    /*
-    use windows_service::{
-        service::ServiceAccess,
-        service_manager::{ServiceManager, ServiceManagerAccess},
-    };
-    if !std::fs::metadata(exe).is_ok() {
-        return false;
-    }
-    let manager_access = ServiceManagerAccess::CONNECT;
-    if let Ok(service_manager) = ServiceManager::local_computer(None::<&str>, manager_access) {
-        if let Ok(_) =
-            service_manager.open_service(crate::get_app_name(), ServiceAccess::QUERY_CONFIG)
-        {
-            return true;
-        }
-    }
-    return false;
-    */
 }
 
 pub fn get_reg(name: &str) -> String {
@@ -1748,7 +1745,7 @@ pub fn get_double_click_time() -> u32 {
     unsafe { GetDoubleClickTime() }
 }
 
-fn wide_string(s: &str) -> Vec<u16> {
+pub fn wide_string(s: &str) -> Vec<u16> {
     use std::os::windows::prelude::OsStrExt;
     std::ffi::OsStr::new(s)
         .encode_wide()
@@ -1899,7 +1896,7 @@ pub fn current_resolution(name: &str) -> ResultType<Resolution> {
         dm.dmSize = std::mem::size_of::<DEVMODEW>() as _;
         if EnumDisplaySettingsW(device_name.as_ptr(), ENUM_CURRENT_SETTINGS, &mut dm) == 0 {
             bail!(
-                "failed to get currrent resolution, error {}",
+                "failed to get current resolution, error {}",
                 io::Error::last_os_error()
             );
         }
@@ -1959,250 +1956,19 @@ pub fn user_accessible_folder() -> ResultType<PathBuf> {
 }
 
 #[inline]
-pub fn install_cert(cert_file: &str) -> ResultType<()> {
-    let exe_file = std::env::current_exe()?;
-    if let Some(cur_dir) = exe_file.parent() {
-        allow_err!(cert::install_cert(cur_dir.join(cert_file)));
-    } else {
-        bail!(
-            "Invalid exe parent for {}",
-            exe_file.to_string_lossy().as_ref()
-        );
-    }
-    Ok(())
-}
-
-#[inline]
 pub fn uninstall_cert() -> ResultType<()> {
     cert::uninstall_cert()
 }
 
 mod cert {
-    use hbb_common::{bail, log, ResultType};
-    use std::{ffi::OsStr, io::Error, os::windows::ffi::OsStrExt, path::Path, str::from_utf8};
-    use winapi::{
-        shared::{
-            minwindef::{BYTE, DWORD, FALSE, TRUE},
-            ntdef::NULL,
-        },
-        um::{
-            wincrypt::{
-                CertAddEncodedCertificateToStore, CertCloseStore, CertDeleteCertificateFromStore,
-                CertEnumCertificatesInStore, CertNameToStrA, CertOpenStore, CryptHashCertificate,
-                ALG_ID, CALG_SHA1, CERT_ID_SHA1_HASH, CERT_STORE_ADD_REPLACE_EXISTING,
-                CERT_STORE_PROV_SYSTEM_W, CERT_SYSTEM_STORE_LOCAL_MACHINE, CERT_X500_NAME_STR,
-                PCCERT_CONTEXT, PKCS_7_ASN_ENCODING, X509_ASN_ENCODING,
-            },
-            winreg::HKEY_LOCAL_MACHINE,
-        },
-    };
-    use winreg::{
-        enums::{KEY_WRITE, REG_BINARY},
-        RegKey,
-    };
+    use hbb_common::ResultType;
 
-    const ROOT_CERT_STORE_PATH: &str =
-        "SOFTWARE\\Microsoft\\SystemCertificates\\ROOT\\Certificates\\";
-    const THUMBPRINT_ALG: ALG_ID = CALG_SHA1;
-    const THUMBPRINT_LEN: DWORD = 20;
-    const CERT_ISSUER_1: &str = "CN=\"WDKTestCert admin,133225435702113567\"\0";
-    const CERT_ENCODING_TYPE: DWORD = X509_ASN_ENCODING | PKCS_7_ASN_ENCODING;
-
-    lazy_static::lazy_static! {
-        static ref CERT_STORE_LOC: Vec<u16> =  OsStr::new("ROOT\0").encode_wide().collect::<Vec<_>>();
+    extern "C" {
+        fn DeleteRustDeskTestCertsW();
     }
-
-    #[inline]
-    unsafe fn compute_thumbprint(pb_encoded: *const BYTE, cb_encoded: DWORD) -> (Vec<u8>, String) {
-        let mut size = THUMBPRINT_LEN;
-        let mut thumbprint = [0u8; THUMBPRINT_LEN as usize];
-        if CryptHashCertificate(
-            0,
-            THUMBPRINT_ALG,
-            0,
-            pb_encoded,
-            cb_encoded,
-            thumbprint.as_mut_ptr(),
-            &mut size,
-        ) == TRUE
-        {
-            (
-                thumbprint.to_vec(),
-                hex::encode(thumbprint).to_ascii_uppercase(),
-            )
-        } else {
-            (thumbprint.to_vec(), "".to_owned())
-        }
-    }
-
-    #[inline]
-    unsafe fn open_reg_cert_store() -> ResultType<RegKey> {
-        let hklm = winreg::RegKey::predef(HKEY_LOCAL_MACHINE);
-        Ok(hklm.open_subkey_with_flags(ROOT_CERT_STORE_PATH, KEY_WRITE)?)
-    }
-
-    // https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-gpef/6a9e35fa-2ac7-4c10-81e1-eabe8d2472f1
-    fn create_cert_blob(thumbprint: Vec<u8>, encoded: Vec<u8>) -> Vec<u8> {
-        let mut blob = Vec::new();
-
-        let mut property_id = (CERT_ID_SHA1_HASH as u32).to_le_bytes().to_vec();
-        let mut pro_reserved = [0x01, 0x00, 0x00, 0x00].to_vec();
-        let mut pro_length = (THUMBPRINT_LEN as u32).to_le_bytes().to_vec();
-        let mut pro_val = thumbprint;
-        blob.append(&mut property_id);
-        blob.append(&mut pro_reserved);
-        blob.append(&mut pro_length);
-        blob.append(&mut pro_val);
-
-        let mut blob_reserved = [0x20, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00].to_vec();
-        let mut blob_length = (encoded.len() as u32).to_le_bytes().to_vec();
-        let mut blob_val = encoded;
-        blob.append(&mut blob_reserved);
-        blob.append(&mut blob_length);
-        blob.append(&mut blob_val);
-
-        blob
-    }
-
-    pub fn install_cert<P: AsRef<Path>>(path: P) -> ResultType<()> {
-        let mut cert_bytes = std::fs::read(path)?;
-        install_cert_reg(&mut cert_bytes)?;
-        install_cert_add_cert_store(&mut cert_bytes)?;
-        Ok(())
-    }
-
-    fn install_cert_reg(cert_bytes: &mut [u8]) -> ResultType<()> {
-        unsafe {
-            let thumbprint = compute_thumbprint(cert_bytes.as_mut_ptr(), cert_bytes.len() as _);
-            log::debug!("Thumbprint of cert {}", &thumbprint.1);
-
-            let reg_cert_key = open_reg_cert_store()?;
-            let (cert_key, _) = reg_cert_key.create_subkey(&thumbprint.1)?;
-            let data = winreg::RegValue {
-                vtype: REG_BINARY,
-                bytes: create_cert_blob(thumbprint.0, cert_bytes.to_vec()),
-            };
-            cert_key.set_raw_value("Blob", &data)?;
-        }
-        Ok(())
-    }
-
-    fn install_cert_add_cert_store(cert_bytes: &mut [u8]) -> ResultType<()> {
-        unsafe {
-            let store_handle = CertOpenStore(
-                CERT_STORE_PROV_SYSTEM_W,
-                0,
-                0,
-                CERT_SYSTEM_STORE_LOCAL_MACHINE,
-                CERT_STORE_LOC.as_ptr() as _,
-            );
-            if store_handle.is_null() {
-                bail!(
-                    "Error opening certificate store: {}",
-                    Error::last_os_error()
-                );
-            }
-
-            // Create the certificate context
-            let cert_context = winapi::um::wincrypt::CertCreateCertificateContext(
-                CERT_ENCODING_TYPE,
-                cert_bytes.as_ptr(),
-                cert_bytes.len() as DWORD,
-            );
-            if cert_context.is_null() {
-                bail!(
-                    "Error creating certificate context: {}",
-                    Error::last_os_error()
-                );
-            }
-
-            if FALSE
-                == CertAddEncodedCertificateToStore(
-                    store_handle,
-                    CERT_ENCODING_TYPE,
-                    (*cert_context).pbCertEncoded,
-                    (*cert_context).cbCertEncoded,
-                    CERT_STORE_ADD_REPLACE_EXISTING,
-                    std::ptr::null_mut(),
-                )
-            {
-                log::error!(
-                    "Failed to call CertAddEncodedCertificateToStore: {}",
-                    Error::last_os_error()
-                );
-            } else {
-                log::info!("Add cert to store successfully");
-            }
-
-            CertCloseStore(store_handle, 0);
-        }
-        Ok(())
-    }
-
-    fn get_thumbprints_to_rm() -> ResultType<Vec<String>> {
-        let issuers_to_rm = [CERT_ISSUER_1];
-
-        let mut thumbprints = Vec::new();
-        let mut buf = [0u8; 1024];
-
-        unsafe {
-            let store_handle = CertOpenStore(
-                CERT_STORE_PROV_SYSTEM_W,
-                0,
-                0,
-                CERT_SYSTEM_STORE_LOCAL_MACHINE,
-                CERT_STORE_LOC.as_ptr() as _,
-            );
-            if store_handle.is_null() {
-                bail!(
-                    "Error opening certificate store: {}",
-                    Error::last_os_error()
-                );
-            }
-
-            let mut cert_ctx: PCCERT_CONTEXT = CertEnumCertificatesInStore(store_handle, NULL as _);
-            while !cert_ctx.is_null() {
-                // https://stackoverflow.com/a/66432736
-                let cb_size = CertNameToStrA(
-                    (*cert_ctx).dwCertEncodingType,
-                    &mut ((*(*cert_ctx).pCertInfo).Issuer) as _,
-                    CERT_X500_NAME_STR,
-                    buf.as_mut_ptr() as _,
-                    buf.len() as _,
-                );
-                if cb_size != 1 {
-                    if let Ok(issuer) = from_utf8(&buf[..cb_size as _]) {
-                        for iss in issuers_to_rm.iter() {
-                            if issuer == *iss {
-                                let (_, thumbprint) = compute_thumbprint(
-                                    (*cert_ctx).pbCertEncoded,
-                                    (*cert_ctx).cbCertEncoded,
-                                );
-                                if !thumbprint.is_empty() {
-                                    thumbprints.push(thumbprint);
-                                }
-                                // Delete current cert context and re-enumerate.
-                                CertDeleteCertificateFromStore(cert_ctx);
-                                cert_ctx = CertEnumCertificatesInStore(store_handle, NULL as _);
-                            }
-                        }
-                    }
-                }
-                cert_ctx = CertEnumCertificatesInStore(store_handle, cert_ctx);
-            }
-            CertCloseStore(store_handle, 0);
-        }
-
-        Ok(thumbprints)
-    }
-
     pub fn uninstall_cert() -> ResultType<()> {
-        let thumbprints = get_thumbprints_to_rm()?;
-        let reg_cert_key = unsafe { open_reg_cert_store()? };
-        log::info!("Found {} certs to remove", thumbprints.len());
-        for thumbprint in thumbprints.iter() {
-            // Deleting cert from registry may fail, because the CertDeleteCertificateFromStore() is called before.
-            let _ = reg_cert_key.delete_subkey(thumbprint);
+        unsafe {
+            DeleteRustDeskTestCertsW();
         }
         Ok(())
     }
@@ -2302,7 +2068,7 @@ impl Drop for WakeLock {
     }
 }
 
-pub fn uninstall_service(show_new_window: bool) -> bool {
+pub fn uninstall_service(show_new_window: bool, _: bool) -> bool {
     log::info!("Uninstalling service...");
     let filter = format!(" /FI \"PID ne {}\"", get_current_pid());
     Config::set_option("stop-service".into(), "Y".into());
@@ -2383,6 +2149,9 @@ oLink.Save
 }
 
 fn get_import_config(exe: &str) -> String {
+    if config::is_outgoing_only() {
+        return "".to_string();
+    }
     format!("
 sc stop {app_name}
 sc delete {app_name}
@@ -2397,6 +2166,9 @@ sc delete {app_name}
 }
 
 fn get_create_service(exe: &str) -> String {
+    if config::is_outgoing_only() {
+        return "".to_string();
+    }
     let stop = Config::get_option("stop-service") == "Y";
     if stop {
         format!("
@@ -2443,14 +2215,6 @@ pub fn try_kill_broker() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]
-    fn test_install_cert() {
-        println!(
-            "install driver cert: {:?}",
-            cert::install_cert("RustDeskIddDriver.cer")
-        );
-    }
-
     #[test]
     fn test_uninstall_cert() {
         println!("uninstall driver certs: {:?}", cert::uninstall_cert());
@@ -2623,5 +2387,71 @@ impl Drop for WallPaperRemover {
     fn drop(&mut self) {
         // If the old background is a slideshow, it will be converted into an image. AnyDesk does the same.
         allow_err!(Self::set_wallpaper(Some(self.old_path.clone())));
+    }
+}
+
+fn get_uninstall_amyuni_idd() -> String {
+    match std::env::current_exe() {
+        Ok(path) => format!("\"{}\" --uninstall-amyuni-idd", path.to_str().unwrap_or("")),
+        Err(e) => {
+            log::warn!("Failed to get current exe path, cannot get command of uninstalling idd, Zzerror: {:?}", e);
+            "".to_string()
+        }
+    }
+}
+
+#[inline]
+pub fn is_self_service_running() -> bool {
+    is_service_running(&crate::get_app_name())
+}
+
+pub fn is_service_running(service_name: &str) -> bool {
+    unsafe {
+        let service_name = wide_string(service_name);
+        is_service_running_w(service_name.as_ptr() as _)
+    }
+}
+
+pub fn is_x64() -> bool {
+    const PROCESSOR_ARCHITECTURE_AMD64: u16 = 9;
+
+    let mut sys_info = SYSTEM_INFO::default();
+    unsafe {
+        GetNativeSystemInfo(&mut sys_info as _);
+    }
+    unsafe { sys_info.u.s().wProcessorArchitecture == PROCESSOR_ARCHITECTURE_AMD64 }
+}
+
+#[cfg(feature = "flutter")]
+pub fn try_kill_flutter_main_window_process() {
+    // It's called when --server failed to start ipc, because the ipc may be occupied by the main window process.
+    // When --service quit the ipc process, ipc process will call std::process::exit, std::process::exit not work may be the reason.
+    // FindWindow not work in --service, https://forums.codeguru.com/showthread.php?169091-FindWindow-in-service
+    log::info!("try kill flutter main window process");
+    unsafe {
+        let window_name = wide_string(&crate::get_app_name());
+        let class_name = wide_string(FLUTTER_RUNNER_WIN32_WINDOW_CLASS);
+        let hwnd = FindWindowW(class_name.as_ptr(), window_name.as_ptr());
+        if hwnd.is_null() {
+            log::info!("not found flutter main window");
+            return;
+        }
+        let mut process_id: u32 = 0;
+        GetWindowThreadProcessId(hwnd, &mut process_id as *mut u32);
+        if process_id == 0 {
+            log::info!("failed to get flutter window process id");
+            return;
+        }
+        let output = Command::new("taskkill")
+            .arg("/F")
+            .arg("/PID")
+            .arg(process_id.to_string())
+            .output()
+            .expect("Failed to execute command");
+        if output.status.success() {
+            log::info!("kill flutter main window process success");
+        } else {
+            log::error!("kill flutter main window process failed");
+        }
     }
 }
