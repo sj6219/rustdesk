@@ -736,7 +736,7 @@ impl<T: InvokeUiSession> Session<T> {
         msg_out.set_misc(misc);
         self.send(Data::Message(msg_out));
 
-        #[cfg(not(feature = "flutter"))]
+        #[cfg(not(feature = "flutter_texture_render"))]
         {
             self.capture_displays(vec![], vec![], vec![display]);
         }
