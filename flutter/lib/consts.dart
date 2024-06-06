@@ -73,6 +73,7 @@ const String kOptionViewStyle = "view_style";
 const String kOptionScrollStyle = "scroll_style";
 const String kOptionImageQuality = "image_quality";
 const String kOptionOpenNewConnInTabs = "enable-open-new-connections-in-tabs";
+const String kOptionTextureRender = "use-texture-render";
 const String kOptionOpenInTabs = "allow-open-in-tabs";
 const String kOptionOpenInWindows = "allow-open-in-windows";
 const String kOptionForceAlwaysRelay = "force-always-relay";
@@ -135,6 +136,8 @@ const String kOptionAllowRemoveWallpaper = "allow-remove-wallpaper";
 
 const String kOptionToggleViewOnly = "view-only";
 
+const String kOptionDisableFloatingWindow = "disable-floating-window";
+
 const String kUrlActionClose = "close";
 
 const String kTabLabelHomePage = "Home";
@@ -153,10 +156,13 @@ const String kKeyUseAllMyDisplaysForTheRemoteSession =
 const String kKeyShowMonitorsToolbar = 'show_monitors_toolbar';
 const String kKeyReverseMouseWheel = "reverse_mouse_wheel";
 
+const String kMsgboxTextWaitingForImage = 'Connected, waiting for image...';
+
 // the executable name of the portable version
 const String kEnvPortableExecutable = "RUSTDESK_APPNAME";
 
 const Color kColorWarn = Color.fromARGB(255, 245, 133, 59);
+const Color kColorCanvas = Colors.black;
 
 const int kMobileDefaultDisplayWidth = 720;
 const int kMobileDefaultDisplayHeight = 1280;

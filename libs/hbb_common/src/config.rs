@@ -2053,6 +2053,7 @@ pub mod keys {
     pub const OPTION_ENABLE_CONFIRM_CLOSING_TABS: &str = "enable-confirm-closing-tabs";
     pub const OPTION_ENABLE_OPEN_NEW_CONNECTIONS_IN_TABS: &str =
         "enable-open-new-connections-in-tabs";
+    pub const OPTION_TEXTURE_RENDER: &str = "use-texture-render";
     pub const OPTION_ENABLE_CHECK_UPDATE: &str = "enable-check-update";
     pub const OPTION_SYNC_AB_WITH_RECENT_SESSIONS: &str = "sync-ab-with-recent-sessions";
     pub const OPTION_SYNC_AB_TAGS: &str = "sync-ab-tags";
@@ -2091,6 +2092,12 @@ pub mod keys {
     pub const OPTION_FLUTTER_PEER_TAB_VISIBLE: &str = "peer-tab-visible";
     pub const OPTION_FLUTTER_PEER_CARD_UI_TYLE: &str = "peer-card-ui-type";
     pub const OPTION_FLUTTER_CURRENT_AB_NAME: &str = "current-ab-name";
+
+    // android floating window options
+    pub const OPTION_DISABLE_FLOATING_WINDOW: &str = "disable-floating-window";
+    pub const OPTION_FLOATING_WINDOW_SIZE: &str = "floating-window-size";
+    pub const OPTION_FLOATING_WINDOW_TRANSPARENCY: &str = "floating-window-transparency";
+    pub const OPTION_FLOATING_WINDOW_SVG: &str = "floating-window-svg";
 
     // proxy settings
     // The following options are not real keys, they are just used for custom client advanced settings.
@@ -2133,6 +2140,7 @@ pub mod keys {
         OPTION_LANGUAGE,
         OPTION_ENABLE_CONFIRM_CLOSING_TABS,
         OPTION_ENABLE_OPEN_NEW_CONNECTIONS_IN_TABS,
+        OPTION_TEXTURE_RENDER,
         OPTION_SYNC_AB_WITH_RECENT_SESSIONS,
         OPTION_SYNC_AB_TAGS,
         OPTION_FILTER_AB_BY_INTERSECTION,
@@ -2146,6 +2154,10 @@ pub mod keys {
         OPTION_FLUTTER_PEER_TAB_VISIBLE,
         OPTION_FLUTTER_PEER_CARD_UI_TYLE,
         OPTION_FLUTTER_CURRENT_AB_NAME,
+        OPTION_DISABLE_FLOATING_WINDOW,
+        OPTION_FLOATING_WINDOW_SIZE,
+        OPTION_FLOATING_WINDOW_TRANSPARENCY,
+        OPTION_FLOATING_WINDOW_SVG,
     ];
     // DEFAULT_SETTINGS, OVERWRITE_SETTINGS
     pub const KEYS_SETTINGS: &[&str] = &[
