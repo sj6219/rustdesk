@@ -7,6 +7,7 @@ import 'package:get/get.dart';
 import 'package:provider/provider.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:flutter_improved_scrolling/flutter_improved_scrolling.dart';
+import 'package:flutter_hbb/models/state_model.dart';
 
 import '../../consts.dart';
 import '../../common/widgets/overlay.dart';
@@ -15,7 +16,6 @@ import '../../common.dart';
 import '../../common/widgets/dialog.dart';
 import '../../common/widgets/toolbar.dart';
 import '../../models/model.dart';
-import '../../models/desktop_render_texture.dart';
 import '../../models/platform_model.dart';
 import '../../common/shared_state.dart';
 import '../../utils/image.dart';
@@ -93,7 +93,7 @@ class _RemotePageState extends State<RemotePage>
 
   void _initStates(String id) {
     initSharedStates(id);
-    _zoomCursor = PeerBoolOption.find(id, 'zoom-cursor');
+    _zoomCursor = PeerBoolOption.find(id, kOptionZoomCursor);
     _showRemoteCursor = ShowRemoteCursorState.find(id);
     _keyboardEnabled = KeyboardEnabledState.find(id);
     _remoteCursorMoved = RemoteCursorMovedState.find(id);
@@ -135,7 +135,7 @@ class _RemotePageState extends State<RemotePage>
     _showRemoteCursor.value = bind.sessionGetToggleOptionSync(
         sessionId: sessionId, arg: 'show-remote-cursor');
     _zoomCursor.value = bind.sessionGetToggleOptionSync(
-        sessionId: sessionId, arg: 'zoom-cursor');
+        sessionId: sessionId, arg: kOptionZoomCursor);
     DesktopMultiWindow.addListener(this);
     // if (!_isCustomCursorInited) {
     //   customCursorController.registerNeedUpdateCursorCallback(
@@ -165,6 +165,7 @@ class _RemotePageState extends State<RemotePage>
       // and let OS to handle events instead.
       _rawKeyFocusNode.unfocus();
     }
+    stateGlobal.isFocused.value = false;
   }
 
   @override
@@ -174,6 +175,7 @@ class _RemotePageState extends State<RemotePage>
     if (isWindows) {
       _isWindowBlur = false;
     }
+    stateGlobal.isFocused.value = true;
   }
 
   @override
@@ -207,6 +209,22 @@ class _RemotePageState extends State<RemotePage>
   }
 
   @override
+  void onWindowEnterFullScreen() {
+    super.onWindowEnterFullScreen();
+    if (isMacOS) {
+      stateGlobal.setFullscreen(true);
+    }
+  }
+
+  @override
+  void onWindowLeaveFullScreen() {
+    super.onWindowLeaveFullScreen();
+    if (isMacOS) {
+      stateGlobal.setFullscreen(false);
+    }
+  }
+
+  @override
   Future<void> dispose() async {
     final closeSession = closeSessionOnDispose.remove(widget.id) ?? true;
 
@@ -218,6 +236,8 @@ class _RemotePageState extends State<RemotePage>
     _ffi.inputModel.enterOrLeave(false);
     DesktopMultiWindow.removeListener(this);
     _ffi.dialogManager.hideMobileActionsOverlay();
+    _ffi.imageModel.disposeImage();
+    _ffi.cursorModel.disposeImages();
     _ffi.recordingModel.onClose();
     _rawKeyFocusNode.dispose();
     await _ffi.close(closeSession: closeSession);
@@ -258,7 +278,7 @@ class _RemotePageState extends State<RemotePage>
       return Stack(
         children: [
           Container(
-              color: Colors.black,
+              color: kColorCanvas,
               child: RawKeyFocusScope(
                   focusNode: _rawKeyFocusNode,
                   onFocusChange: (bool imageFocused) {
@@ -287,8 +307,30 @@ class _RemotePageState extends State<RemotePage>
                       _ffi.ffiModel.waitForFirstImage.isTrue
                   ? emptyOverlay()
                   : () {
-                      _ffi.ffiModel.tryShowAndroidActionsOverlay();
-                      return Offstage();
+                      if (!_ffi.ffiModel.isPeerAndroid) {
+                        return Offstage();
+                      } else {
+                        if (_ffi.connType == ConnType.defaultConn &&
+                            _ffi.ffiModel.permissions['keyboard'] != false) {
+                          Timer(
+                              Duration(milliseconds: 10),
+                              () => _ffi.dialogManager
+                                  .mobileActionsOverlayVisible.value = true);
+                        }
+                        return Obx(() => Offstage(
+                              offstage: _ffi.dialogManager
+                                  .mobileActionsOverlayVisible.isFalse,
+                              child: Overlay(initialEntries: [
+                                makeMobileActionsOverlayEntry(
+                                  () => _ffi
+                                      .dialogManager
+                                      .mobileActionsOverlayVisible
+                                      .value = false,
+                                  ffi: _ffi,
+                                )
+                              ]),
+                            ));
+                      }
                     }(),
               // Use Overlay to enable rebuild every time on menu button click.
               _ffi.ffiModel.pi.isSet.isTrue
@@ -435,9 +477,8 @@ class _RemotePageState extends State<RemotePage>
       }, onExit: (evt) {
         if (!isWeb) bind.hostStopSystemKeyPropagate(stopped: true);
       }, child: LayoutBuilder(builder: (context, constraints) {
-        Future.delayed(Duration.zero, () {
-          Provider.of<CanvasModel>(context, listen: false).updateViewStyle();
-        });
+        final c = Provider.of<CanvasModel>(context, listen: false);
+        Future.delayed(Duration.zero, () => c.updateViewStyle());
         final peerDisplay = CurrentDisplayState.find(widget.id);
         return Obx(
           () => _ffi.ffiModel.pi.isSet.isFalse
@@ -572,12 +613,11 @@ class _ImagePaintState extends State<ImagePaint> {
               onHover: (evt) {},
               child: child);
         });
-
     if (c.imageOverflow.isTrue && c.scrollStyle == ScrollStyle.scrollbar) {
       final paintWidth = c.getDisplayWidth() * s;
       final paintHeight = c.getDisplayHeight() * s;
       final paintSize = Size(paintWidth, paintHeight);
-      final paintWidget = useTextureRender
+      final paintWidget = m.useTextureRender
           ? _BuildPaintTextureRender(
               c, s, Offset.zero, paintSize, isViewOriginal())
           : _buildScrollbarNonTextureRender(m, paintSize, s);
@@ -598,7 +638,7 @@ class _ImagePaintState extends State<ImagePaint> {
           ));
     } else {
       if (c.size.width > 0 && c.size.height > 0) {
-        final paintWidget = useTextureRender
+        final paintWidget = m.useTextureRender
             ? _BuildPaintTextureRender(
                 c,
                 s,

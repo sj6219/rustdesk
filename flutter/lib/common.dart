@@ -12,13 +12,13 @@ import 'package:flutter_hbb/common/formatter/id_formatter.dart';
 import 'package:flutter_hbb/desktop/widgets/refresh_wrapper.dart';
 import 'package:flutter_hbb/desktop/widgets/tabbar_widget.dart';
 import 'package:flutter_hbb/main.dart';
-import 'package:flutter_hbb/models/desktop_render_texture.dart';
 import 'package:flutter_hbb/models/peer_model.dart';
 import 'package:flutter_hbb/models/state_model.dart';
 import 'package:flutter_hbb/utils/multi_window_manager.dart';
 import 'package:flutter_hbb/utils/platform_channel.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
+import 'package:provider/provider.dart';
 import 'package:uni_links/uni_links.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:uuid/uuid.dart';
@@ -54,6 +54,12 @@ final isWebDesktop = isWebDesktop_;
 var isMobile = isAndroid || isIOS;
 var version = '';
 int androidVersion = 0;
+
+// Only used on Linux.
+// `windowManager.setResizable(false)` will reset the window size to the default size on Linux.
+// https://stackoverflow.com/questions/8193613/gtk-window-resize-disable-without-going-back-to-default
+// So we need to use this flag to enable/disable resizable.
+bool _linuxWindowResizable = true;
 
 /// only available for Windows target
 int windowsBuildNumber = 0;
@@ -544,7 +550,8 @@ class MyTheme {
     Get.changeThemeMode(mode);
     if (desktopType == DesktopType.main || isAndroid || isIOS) {
       if (mode == ThemeMode.system) {
-        await bind.mainSetLocalOption(key: kCommConfKeyTheme, value: '');
+        await bind.mainSetLocalOption(
+            key: kCommConfKeyTheme, value: defaultOptionTheme);
       } else {
         await bind.mainSetLocalOption(
             key: kCommConfKeyTheme, value: mode.toShortString());
@@ -852,30 +859,10 @@ class OverlayDialogManager {
     final overlayState = _overlayKeyState.state;
     if (overlayState == null) return;
 
-    // compute overlay position
-    final screenW = MediaQuery.of(globalKey.currentContext!).size.width;
-    final screenH = MediaQuery.of(globalKey.currentContext!).size.height;
-    const double overlayW = 200;
-    const double overlayH = 45;
-    final left = (screenW - overlayW) / 2;
-    final top = screenH - overlayH - 80;
-
-    final overlay = OverlayEntry(builder: (context) {
-      final session = ffi ?? gFFI;
-      return DraggableMobileActions(
-        position: Offset(left, top),
-        width: overlayW,
-        height: overlayH,
-        onBackPressed: () => session.inputModel.tap(MouseButtons.right),
-        onHomePressed: () => session.inputModel.tap(MouseButtons.wheel),
-        onRecentPressed: () async {
-          session.inputModel.sendMouse('down', MouseButtons.wheel);
-          await Future.delayed(const Duration(milliseconds: 500));
-          session.inputModel.sendMouse('up', MouseButtons.wheel);
-        },
-        onHidePressed: () => hideMobileActionsOverlay(),
-      );
-    });
+    final overlay = makeMobileActionsOverlayEntry(
+      () => hideMobileActionsOverlay(),
+      ffi: ffi,
+    );
     overlayState.insert(overlay);
     _mobileActionsOverlayEntry = overlay;
     mobileActionsOverlayVisible.value = true;
@@ -901,6 +888,45 @@ class OverlayDialogManager {
   bool existing(String tag) {
     return _dialogs.keys.contains(tag);
   }
+}
+
+makeMobileActionsOverlayEntry(VoidCallback? onHide, {FFI? ffi}) {
+  final position = SimpleWrapper(Offset(0, 0));
+  makeMobileActions(BuildContext context, double s) {
+    final scale = s < 0.85 ? 0.85 : s;
+    final session = ffi ?? gFFI;
+    // compute overlay position
+    final screenW = MediaQuery.of(context).size.width;
+    final screenH = MediaQuery.of(context).size.height;
+    const double overlayW = 200;
+    const double overlayH = 45;
+    final left = (screenW - overlayW * scale) / 2;
+    final top = screenH - (overlayH + 80) * scale;
+    position.value = Offset(left, top);
+    return DraggableMobileActions(
+      scale: scale,
+      position: position,
+      width: overlayW,
+      height: overlayH,
+      onBackPressed: () => session.inputModel.tap(MouseButtons.right),
+      onHomePressed: () => session.inputModel.tap(MouseButtons.wheel),
+      onRecentPressed: () async {
+        session.inputModel.sendMouse('down', MouseButtons.wheel);
+        await Future.delayed(const Duration(milliseconds: 500));
+        session.inputModel.sendMouse('up', MouseButtons.wheel);
+      },
+      onHidePressed: onHide,
+    );
+  }
+
+  return OverlayEntry(builder: (context) {
+    if (isDesktop) {
+      final c = Provider.of<CanvasModel>(context);
+      return makeMobileActions(context, c.scale * 2.0);
+    } else {
+      return makeMobileActions(globalKey.currentContext!, 1.0);
+    }
+  });
 }
 
 void showToast(String text, {Duration timeout = const Duration(seconds: 3)}) {
@@ -982,7 +1008,8 @@ class CustomAlertDialog extends StatelessWidget {
           return KeyEventResult.handled; // avoid TextField exception on escape
         } else if (!tabTapped &&
             onSubmit != null &&
-            key.logicalKey == LogicalKeyboardKey.enter) {
+            (key.logicalKey == LogicalKeyboardKey.enter ||
+                key.logicalKey == LogicalKeyboardKey.numpadEnter)) {
           if (key is RawKeyDownEvent) onSubmit?.call();
           return KeyEventResult.handled;
         } else if (key.logicalKey == LogicalKeyboardKey.tab) {
@@ -1401,7 +1428,7 @@ bool option2bool(String option, String value) {
     res = value != "N";
   } else if (option.startsWith("allow-") ||
       option == "stop-service" ||
-      option == "direct-server" ||
+      option == kOptionDirectServer ||
       option == "stop-rendezvous-service" ||
       option == kOptionForceAlwaysRelay) {
     res = value == "Y";
@@ -1415,13 +1442,13 @@ bool option2bool(String option, String value) {
 String bool2option(String option, bool b) {
   String res;
   if (option.startsWith('enable-')) {
-    res = b ? '' : 'N';
+    res = b ? defaultOptionYes : 'N';
   } else if (option.startsWith('allow-') ||
       option == "stop-service" ||
-      option == "direct-server" ||
+      option == kOptionDirectServer ||
       option == "stop-rendezvous-service" ||
       option == kOptionForceAlwaysRelay) {
-    res = b ? 'Y' : '';
+    res = b ? 'Y' : defaultOptionNo;
   } else {
     assert(false);
     res = b ? 'Y' : 'N';
@@ -1493,6 +1520,12 @@ Widget getPlatformImage(String platform, {double size = 50}) {
   return SvgPicture.asset('assets/$platform.svg', height: size, width: size);
 }
 
+class OffsetDevicePixelRatio {
+  Offset offset;
+  final double devicePixelRatio;
+  OffsetDevicePixelRatio(this.offset, this.devicePixelRatio);
+}
+
 class LastWindowPosition {
   double? width;
   double? height;
@@ -1554,16 +1587,13 @@ Future<void> saveWindowPosition(WindowType type, {int? windowId}) async {
   late Offset position;
   late Size sz;
   late bool isMaximized;
-  bool isFullscreen = stateGlobal.fullscreen.isTrue ||
-      (isMacOS && stateGlobal.closeOnFullscreen == true);
-  setFrameIfMaximized() {
-    if (isMaximized) {
-      final pos = bind.getLocalFlutterOption(k: windowFramePrefix + type.name);
-      var lpos = LastWindowPosition.loadFromString(pos);
-      position = Offset(
-          lpos?.offsetWidth ?? position.dx, lpos?.offsetHeight ?? position.dy);
-      sz = Size(lpos?.width ?? sz.width, lpos?.height ?? sz.height);
-    }
+  bool isFullscreen = stateGlobal.fullscreen.isTrue;
+  setPreFrame() {
+    final pos = bind.getLocalFlutterOption(k: windowFramePrefix + type.name);
+    var lpos = LastWindowPosition.loadFromString(pos);
+    position = Offset(
+        lpos?.offsetWidth ?? position.dx, lpos?.offsetHeight ?? position.dy);
+    sz = Size(lpos?.width ?? sz.width, lpos?.height ?? sz.height);
   }
 
   switch (type) {
@@ -1572,26 +1602,33 @@ Future<void> saveWindowPosition(WindowType type, {int? windowId}) async {
       // `await windowManager.isMaximized()` will always return true
       // if is not resizable. The reason is unknown.
       //
-      // `windowManager.setResizable(!bind.isIncomingOnly());` in main.dart
+      // `setResizable(!bind.isIncomingOnly());` in main.dart
       isMaximized =
           bind.isIncomingOnly() ? false : await windowManager.isMaximized();
-      position = await windowManager.getPosition();
-      sz = await windowManager.getSize();
-      setFrameIfMaximized();
+      if (isFullscreen || isMaximized) {
+        setPreFrame();
+      } else {
+        position = await windowManager.getPosition();
+        sz = await windowManager.getSize();
+      }
       break;
     default:
       final wc = WindowController.fromWindowId(windowId!);
       isMaximized = await wc.isMaximized();
-      final Rect frame;
-      try {
-        frame = await wc.getFrame();
-      } catch (e) {
-        debugPrint("Failed to get frame of window $windowId, it may be hidden");
-        return;
+      if (isFullscreen || isMaximized) {
+        setPreFrame();
+      } else {
+        final Rect frame;
+        try {
+          frame = await wc.getFrame();
+        } catch (e) {
+          debugPrint(
+              "Failed to get frame of window $windowId, it may be hidden");
+          return;
+        }
+        position = frame.topLeft;
+        sz = frame.size;
       }
-      position = frame.topLeft;
-      sz = frame.size;
-      setFrameIfMaximized();
       break;
   }
   if (isWindows) {
@@ -1625,7 +1662,7 @@ Future _saveSessionWindowPosition(WindowType windowType, int windowId,
   final remoteList = await DesktopMultiWindow.invokeMethod(
       windowId, kWindowEventGetRemoteList, null);
   getPeerPos(String peerId) {
-    if (isMaximized) {
+    if (isMaximized || isFullscreen) {
       final peerPos = bind.mainGetPeerFlutterOptionSync(
           id: peerId, k: windowFramePrefix + windowType.name);
       var lpos = LastWindowPosition.loadFromString(peerPos);
@@ -1682,8 +1719,15 @@ Future<Size> _adjustRestoreMainWindowSize(double? width, double? height) async {
   return Size(restoreWidth, restoreHeight);
 }
 
+bool isPointInRect(Offset point, Rect rect) {
+  return point.dx >= rect.left &&
+      point.dx <= rect.right &&
+      point.dy >= rect.top &&
+      point.dy <= rect.bottom;
+}
+
 /// return null means center
-Future<Offset?> _adjustRestoreMainWindowOffset(
+Future<OffsetDevicePixelRatio?> _adjustRestoreMainWindowOffset(
   double? left,
   double? top,
   double? width,
@@ -1697,9 +1741,13 @@ Future<Offset?> _adjustRestoreMainWindowOffset(
   double? frameTop;
   double? frameRight;
   double? frameBottom;
+  double devicePixelRatio = 1.0;
 
   if (isDesktop || isWebDesktop) {
     for (final screen in await window_size.getScreenList()) {
+      if (isPointInRect(Offset(left, top), screen.visibleFrame)) {
+        devicePixelRatio = screen.scaleFactor;
+      }
       frameLeft = frameLeft == null
           ? screen.visibleFrame.left
           : min(screen.visibleFrame.left, frameLeft);
@@ -1733,7 +1781,7 @@ Future<Offset?> _adjustRestoreMainWindowOffset(
       top < frameTop!) {
     return null;
   } else {
-    return Offset(left, top);
+    return OffsetDevicePixelRatio(Offset(left, top), devicePixelRatio);
   }
 }
 
@@ -1759,15 +1807,10 @@ Future<bool> restoreWindowPosition(WindowType type,
   // No need to check mainGetLocalBoolOptionSync(kOptionOpenNewConnInTabs)
   // Though "open in tabs" is true and the new window restore peer position, it's ok.
   if (type == WindowType.RemoteDesktop && windowId != null && peerId != null) {
-    // If the restore position is called by main window, and the peer id is not null
-    // then we may need to get the position by reading the peer config.
-    // Because the session may not be read at this time.
-    if (desktopType == DesktopType.main) {
-      pos = bind.mainGetPeerFlutterOptionSync(
-          id: peerId, k: windowFramePrefix + type.name);
-    } else {
-      pos = await bind.sessionGetFlutterOptionByPeerId(
-          id: peerId, k: windowFramePrefix + type.name);
+    final peerPos = bind.mainGetPeerFlutterOptionSync(
+        id: peerId, k: windowFramePrefix + type.name);
+    if (peerPos.isNotEmpty) {
+      pos = peerPos;
     }
     isRemotePeerPos = pos != null;
   }
@@ -1798,22 +1841,47 @@ Future<bool> restoreWindowPosition(WindowType type,
   }
 
   final size = await _adjustRestoreMainWindowSize(lpos.width, lpos.height);
-  final offset = await _adjustRestoreMainWindowOffset(
+  final offsetDevicePixelRatio = await _adjustRestoreMainWindowOffset(
     lpos.offsetWidth,
     lpos.offsetHeight,
     size.width,
     size.height,
   );
   debugPrint(
-      "restore lpos: ${size.width}/${size.height}, offset:${offset?.dx}/${offset?.dy}");
+      "restore lpos: ${size.width}/${size.height}, offset:${offsetDevicePixelRatio?.offset.dx}/${offsetDevicePixelRatio?.offset.dy}, devicePixelRatio:${offsetDevicePixelRatio?.devicePixelRatio}, isMaximized: ${lpos.isMaximized}, isFullscreen: ${lpos.isFullscreen}");
 
   switch (type) {
     case WindowType.Main:
+      // https://github.com/rustdesk/rustdesk/issues/8038
+      // `setBounds()` in `window_manager` will use the current devicePixelRatio.
+      // So we need to adjust the offset by the scale factor.
+      // https://github.com/rustdesk-org/window_manager/blob/f19acdb008645366339444a359a45c3257c8b32e/windows/window_manager.cpp#L701
+      if (isWindows) {
+        double? curDevicePixelRatio;
+        Offset curPos = await windowManager.getPosition();
+        for (final screen in await window_size.getScreenList()) {
+          if (isPointInRect(curPos, screen.visibleFrame)) {
+            curDevicePixelRatio = screen.scaleFactor;
+          }
+        }
+        if (curDevicePixelRatio != null &&
+            curDevicePixelRatio != 0 &&
+            offsetDevicePixelRatio != null) {
+          if (offsetDevicePixelRatio.devicePixelRatio != 0) {
+            final scale =
+                offsetDevicePixelRatio.devicePixelRatio / curDevicePixelRatio;
+            offsetDevicePixelRatio.offset =
+                offsetDevicePixelRatio.offset.scale(scale, scale);
+            debugPrint(
+                "restore new offset: ${offsetDevicePixelRatio.offset.dx}/${offsetDevicePixelRatio.offset.dy}, scale:$scale");
+          }
+        }
+      }
       restorePos() async {
-        if (offset == null) {
+        if (offsetDevicePixelRatio == null) {
           await windowManager.center();
         } else {
-          await windowManager.setPosition(offset);
+          await windowManager.setPosition(offsetDevicePixelRatio.offset);
         }
       }
       if (lpos.isMaximized == true) {
@@ -1831,19 +1899,27 @@ Future<bool> restoreWindowPosition(WindowType type,
     default:
       final wc = WindowController.fromWindowId(windowId!);
       restoreFrame() async {
-        if (offset == null) {
+        if (offsetDevicePixelRatio == null) {
           await wc.center();
         } else {
-          final frame =
-              Rect.fromLTWH(offset.dx, offset.dy, size.width, size.height);
+          final frame = Rect.fromLTWH(offsetDevicePixelRatio.offset.dx,
+              offsetDevicePixelRatio.offset.dy, size.width, size.height);
           await wc.setFrame(frame);
         }
       }
       if (lpos.isFullscreen == true) {
-        await restoreFrame();
+        if (!isMacOS) {
+          await restoreFrame();
+        }
         // An duration is needed to avoid the window being restored after fullscreen.
         Future.delayed(Duration(milliseconds: 300), () async {
-          stateGlobal.setFullscreen(true);
+          if (kWindowId == windowId) {
+            stateGlobal.setFullscreen(true);
+          } else {
+            // If is not current window, we need to send a fullscreen message to `windowId`
+            DesktopMultiWindow.invokeMethod(
+                windowId, kWindowEventSetFullscreen, 'true');
+          }
         });
       } else if (lpos.isMaximized == true) {
         await restoreFrame();
@@ -2309,7 +2385,13 @@ Future<void> onActiveWindowChanged() async {
       await windowManager.setPreventClose(false);
       await windowManager.close();
       if (isMacOS) {
-        RdPlatformChannel.instance.terminate();
+        // If we call without delay, `flutter/macos/Runner/MainFlutterWindow.swift` can handle the "terminate" event.
+        // But the app will not close.
+        //
+        // No idea why we need to delay here, `terminate()` itself is also an async function.
+        Future.delayed(Duration.zero, () {
+          RdPlatformChannel.instance.terminate();
+        });
       }
     }
   }
@@ -2743,11 +2825,6 @@ sessionRefreshVideo(SessionID sessionId, PeerInfo pi) async {
   }
 }
 
-bool isChooseDisplayToOpenInNewWindow(PeerInfo pi, SessionID sessionId) =>
-    pi.isSupportMultiDisplay &&
-    useTextureRender &&
-    bind.sessionGetDisplaysAsIndividualWindows(sessionId: sessionId) == 'Y';
-
 Future<List<Rect>> getScreenListWayland() async {
   final screenRectList = <Rect>[];
   if (isMainDesktopWindow) {
@@ -2844,6 +2921,15 @@ openMonitorInNewTabOrWindow(int i, String peerId, PeerInfo pi,
   }
   DesktopMultiWindow.invokeMethod(
       kMainWindowId, kWindowEventOpenMonitorSession, jsonEncode(args));
+}
+
+setNewConnectWindowFrame(int windowId, String peerId, Rect? screenRect) async {
+  if (screenRect == null) {
+    await restoreWindowPosition(WindowType.RemoteDesktop,
+        windowId: windowId, peerId: peerId);
+  } else {
+    await tryMoveToScreenAndSetFullscreen(screenRect);
+  }
 }
 
 tryMoveToScreenAndSetFullscreen(Rect? screenRect) async {
@@ -3196,7 +3282,8 @@ Widget buildPresetPasswordWarning() {
                 translate("Security Alert"),
                 style: TextStyle(
                   color: Colors.red,
-                  fontSize: 20,
+                  fontSize:
+                      18, // https://github.com/rustdesk/rustdesk-server-pro/issues/261
                   fontWeight: FontWeight.bold,
                 ),
               )).paddingOnly(bottom: 8),
@@ -3213,4 +3300,100 @@ Widget buildPresetPasswordWarning() {
       }
     },
   );
+}
+
+// https://github.com/leanflutter/window_manager/blob/87dd7a50b4cb47a375b9fc697f05e56eea0a2ab3/lib/src/widgets/virtual_window_frame.dart#L44
+Widget buildVirtualWindowFrame(BuildContext context, Widget child) {
+  boxShadow() => isMainDesktopWindow
+      ? <BoxShadow>[
+          if (stateGlobal.fullscreen.isFalse || stateGlobal.isMaximized.isFalse)
+            BoxShadow(
+              color: Colors.black.withOpacity(0.1),
+              offset: Offset(
+                  0.0,
+                  stateGlobal.isFocused.isTrue
+                      ? kFrameBoxShadowOffsetFocused
+                      : kFrameBoxShadowOffsetUnfocused),
+              blurRadius: kFrameBoxShadowBlurRadius,
+            ),
+        ]
+      : null;
+  return Obx(
+    () => Container(
+      decoration: BoxDecoration(
+        color: isMainDesktopWindow
+            ? Colors.transparent
+            : Theme.of(context).colorScheme.background,
+        border: Border.all(
+          color: Theme.of(context).dividerColor,
+          width: stateGlobal.windowBorderWidth.value,
+        ),
+        borderRadius: BorderRadius.circular(
+          (stateGlobal.fullscreen.isTrue || stateGlobal.isMaximized.isTrue)
+              ? 0
+              : kFrameBorderRadius,
+        ),
+        boxShadow: boxShadow(),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(
+          (stateGlobal.fullscreen.isTrue || stateGlobal.isMaximized.isTrue)
+              ? 0
+              : kFrameClipRRectBorderRadius,
+        ),
+        child: child,
+      ),
+    ),
+  );
+}
+
+get windowEdgeSize => isLinux && !_linuxWindowResizable ? 0.0 : kWindowEdgeSize;
+
+// `windowManager.setResizable(false)` will reset the window size to the default size on Linux and then set unresizable.
+// See _linuxWindowResizable for more details.
+// So we use `setResizable()` instead of `windowManager.setResizable()`.
+//
+// We can only call `windowManager.setResizable(false)` if we need the default size on Linux.
+setResizable(bool resizable) {
+  if (isLinux) {
+    _linuxWindowResizable = resizable;
+    stateGlobal.refreshResizeEdgeSize();
+  } else {
+    windowManager.setResizable(resizable);
+  }
+}
+
+isOptionFixed(String key) => bind.mainIsOptionFixed(key: key);
+
+final isCustomClient = bind.isCustomClient();
+get defaultOptionLang => isCustomClient ? 'default' : '';
+get defaultOptionTheme => isCustomClient ? 'system' : '';
+get defaultOptionYes => isCustomClient ? 'Y' : '';
+get defaultOptionNo => isCustomClient ? 'N' : '';
+get defaultOptionWhitelist => isCustomClient ? ',' : '';
+get defaultOptionAccessMode => isCustomClient ? 'custom' : '';
+get defaultOptionApproveMode => isCustomClient ? 'password-click' : '';
+
+// `setMovable()` is only supported on macOS.
+//
+// On macOS, the window can be dragged by the tab bar by default.
+// We need to disable the movable feature to prevent the window from being dragged by the tabs in the tab bar.
+//
+// When we drag the blank tab bar (not the tab), the window will be dragged normally by adding the `onPanStart` handle.
+//
+// See the following code for more details:
+// https://github.com/rustdesk/rustdesk/blob/ce1dac3b8613596b4d8ae981275f9335489eb935/flutter/lib/desktop/widgets/tabbar_widget.dart#L385
+// https://github.com/rustdesk/rustdesk/blob/ce1dac3b8613596b4d8ae981275f9335489eb935/flutter/lib/desktop/widgets/tabbar_widget.dart#L399
+//
+// @platforms macos
+disableWindowMovable(int? windowId) {
+  if (!isMacOS) {
+    return;
+  }
+
+  if (windowId == null) {
+    windowManager.setMovable(false);
+  } else {
+    WindowController.fromWindowId(windowId).setMovable(false);
+  }
 }

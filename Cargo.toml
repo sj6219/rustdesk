@@ -1,6 +1,6 @@
 [package]
 name = "rustdesk"
-version = "1.2.4"
+version = "1.2.6"
 authors = ["rustdesk <info@rustdesk.com>"]
 edition = "2021"
 build= "build.rs"
@@ -19,9 +19,6 @@ path = "src/naming.rs"
 [features]
 inline = []
 cli = []
-flutter_texture_render = []
-appimage = []
-flatpak = []
 use_samplerate = ["samplerate"]
 use_rubato = ["rubato"]
 use_dasp = ["dasp"]
@@ -30,8 +27,6 @@ default = ["use_dasp"]
 hwcodec = ["scrap/hwcodec"]
 vram = ["scrap/vram"]
 mediacodec = ["scrap/mediacodec"]
-linux_headless = ["pam" ]
-virtual_display_driver = ["virtual_display"]
 plugin_framework = []
 linux-pkg-config = ["magnum-opus/linux-pkg-config", "scrap/linux-pkg-config"]
 unix-file-copy-paste = [
@@ -117,7 +112,7 @@ winapi = { version = "0.3", features = [
 ] }
 winreg = "0.11"
 windows-service = "0.6"
-virtual_display = { path = "libs/virtual_display", optional = true }
+virtual_display = { path = "libs/virtual_display" }
 impersonate_system = { git = "https://github.com/21pages/impersonate-system" }
 shared_memory = "0.12"
 tauri-winrt-notification = "0.1.2"
@@ -160,7 +155,7 @@ mouce = { git="https://github.com/fufesou/mouce.git" }
 evdev = { git="https://github.com/fufesou/evdev" }
 dbus = "0.9"
 dbus-crossroads = "0.5"
-pam = { git="https://github.com/fufesou/pam", optional = true }
+pam = { git="https://github.com/fufesou/pam" }
 users = { version = "0.11" }
 x11-clipboard = {git="https://github.com/clslaid/x11-clipboard", branch = "feat/store-batch", optional = true}
 x11rb =  {version = "0.12", features = ["all-extensions"], optional = true}
@@ -210,7 +205,7 @@ strip = true
 rpath = true
 
 [patch.crates-io]
-ring = { git = "https://github.com/sj6219/ring", branch = "0.16.20_alpha" }
+#ring = { git = "https://github.com/sj6219/ring", branch = "0.16.20_alpha" }
 winapi = { git = "https://github.com/sj6219/winapi-rs", branch = "0.2.8_alpha" }
 #winit = { git = "https://github.com/sj6219/winit", branch = "0.26.1_alpha" }
 sodiumoxide = { git = "https://github.com/sj6219/sodiumoxide", branch = "0.2.7_alpha" }

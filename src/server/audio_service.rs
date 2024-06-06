@@ -68,6 +68,8 @@ mod pa_impl {
         );
         #[cfg(target_os = "linux")]
         let zero_audio_frame: Vec<f32> = vec![0.; AUDIO_DATA_SIZE_U8 / 4];
+        #[cfg(target_os = "android")]
+        let mut android_data = vec![];
         while sp.ok() && !RESTARTING.load(Ordering::SeqCst) {
             sp.snapshot(|sps| {
                 sps.send(create_format_msg(crate::platform::PA_SAMPLE_RATE, 2));
@@ -88,9 +90,12 @@ mod pa_impl {
                 send_f32(data, &mut encoder, &sp);
             }
             #[cfg(target_os = "android")]
-            if let Some(data) = scrap::android::ffi::get_audio_raw() {
+            if scrap::android::ffi::get_audio_raw(&mut android_data, &mut vec![]).is_some() {
                 let data = unsafe {
-                    std::slice::from_raw_parts::<f32>(data.as_ptr() as _, data.len() / 4)
+                    std::slice::from_raw_parts::<f32>(
+                        android_data.as_ptr() as _,
+                        android_data.len() / 4,
+                    )
                 };
                 send_f32(data, &mut encoder, &sp);
             } else {
@@ -103,6 +108,7 @@ mod pa_impl {
 
 #[cfg(not(any(target_os = "linux", target_os = "android")))]
 mod cpal_impl {
+    use self::service::{Reset, ServiceSwap};
     use super::*;
     use cpal::{
         traits::{DeviceTrait, HostTrait, StreamTrait},
@@ -125,7 +131,23 @@ mod cpal_impl {
         }
     }
 
-    pub fn run(sp: EmptyExtraFieldService, state: &mut State) -> ResultType<()> {
+    fn run_restart(sp: EmptyExtraFieldService, state: &mut State) -> ResultType<()> {
+        state.reset();
+        sp.snapshot(|_sps: ServiceSwap<_>| Ok(()))?;
+        match &state.stream {
+            None => {
+                state.stream = Some(play(&sp)?);
+            }
+            _ => {}
+        }
+        if let Some((_, format)) = &state.stream {
+            sp.send_shared(format.clone());
+        }
+        RESTARTING.store(false, Ordering::SeqCst);
+        Ok(())
+    }
+
+    fn run_serv_snapshot(sp: EmptyExtraFieldService, state: &mut State) -> ResultType<()> {
         sp.snapshot(|sps| {
             match &state.stream {
                 None => {
@@ -139,6 +161,14 @@ mod cpal_impl {
             Ok(())
         })?;
         Ok(())
+    }
+
+    pub fn run(sp: EmptyExtraFieldService, state: &mut State) -> ResultType<()> {
+        if !RESTARTING.load(Ordering::SeqCst) {
+            run_serv_snapshot(sp, state)
+        } else {
+            run_restart(sp, state)
+        }
     }
 
     fn send(

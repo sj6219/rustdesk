@@ -8,7 +8,6 @@ import 'package:flutter_hbb/common/widgets/dialog.dart';
 import 'package:flutter_hbb/consts.dart';
 import 'package:flutter_hbb/models/model.dart';
 import 'package:flutter_hbb/models/platform_model.dart';
-import 'package:flutter_hbb/models/desktop_render_texture.dart';
 import 'package:get/get.dart';
 
 bool isEditOsPassword = false;
@@ -116,7 +115,10 @@ List<TTextMenu> toolbarControls(BuildContext context, String id, FFI ffi) {
     );
   }
   // paste
-  if (isMobile && perms['keyboard'] != false && perms['clipboard'] != false) {
+  if (isMobile &&
+      pi.platform != kPeerPlatformAndroid &&
+      perms['keyboard'] != false &&
+      perms['clipboard'] != false) {
     v.add(TTextMenu(
         child: Text(translate('Paste')),
         onPressed: () async {
@@ -327,7 +329,7 @@ Future<List<TRadioMenu<String>>> toolbarCodec(
   final alternativeCodecs =
       await bind.sessionAlternativeCodecs(sessionId: sessionId);
   final groupValue = await bind.sessionGetOption(
-          sessionId: sessionId, arg: 'codec-preference') ??
+          sessionId: sessionId, arg: kOptionCodecPreference) ??
       '';
   final List<bool> codecs = [];
   try {
@@ -349,20 +351,25 @@ Future<List<TRadioMenu<String>>> toolbarCodec(
   onChanged(String? value) async {
     if (value == null) return;
     await bind.sessionPeerOption(
-        sessionId: sessionId, name: 'codec-preference', value: value);
+        sessionId: sessionId, name: kOptionCodecPreference, value: value);
     bind.sessionChangePreferCodec(sessionId: sessionId);
   }
 
   TRadioMenu<String> radio(String label, String value, bool enabled) {
     return TRadioMenu<String>(
-        child: Text(translate(label)),
+        child: Text(label),
         value: value,
         groupValue: groupValue,
         onChanged: enabled ? onChanged : null);
   }
 
+  var autoLabel = translate('Auto');
+  if (groupValue == 'auto' &&
+      ffi.qualityMonitorModel.data.codecFormat != null) {
+    autoLabel = '$autoLabel (${ffi.qualityMonitorModel.data.codecFormat})';
+  }
   return [
-    radio('Auto', 'auto', true),
+    radio(autoLabel, 'auto', true),
     if (codecs[0]) radio('VP8', 'vp8', codecs[0]),
     radio('VP9', 'vp9', true),
     if (codecs[1]) radio('AV1', 'av1', codecs[1]),
@@ -376,7 +383,6 @@ Future<List<TToggleMenu>> toolbarCursor(
   List<TToggleMenu> v = [];
   final ffiModel = ffi.ffiModel;
   final pi = ffiModel.pi;
-  final perms = ffiModel.permissions;
   final sessionId = ffi.sessionId;
 
   // show remote cursor
@@ -530,15 +536,15 @@ Future<List<TToggleMenu>> toolbarDisplayToggle(
       perms['file'] != false &&
       (isSupportIfPeer_1_2_3 || isSupportIfPeer_1_2_4)) {
     final enabled = !ffiModel.viewOnly;
-    final option = 'enable-file-transfer';
-    final value =
-        bind.sessionGetToggleOptionSync(sessionId: sessionId, arg: option);
+    final value = bind.sessionGetToggleOptionSync(
+        sessionId: sessionId, arg: kOptionEnableFileCopyPaste);
     v.add(TToggleMenu(
         value: value,
         onChanged: enabled
             ? (value) {
                 if (value == null) return;
-                bind.sessionToggleOption(sessionId: sessionId, value: option);
+                bind.sessionToggleOption(
+                    sessionId: sessionId, value: kOptionEnableFileCopyPaste);
               }
             : null,
         child: Text(translate('Enable file copy and paste'))));
@@ -561,7 +567,7 @@ Future<List<TToggleMenu>> toolbarDisplayToggle(
         child: Text(translate('Disable clipboard'))));
   }
   // lock after session end
-  if (ffiModel.keyboard) {
+  if (ffiModel.keyboard && !ffiModel.isPeerAndroid) {
     final enabled = !ffiModel.viewOnly;
     final option = 'lock-after-session-end';
     final value =
@@ -577,7 +583,7 @@ Future<List<TToggleMenu>> toolbarDisplayToggle(
         child: Text(translate('Lock after session end'))));
   }
 
-  if (useTextureRender &&
+  if (bind.mainGetUseTextureRender() &&
       pi.isSupportMultiDisplay &&
       PrivacyModeState.find(id).isEmpty &&
       pi.displaysCount.value > 1 &&
@@ -596,7 +602,9 @@ Future<List<TToggleMenu>> toolbarDisplayToggle(
   }
 
   final isMultiScreens = !isWeb && (await getScreenRectList()).length > 1;
-  if (useTextureRender && pi.isSupportMultiDisplay && isMultiScreens) {
+  if (bind.mainGetUseTextureRender() &&
+      pi.isSupportMultiDisplay &&
+      isMultiScreens) {
     final value = bind.sessionGetUseAllMyDisplaysForTheRemoteSession(
             sessionId: ffi.sessionId) ==
         'Y';
