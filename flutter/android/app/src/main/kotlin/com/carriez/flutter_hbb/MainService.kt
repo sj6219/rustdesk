@@ -258,6 +258,7 @@ class MainService : Service() {
 
     override fun onDestroy() {
         checkMediaPermission()
+        stopService(Intent(this, FloatingWindowService::class.java))
         super.onDestroy()
     }
 

@@ -1422,14 +1422,16 @@ String translate(String name) {
   return platformFFI.translate(name, localeName);
 }
 
+// This function must be kept the same as the one in rust and sciter code.
+// rust: libs/hbb_common/src/config.rs -> option2bool()
+// sciter: Does not have the function, but it should be kept the same.
 bool option2bool(String option, String value) {
   bool res;
   if (option.startsWith("enable-")) {
     res = value != "N";
   } else if (option.startsWith("allow-") ||
-      option == "stop-service" ||
+      option == kOptionStopService ||
       option == kOptionDirectServer ||
-      option == "stop-rendezvous-service" ||
       option == kOptionForceAlwaysRelay) {
     res = value == "Y";
   } else {
@@ -1444,9 +1446,8 @@ String bool2option(String option, bool b) {
   if (option.startsWith('enable-')) {
     res = b ? defaultOptionYes : 'N';
   } else if (option.startsWith('allow-') ||
-      option == "stop-service" ||
+      option == kOptionStopService ||
       option == kOptionDirectServer ||
-      option == "stop-rendezvous-service" ||
       option == kOptionForceAlwaysRelay) {
     res = b ? 'Y' : defaultOptionNo;
   } else {
@@ -1482,9 +1483,9 @@ bool mainGetPeerBoolOptionSync(String id, String key) {
   return option2bool(key, bind.mainGetPeerOptionSync(id: id, key: key));
 }
 
-mainSetPeerBoolOptionSync(String id, String key, bool v) {
-  bind.mainSetPeerOptionSync(id: id, key: key, value: bool2option(key, v));
-}
+// Don't use `option2bool()` and `bool2option()` to convert the session option.
+// Use `sessionGetToggleOption()` and `sessionToggleOption()` instead.
+// Because all session options use `Y` and `<Empty>` as values.
 
 Future<bool> matchPeer(String searchText, Peer peer) async {
   if (searchText.isEmpty) {
@@ -2669,8 +2670,32 @@ Future<void> start_service(bool is_start) async {
       !isMacOS ||
       await callMainCheckSuperUserPermission();
   if (checked) {
-    bind.mainSetOption(key: "stop-service", value: is_start ? "" : "Y");
+    mainSetBoolOption(kOptionStopService, !is_start);
   }
+}
+
+Future<bool> canBeBlocked() async {
+  var access_mode = await bind.mainGetOption(key: kOptionAccessMode);
+  var option = option2bool(kOptionAllowRemoteConfigModification,
+      await bind.mainGetOption(key: kOptionAllowRemoteConfigModification));
+  return access_mode == 'view' || (access_mode.isEmpty && !option);
+}
+
+Future<void> shouldBeBlocked(RxBool block, WhetherUseRemoteBlock? use) async {
+  if (use != null && !await use()) {
+    block.value = false;
+    return;
+  }
+  var time0 = DateTime.now().millisecondsSinceEpoch;
+  await bind.mainCheckMouseTime();
+  Timer(const Duration(milliseconds: 120), () async {
+    var d = time0 - await bind.mainGetMouseTime();
+    if (d < 120) {
+      block.value = true;
+    } else {
+      block.value = false;
+    }
+  });
 }
 
 typedef WhetherUseRemoteBlock = Future<bool> Function();
@@ -2678,18 +2703,7 @@ Widget buildRemoteBlock({required Widget child, WhetherUseRemoteBlock? use}) {
   var block = false.obs;
   return Obx(() => MouseRegion(
         onEnter: (_) async {
-          if (use != null && !await use()) {
-            block.value = false;
-            return;
-          }
-          var time0 = DateTime.now().millisecondsSinceEpoch;
-          await bind.mainCheckMouseTime();
-          Timer(const Duration(milliseconds: 120), () async {
-            var d = time0 - await bind.mainGetMouseTime();
-            if (d < 120) {
-              block.value = true;
-            }
-          });
+          await shouldBeBlocked(block, use);
         },
         onExit: (event) => block.value = false,
         child: Stack(children: [
@@ -2746,12 +2760,10 @@ Widget buildErrorBanner(BuildContext context,
     required RxString err,
     required Function? retry,
     required Function close}) {
-  const double height = 25;
   return Obx(() => Offstage(
         offstage: !(!loading.value && err.value.isNotEmpty),
         child: Center(
             child: Container(
-          height: height,
           color: MyTheme.color(context).errorBannerBg,
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -2770,7 +2782,6 @@ Widget buildErrorBanner(BuildContext context,
                       message: translate(err.value),
                       child: Text(
                         translate(err.value),
-                        overflow: TextOverflow.ellipsis,
                       ),
                     )).marginSymmetric(vertical: 2),
               ),
@@ -2923,10 +2934,11 @@ openMonitorInNewTabOrWindow(int i, String peerId, PeerInfo pi,
       kMainWindowId, kWindowEventOpenMonitorSession, jsonEncode(args));
 }
 
-setNewConnectWindowFrame(int windowId, String peerId, Rect? screenRect) async {
+setNewConnectWindowFrame(
+    int windowId, String peerId, int? display, Rect? screenRect) async {
   if (screenRect == null) {
     await restoreWindowPosition(WindowType.RemoteDesktop,
-        windowId: windowId, peerId: peerId);
+        windowId: windowId, display: display, peerId: peerId);
   } else {
     await tryMoveToScreenAndSetFullscreen(screenRect);
   }
