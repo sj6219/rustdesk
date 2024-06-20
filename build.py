@@ -33,9 +33,9 @@ def get_arch() -> str:
 
 
 def system2(cmd):
-    err = os.system(cmd)
-    if err != 0:
-        print(f"Error occurred when executing: {cmd}. Exiting.")
+    exit_code = os.system(cmd)
+    if exit_code != 0:
+        sys.stderr.write(f"Error occurred when executing: `{cmd}`. Exiting.\n")
         sys.exit(-1)
 
 
@@ -80,8 +80,10 @@ def parse_rc_features(feature):
         return get_all_features()
     elif isinstance(feature, list):
         if windows:
+            # download third party is deprecated, we use github ci instead.
             # force add PrivacyMode
-            feature.append('PrivacyMode')
+            # feature.append('PrivacyMode')
+            pass
         for feat in feature:
             if isinstance(feat, str) and feat.upper() == 'ALL':
                 return get_all_features()
@@ -116,9 +118,9 @@ def make_parser():
             '' if windows or osx else ', need libva-dev, libvdpau-dev.')
     )
     parser.add_argument(
-        '--gpucodec',
+        '--vram',
         action='store_true',
-        help='Enable feature gpucodec, only available on windows now.'
+        help='Enable feature vram, only available on windows now.'
     )
     parser.add_argument(
         '--portable',
@@ -131,20 +133,16 @@ def make_parser():
         help='Build with unix file copy paste feature'
     )
     parser.add_argument(
-        '--flatpak',
-        action='store_true',
-        help='Build rustdesk libs with the flatpak feature enabled'
-    )
-    parser.add_argument(
-        '--appimage',
-        action='store_true',
-        help='Build rustdesk libs with the appimage feature enabled'
-    )
-    parser.add_argument(
         '--skip-cargo',
         action='store_true',
         help='Skip cargo build process, only flutter version + Linux supported currently'
     )
+    if windows:
+        parser.add_argument(
+            '--skip-portable-pack',
+            action='store_true',
+            help='Skip packing, only flutter version + Windows supported'
+        )
     parser.add_argument(
         "--package",
         type=str
@@ -188,6 +186,9 @@ def generate_build_script_for_docker():
     system2("bash /tmp/build.sh")
 
 
+# Downloading third party resources is deprecated.
+# We can use this function in an offline build environment.
+# Even in an online environment, we recommend building third-party resources yourself.
 def download_extract_features(features, res_dir):
     import re
 
@@ -271,15 +272,10 @@ def get_features(args):
     features = ['inline'] if not args.flutter else []
     if args.hwcodec:
         features.append('hwcodec')
-    if args.gpucodec: 
-        features.append('gpucodec')
+    if args.vram:
+        features.append('vram')
     if args.flutter:
         features.append('flutter')
-        features.append('flutter_texture_render')
-    if args.flatpak:
-        features.append('flatpak')
-    if args.appimage:
-        features.append('appimage')
     if args.unix_file_copy_paste:
         features.append('unix-file-copy-paste')
     print("features:", features)
@@ -410,9 +406,11 @@ def build_flutter_dmg(version, features):
         "cp target/release/liblibrustdesk.dylib target/release/librustdesk.dylib")
     os.chdir('flutter')
     system2('flutter build macos --release')
+    '''
     system2(
         "create-dmg --volname \"RustDesk Installer\" --window-pos 200 120 --window-size 800 400 --icon-size 100 --app-drop-link 600 185 --icon RustDesk.app 200 190 --hide-extension RustDesk.app rustdesk.dmg ./build/macos/Build/Products/Release/RustDesk.app")
     os.rename("rustdesk.dmg", f"../rustdesk-{version}.dmg")
+    '''
     os.chdir("..")
 
 
@@ -427,7 +425,7 @@ def build_flutter_arch_manjaro(version, features):
     system2('HBB=`pwd`/.. FLUTTER=1 makepkg -f')
 
 
-def build_flutter_windows(version, features):
+def build_flutter_windows(version, features, skip_portable_pack):
     if not skip_cargo:
         system2(f'cargo build --features {features} --lib --release')
         if not os.path.exists("target/release/librustdesk.dll"):
@@ -438,6 +436,8 @@ def build_flutter_windows(version, features):
     os.chdir('..')
     shutil.copy2('target/release/deps/dylib_virtual_display.dll',
                  flutter_build_dir_2)
+    if skip_portable_pack:
+        return
     os.chdir('libs/portable')
     system2('pip3 install -r requirements.txt')
     system2(
@@ -487,13 +487,14 @@ def main():
         os.chdir('../../..')
 
         if flutter:
-            build_flutter_windows(version, features)
+            build_flutter_windows(version, features, args.skip_portable_pack)
             return
         system2('cargo build --release --features ' + features)
         # system2('upx.exe target/release/rustdesk.exe')
         system2('mv target/release/rustdesk.exe target/release/RustDesk.exe')
         pa = os.environ.get('P')
         if pa:
+            # https://certera.com/kb/tutorial-guide-for-safenet-authentication-client-for-code-signing/
             system2(
                 f'signtool sign /a /v /p {pa} /debug /f .\\cert.pfx /t http://timestamp.digicert.com  '
                 'target\\release\\rustdesk.exe')
