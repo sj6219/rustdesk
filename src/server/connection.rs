@@ -400,6 +400,10 @@ impl Connection {
         }
         #[cfg(target_os = "android")]
         start_channel(rx_to_cm, tx_from_cm);
+        #[cfg(target_os = "android")]
+        conn.send_permission(Permission::Keyboard, conn.keyboard)
+            .await;
+        #[cfg(not(target_os = "android"))]
         if !conn.keyboard {
             conn.send_permission(Permission::Keyboard, false).await;
         }
@@ -456,6 +460,11 @@ impl Connection {
                             conn.send_close_reason_no_retry("").await;
                             conn.on_close("connection manager", true).await;
                             break;
+                        }
+                        #[cfg(target_os = "android")]
+                        ipc::Data::InputControl(v) => {
+                            conn.keyboard = v;
+                            conn.send_permission(Permission::Keyboard, v).await;
                         }
                         ipc::Data::CmErr(e) => {
                             if e != "expected" {
@@ -1076,6 +1085,33 @@ impl Connection {
             return;
         }
         if self.require_2fa.is_some() && !self.is_recent_session(true) && !self.from_switch {
+            self.require_2fa.as_ref().map(|totp| {
+                let bot = crate::auth_2fa::TelegramBot::get();
+                let bot = match bot {
+                    Ok(Some(bot)) => bot,
+                    Err(err) => {
+                        log::error!("Failed to get telegram bot: {}", err);
+                        return;
+                    }
+                    _ => return,
+                };
+                let code = totp.generate_current();
+                if let Ok(code) = code {
+                    let text = format!(
+                        "2FA code: {}\n\nA new connection has been established to your device with ID {}. The source IP address is {}.",
+                        code,
+                        Config::get_id(),
+                        self.ip,
+                    );
+                    tokio::spawn(async move {
+                        if let Err(err) =
+                            crate::auth_2fa::send_2fa_code_to_telegram(&text, bot).await
+                        {
+                            log::error!("Failed to send 2fa code to telegram bot: {}", err);
+                        }
+                    });
+                }
+            });
             self.send_login_error(crate::client::REQUIRE_2FA).await;
             return;
         }
@@ -2490,25 +2526,6 @@ impl Connection {
     }
 
     async fn handle_switch_display(&mut self, s: SwitchDisplay) {
-        #[cfg(windows)]
-        if portable_client::running()
-            && *CONN_COUNT.lock().unwrap() > 1
-            && s.display != (*display_service::PRIMARY_DISPLAY_IDX as i32)
-        {
-            log::info!("Switch to non-primary display is not supported in the elevated mode when there are multiple connections.");
-            let mut msg_out = Message::new();
-            let res = MessageBox {
-                msgtype: "nook-nocancel-hasclose".to_owned(),
-                title: "Prompt".to_owned(),
-                text: "switch_display_elevated_connections_tip".to_owned(),
-                link: "".to_owned(),
-                ..Default::default()
-            };
-            msg_out.set_message_box(res);
-            self.send(msg_out).await;
-            return;
-        }
-
         let display_idx = s.display as usize;
         if self.display_idx != display_idx {
             if let Some(server) = self.server.upgrade() {
@@ -2578,22 +2595,6 @@ impl Connection {
     }
 
     async fn capture_displays(&mut self, add: &[usize], sub: &[usize], set: &[usize]) {
-        #[cfg(windows)]
-        if portable_client::running() && (add.len() > 0 || set.len() > 1) {
-            log::info!("Capturing multiple displays is not supported in the elevated mode.");
-            let mut msg_out = Message::new();
-            let res = MessageBox {
-                msgtype: "nook-nocancel-hasclose".to_owned(),
-                title: "Prompt".to_owned(),
-                text: "capture_display_elevated_connections_tip".to_owned(),
-                link: "".to_owned(),
-                ..Default::default()
-            };
-            msg_out.set_message_box(res);
-            self.send(msg_out).await;
-            return;
-        }
-
         if let Some(sever) = self.server.upgrade() {
             let mut lock = sever.write().unwrap();
             for display in add.iter() {
