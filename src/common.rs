@@ -163,13 +163,6 @@ pub type NotifyMessageBox = fn(String, String, String, String) -> dyn Future<Out
 pub const CLIPBOARD_NAME: &'static str = "clipboard";
 pub const CLIPBOARD_INTERVAL: u64 = 333;
 
-#[cfg(all(target_os = "macos", feature = "flutter_texture_render"))]
-// https://developer.apple.com/forums/thread/712709
-// Memory alignment should be multiple of 64.
-pub const DST_STRIDE_RGBA: usize = 64;
-#[cfg(not(all(target_os = "macos", feature = "flutter_texture_render")))]
-pub const DST_STRIDE_RGBA: usize = 1;
-
 // the executable name of the portable version
 pub const PORTABLE_APPNAME_RUNTIME_ENV_KEY: &str = "RUSTDESK_APPNAME";
 
@@ -209,6 +202,7 @@ lazy_static::lazy_static! {
     static ref IS_SERVER: bool = std::env::args().nth(1) == Some("--server".to_owned());
     // Is server logic running. The server code can invoked to run by the main process if --server is not running.
     static ref SERVER_RUNNING: Arc<RwLock<bool>> = Default::default();
+    static ref IS_MAIN: bool = std::env::args().nth(1).map_or(true, |arg| !arg.starts_with("--"));
 }
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -260,6 +254,11 @@ pub fn is_support_multi_ui_session_num(ver: i64) -> bool {
 #[inline]
 pub fn is_server() -> bool {
     *IS_SERVER
+}
+
+#[inline]
+pub fn is_main() -> bool {
+    *IS_MAIN
 }
 
 // Is server logic running.
@@ -874,7 +873,32 @@ pub fn run_me<T: AsRef<std::ffi::OsStr>>(args: Vec<T>) -> std::io::Result<std::p
         }
     }
     let cmd = std::env::current_exe()?;
-    return std::process::Command::new(cmd).args(&args).spawn();
+    let mut cmd = std::process::Command::new(cmd);
+    #[cfg(windows)]
+    let mut force_foreground = false;
+    #[cfg(windows)]
+    {
+        let arg_strs = args
+            .iter()
+            .map(|x| x.as_ref().to_string_lossy())
+            .collect::<Vec<_>>();
+        if arg_strs == vec!["--install"] || arg_strs == &["--noinstall"] {
+            cmd.env(crate::platform::SET_FOREGROUND_WINDOW, "1");
+            force_foreground = true;
+        }
+    }
+    let result = cmd.args(&args).spawn();
+    match result.as_ref() {
+        Ok(_child) =>
+        {
+            #[cfg(windows)]
+            if force_foreground {
+                unsafe { winapi::um::winuser::AllowSetForegroundWindow(_child.id() as u32) };
+            }
+        }
+        Err(err) => log::error!("run_me: {err:?}"),
+    }
+    result
 }
 
 #[inline]
@@ -1455,7 +1479,7 @@ pub fn using_public_server() -> bool {
 
 pub struct ThrottledInterval {
     interval: Interval,
-    last_tick: Instant,
+    next_tick: Instant,
     min_interval: Duration,
 }
 
@@ -1464,7 +1488,7 @@ impl ThrottledInterval {
         let period = i.period();
         ThrottledInterval {
             interval: i,
-            last_tick: Instant::now() - period * 2,
+            next_tick: Instant::now(),
             min_interval: Duration::from_secs_f64(period.as_secs_f64() * 0.9),
         }
     }
@@ -1477,8 +1501,9 @@ impl ThrottledInterval {
     pub fn poll_tick(&mut self, cx: &mut std::task::Context<'_>) -> Poll<Instant> {
         match self.interval.poll_tick(cx) {
             Poll::Ready(instant) => {
-                if self.last_tick.elapsed() >= self.min_interval {
-                    self.last_tick = Instant::now();
+                let now = Instant::now();
+                if self.next_tick <= now {
+                    self.next_tick = now + self.min_interval;
                     Poll::Ready(instant)
                 } else {
                     // This call is required since tokio 1.27
@@ -1519,19 +1544,15 @@ impl ClipboardContext {
 
     #[cfg(target_os = "linux")]
     pub fn new() -> ResultType<ClipboardContext> {
-        let dur = arboard::Clipboard::get_x11_server_conn_timeout();
-        let dur_bak = dur;
-        let _restore_timeout_on_ret = SimpleCallOnReturn {
-            b: true,
-            f: Box::new(move || arboard::Clipboard::set_x11_server_conn_timeout(dur_bak)),
-        };
-
-        for i in 1..4 {
-            arboard::Clipboard::set_x11_server_conn_timeout(dur * i);
-            match arboard::Clipboard::new() {
-                Ok(c) => return Ok(ClipboardContext(c)),
-                Err(arboard::Error::X11ServerConnTimeout) => continue,
-                Err(err) => return Err(err.into()),
+        for _ in 0..3 {
+            let (tx, rx) = std::sync::mpsc::channel();
+            std::thread::spawn(move || {
+                tx.send(arboard::Clipboard::new()).ok();
+            });
+            match rx.recv_timeout(Duration::from_millis(40)) {
+                Ok(Ok(c)) => return Ok(ClipboardContext(c)),
+                Ok(Err(e)) => return Err(e.into()),
+                Err(_) => continue,
             }
         }
         bail!("Failed to create clipboard context, timeout");
@@ -1543,24 +1564,14 @@ impl ClipboardContext {
         Ok(self.0.get_text()?)
     }
 
+    // CAUTION: This function must not be called in the main thread!!! It can only be called in the clibpoard thread.
+    // There's no timeout for this function, so it may block.
+    // Because of https://github.com/1Password/arboard/blob/151e679ee5c208403b06ba02d28f92c5891f7867/src/platform/linux/x11.rs#L296
+    // We cannot use a new thread to get text because the clipboard context is `&mut self`.
+    // The crate design is somehow not good.
     #[cfg(target_os = "linux")]
     pub fn get_text(&mut self) -> ResultType<String> {
-        let dur = arboard::Clipboard::get_x11_server_conn_timeout();
-        let dur_bak = dur;
-        let _restore_timeout_on_ret = SimpleCallOnReturn {
-            b: true,
-            f: Box::new(move || arboard::Clipboard::set_x11_server_conn_timeout(dur_bak)),
-        };
-
-        for i in 1..4 {
-            arboard::Clipboard::set_x11_server_conn_timeout(dur * i);
-            match self.0.get_text() {
-                Ok(s) => return Ok(s),
-                Err(arboard::Error::X11ServerConnTimeout) => continue,
-                Err(err) => return Err(err.into()),
-            }
-        }
-        bail!("Failed to get text, timeout");
+        Ok(self.0.get_text()?)
     }
 
     #[inline]
@@ -1642,6 +1653,24 @@ fn read_custom_client_advanced_settings(
     }
 }
 
+#[inline]
+#[cfg(target_os = "macos")]
+pub fn get_dst_align_rgba() -> usize {
+    // https://developer.apple.com/forums/thread/712709
+    // Memory alignment should be multiple of 64.
+    if crate::ui_interface::use_texture_render() {
+        64
+    } else {
+        1
+    }
+}
+
+#[inline]
+#[cfg(not(target_os = "macos"))]
+pub fn get_dst_align_rgba() -> usize {
+    1
+}
+
 pub fn read_custom_client(config: &str) {
     let Ok(data) = decode64(config) else {
         log::error!("Failed to decode custom client config");
@@ -1707,6 +1736,15 @@ pub fn read_custom_client(config: &str) {
                 .insert(k, v.to_owned());
         };
     }
+}
+
+#[inline]
+pub fn is_empty_uni_link(arg: &str) -> bool {
+    let prefix = crate::get_uri_prefix();
+    if !arg.starts_with(&prefix) {
+        return false;
+    }
+    arg[prefix.len()..].chars().all(|c| c == '/')
 }
 
 #[cfg(test)]
@@ -1848,30 +1886,5 @@ mod tests {
             Duration::from_secs_f64(dur.as_secs_f64() * 0.499 * 1e-9),
             Duration::from_nanos(0)
         );
-    }
-
-    #[tokio::test]
-    #[cfg(not(any(
-        target_os = "android",
-        target_os = "ios",
-        all(target_os = "linux", feature = "unix-file-copy-paste")
-    )))]
-    async fn test_clipboard_context() {
-        #[cfg(target_os = "linux")]
-        let dur = {
-            let dur = Duration::from_micros(500);
-            arboard::Clipboard::set_x11_server_conn_timeout(dur);
-            dur
-        };
-
-        let _ctx = ClipboardContext::new();
-        #[cfg(target_os = "linux")]
-        {
-            assert_eq!(
-                arboard::Clipboard::get_x11_server_conn_timeout(),
-                dur,
-                "Failed to restore x11 server conn timeout"
-            );
-        }
     }
 }

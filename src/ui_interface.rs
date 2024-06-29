@@ -170,6 +170,24 @@ pub fn get_option<T: AsRef<str>>(key: T) -> String {
 }
 
 #[inline]
+#[cfg(target_os = "macos")]
+pub fn use_texture_render() -> bool {
+    cfg!(feature = "flutter") && LocalConfig::get_option(config::keys::OPTION_TEXTURE_RENDER) == "Y"
+}
+
+#[inline]
+#[cfg(any(target_os = "windows", target_os = "linux"))]
+pub fn use_texture_render() -> bool {
+    cfg!(feature = "flutter") && LocalConfig::get_option(config::keys::OPTION_TEXTURE_RENDER) != "N"
+}
+
+#[inline]
+#[cfg(any(target_os = "android", target_os = "ios"))]
+pub fn use_texture_render() -> bool {
+    false
+}
+
+#[inline]
 pub fn get_local_option(key: String) -> String {
     LocalConfig::get_option(&key)
 }
@@ -898,7 +916,8 @@ pub fn has_vram() -> bool {
 #[cfg(feature = "flutter")]
 #[inline]
 pub fn supported_hwdecodings() -> (bool, bool) {
-    let decoding = scrap::codec::Decoder::supported_decodings(None, true, None, &vec![]);
+    let decoding =
+        scrap::codec::Decoder::supported_decodings(None, use_texture_render(), None, &vec![]);
     #[allow(unused_mut)]
     let (mut h264, mut h265) = (decoding.ability_h264 > 0, decoding.ability_h265 > 0);
     #[cfg(feature = "vram")]
@@ -1373,13 +1392,34 @@ pub fn verify2fa(code: String) -> bool {
     res
 }
 
+pub fn has_valid_bot() -> bool {
+    crate::auth_2fa::TelegramBot::get().map_or(false, |bot| bot.is_some())
+}
+
+pub fn verify_bot(token: String) -> String {
+    match crate::auth_2fa::get_chatid_telegram(&token) {
+        Err(err) => err.to_string(),
+        Ok(None) => {
+            "To activate the bot, simply send a message beginning with a forward slash (\"/\") like \"/hello\" to its chat.".to_owned()
+        }
+        _ => "".to_owned(),
+    }
+}
+
 pub fn check_hwcodec() {
     #[cfg(feature = "hwcodec")]
     #[cfg(any(target_os = "windows", target_os = "linux"))]
     {
-        scrap::hwcodec::start_check_process(true);
-        if crate::platform::is_installed() {
-            ipc::notify_server_to_check_hwcodec().ok();
-        }
+        use std::sync::Once;
+        static ONCE: Once = Once::new();
+
+        ONCE.call_once(|| {
+            if crate::platform::is_installed() {
+                ipc::notify_server_to_check_hwcodec().ok();
+                ipc::client_get_hwcodec_config_thread(3);
+            } else {
+                scrap::hwcodec::start_check_process();
+            }
+        })
     }
 }

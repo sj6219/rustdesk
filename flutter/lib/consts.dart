@@ -63,6 +63,7 @@ const String kWindowEventActiveDisplaySession = "active_display_session";
 const String kWindowEventGetRemoteList = "get_remote_list";
 const String kWindowEventGetSessionIdList = "get_session_id_list";
 const String kWindowEventRemoteWindowCoords = "remote_window_coords";
+const String kWindowEventSetFullscreen = "set_fullscreen";
 
 const String kWindowEventMoveTabToNewWindow = "move_tab_to_new_window";
 const String kWindowEventGetCachedSessionData = "get_cached_session_data";
@@ -72,6 +73,7 @@ const String kOptionViewStyle = "view_style";
 const String kOptionScrollStyle = "scroll_style";
 const String kOptionImageQuality = "image_quality";
 const String kOptionOpenNewConnInTabs = "enable-open-new-connections-in-tabs";
+const String kOptionTextureRender = "use-texture-render";
 const String kOptionOpenInTabs = "allow-open-in-tabs";
 const String kOptionOpenInWindows = "allow-open-in-windows";
 const String kOptionForceAlwaysRelay = "force-always-relay";
@@ -131,8 +133,16 @@ const String kOptionAllowAlwaysSoftwareRender = "allow-always-software-render";
 const String kOptionEnableCheckUpdate = "enable-check-update";
 const String kOptionAllowLinuxHeadless = "allow-linux-headless";
 const String kOptionAllowRemoveWallpaper = "allow-remove-wallpaper";
+const String kOptionStopService = "stop-service";
+const String kOptionDirectxCapture = "enable-directx-capture";
 
 const String kOptionToggleViewOnly = "view-only";
+
+const String kOptionDisableFloatingWindow = "disable-floating-window";
+
+const String kOptionKeepScreenOn = "keep-screen-on";
+
+const String kOptionShowMobileAction = "showMobileActions";
 
 const String kUrlActionClose = "close";
 
@@ -145,6 +155,8 @@ const int kWindowMainId = 0;
 const String kPointerEventKindTouch = "touch";
 const String kPointerEventKindMouse = "mouse";
 
+const String kKeyFlutterKey = "flutter_key";
+
 const String kKeyShowDisplaysAsIndividualWindows =
     'displays_as_individual_windows';
 const String kKeyUseAllMyDisplaysForTheRemoteSession =
@@ -152,10 +164,13 @@ const String kKeyUseAllMyDisplaysForTheRemoteSession =
 const String kKeyShowMonitorsToolbar = 'show_monitors_toolbar';
 const String kKeyReverseMouseWheel = "reverse_mouse_wheel";
 
+const String kMsgboxTextWaitingForImage = 'Connected, waiting for image...';
+
 // the executable name of the portable version
 const String kEnvPortableExecutable = "RUSTDESK_APPNAME";
 
 const Color kColorWarn = Color.fromARGB(255, 245, 133, 59);
+const Color kColorCanvas = Colors.black;
 
 const int kMobileDefaultDisplayWidth = 720;
 const int kMobileDefaultDisplayHeight = 1280;
@@ -216,7 +231,7 @@ const kFullScreenEdgeSize = 0.0;
 const kMaximizeEdgeSize = 0.0;
 // Do not use kWindowEdgeSize directly. Use `windowEdgeSize` in `common.dart` instead.
 final kWindowEdgeSize = isWindows ? 1.0 : 5.0;
-final kWindowBorderWidth = isLinux ? 1.0 : 0.0;
+final kWindowBorderWidth = 1.0;
 const kDesktopMenuPadding = EdgeInsets.only(left: 12.0, right: 3.0);
 const kFrameBorderRadius = 12.0;
 const kFrameClipRRectBorderRadius = 12.0;
