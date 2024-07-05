@@ -1,6 +1,6 @@
 use super::{CursorData, ResultType};
 use desktop::Desktop;
-use hbb_common::config::CONFIG_OPTION_ALLOW_LINUX_HEADLESS;
+use hbb_common::config::keys::OPTION_ALLOW_LINUX_HEADLESS;
 pub use hbb_common::platform::linux::*;
 use hbb_common::{
     allow_err,
@@ -95,7 +95,7 @@ pub struct xcb_xfixes_get_cursor_image {
 
 #[inline]
 pub fn is_headless_allowed() -> bool {
-    Config::get_option(CONFIG_OPTION_ALLOW_LINUX_HEADLESS) == "Y"
+    Config::get_option(OPTION_ALLOW_LINUX_HEADLESS) == "Y"
 }
 
 #[inline]
@@ -1241,7 +1241,7 @@ mod desktop {
                 return;
             }
 
-            let seat0_values = get_values_of_seat0(&[0, 1, 2]);
+            let seat0_values = get_values_of_seat0_with_gdm_wayland(&[0, 1, 2]);
             if seat0_values[0].is_empty() {
                 *self = Self::default();
                 self.is_rustdesk_subprocess = false;
@@ -1392,13 +1392,11 @@ pub fn install_service() -> bool {
     let cp = switch_service(false);
     let app_name = crate::get_app_name().to_lowercase();
     if !run_cmds_pkexec(&format!(
-        "{cp} systemctl enable {app_name}; systemctl start {app_name};"
+        "{cp} systemctl enable {app_name}; systemctl stop {app_name}; systemctl start {app_name};"
     )) {
         Config::set_option("stop-service".into(), "Y".into());
-        return true;
     }
-    run_me_with(2);
-    std::process::exit(0);
+    true
 }
 
 fn check_if_stop_service() {

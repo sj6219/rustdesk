@@ -658,10 +658,12 @@ class _DesktopHomePageState extends State<DesktopHomePage>
   @override
   void initState() {
     super.initState();
-    Timer(const Duration(seconds: 1), () async {
-      updateUrl = await bind.mainGetSoftwareUpdateUrl();
-      if (updateUrl.isNotEmpty) setState(() {});
-    });
+    if (!bind.isCustomClient()) {
+      Timer(const Duration(seconds: 1), () async {
+        updateUrl = await bind.mainGetSoftwareUpdateUrl();
+        if (updateUrl.isNotEmpty) setState(() {});
+      });
+    }
     _updateTimer = periodic_immediate(const Duration(seconds: 1), () async {
       await gFFI.serverModel.fetchID();
       final error = await bind.mainGetError();
@@ -669,7 +671,7 @@ class _DesktopHomePageState extends State<DesktopHomePage>
         systemError = error;
         setState(() {});
       }
-      final v = await bind.mainGetOption(key: "stop-service") == "Y";
+      final v = await mainGetBoolOption(kOptionStopService);
       if (v != svcStopped.value) {
         svcStopped.value = v;
         setState(() {});
@@ -836,7 +838,7 @@ class _DesktopHomePageState extends State<DesktopHomePage>
   }
 }
 
-void setPasswordDialog() async {
+void setPasswordDialog({VoidCallback? notEmptyCallback}) async {
   final pw = await bind.mainGetPermanentPassword();
   final p0 = TextEditingController(text: pw);
   final p1 = TextEditingController(text: pw);
@@ -876,6 +878,9 @@ void setPasswordDialog() async {
         return;
       }
       bind.mainSetPermanentPassword(password: pass);
+      if (pass.isNotEmpty) {
+        notEmptyCallback?.call();
+      }
       close();
     }
 
