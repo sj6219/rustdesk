@@ -167,6 +167,17 @@ fn update_clipboard_(clipboard: Clipboard, old: Option<Arc<Mutex<ClipboardData>>
     if content.is_empty() {
         return;
     }
+
+    //..
+    #[cfg(target_os = "android")]
+    {
+        if let Err(e) = call_main_service_set_clip_text(&content)
+        {
+            log::debug!("call_service_set_clip_text fail,{}", e);
+        }
+    }
+
+    #[cfg(not(target_os = "android"))]
     match ClipboardContext::new(false) {
         Ok(mut ctx) => {
             let side = if old.is_none() { "host" } else { "client" };
