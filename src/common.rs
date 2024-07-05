@@ -1,5 +1,4 @@
 use std::{
-    borrow::Cow,
     collections::HashMap,
     future::Future,
     sync::{Arc, Mutex, RwLock},
@@ -8,129 +7,13 @@ use std::{
 
 use serde_json::Value;
 
-#[derive(Debug, Eq, PartialEq)]
-pub enum GrabState {
-    Ready,
-    Run,
-    Wait,
-    Exit,
-}
-
-#[cfg(all(target_os = "linux", feature = "unix-file-copy-paste"))]
-static X11_CLIPBOARD: once_cell::sync::OnceCell<x11_clipboard::Clipboard> =
-    once_cell::sync::OnceCell::new();
-
-#[cfg(all(target_os = "linux", feature = "unix-file-copy-paste"))]
-fn get_clipboard() -> Result<&'static x11_clipboard::Clipboard, String> {
-    X11_CLIPBOARD
-        .get_or_try_init(|| x11_clipboard::Clipboard::new())
-        .map_err(|e| e.to_string())
-}
-
-#[cfg(all(target_os = "linux", feature = "unix-file-copy-paste"))]
-pub struct ClipboardContext {
-    string_setter: x11rb::protocol::xproto::Atom,
-    string_getter: x11rb::protocol::xproto::Atom,
-    text_uri_list: x11rb::protocol::xproto::Atom,
-
-    clip: x11rb::protocol::xproto::Atom,
-    prop: x11rb::protocol::xproto::Atom,
-}
-
-#[cfg(all(target_os = "linux", feature = "unix-file-copy-paste"))]
-fn parse_plain_uri_list(v: Vec<u8>) -> Result<String, String> {
-    let text = String::from_utf8(v).map_err(|_| "ConversionFailure".to_owned())?;
-    let mut list = String::new();
-    for line in text.lines() {
-        if !line.starts_with("file://") {
-            continue;
-        }
-        let decoded = percent_encoding::percent_decode_str(line)
-            .decode_utf8()
-            .map_err(|_| "ConversionFailure".to_owned())?;
-        list = list + "\n" + decoded.trim_start_matches("file://");
-    }
-    list = list.trim().to_owned();
-    Ok(list)
-}
-
-#[cfg(all(target_os = "linux", feature = "unix-file-copy-paste"))]
-impl ClipboardContext {
-    pub fn new() -> Result<Self, String> {
-        let clipboard = get_clipboard()?;
-        let string_getter = clipboard
-            .getter
-            .get_atom("UTF8_STRING")
-            .map_err(|e| e.to_string())?;
-        let string_setter = clipboard
-            .setter
-            .get_atom("UTF8_STRING")
-            .map_err(|e| e.to_string())?;
-        let text_uri_list = clipboard
-            .getter
-            .get_atom("text/uri-list")
-            .map_err(|e| e.to_string())?;
-        let prop = clipboard.getter.atoms.property;
-        let clip = clipboard.getter.atoms.clipboard;
-        Ok(Self {
-            text_uri_list,
-            string_setter,
-            string_getter,
-            clip,
-            prop,
-        })
-    }
-
-    pub fn get_text(&mut self) -> Result<String, String> {
-        let clip = self.clip;
-        let prop = self.prop;
-
-        const TIMEOUT: std::time::Duration = std::time::Duration::from_millis(120);
-
-        let text_content = get_clipboard()?
-            .load(clip, self.string_getter, prop, TIMEOUT)
-            .map_err(|e| e.to_string())?;
-
-        let file_urls = get_clipboard()?.load(clip, self.text_uri_list, prop, TIMEOUT);
-
-        if file_urls.is_err() || file_urls.as_ref().unwrap().is_empty() {
-            log::trace!("clipboard get text, no file urls");
-            return String::from_utf8(text_content).map_err(|e| e.to_string());
-        }
-
-        let file_urls = parse_plain_uri_list(file_urls.unwrap())?;
-
-        let text_content = String::from_utf8(text_content).map_err(|e| e.to_string())?;
-
-        if text_content.trim() == file_urls.trim() {
-            log::trace!("clipboard got text but polluted");
-            return Err(String::from("polluted text"));
-        }
-
-        Ok(text_content)
-    }
-
-    pub fn set_text(&mut self, content: String) -> Result<(), String> {
-        let clip = self.clip;
-
-        let value = content.clone().into_bytes();
-        get_clipboard()?
-            .store(clip, self.string_setter, value)
-            .map_err(|e| e.to_string())?;
-        Ok(())
-    }
-}
-
-//..
-#[cfg(not(any(target_os = "ios")))]
-use hbb_common::compress::decompress;
 use hbb_common::{
     allow_err,
     anyhow::{anyhow, Context},
     bail, base64,
     bytes::Bytes,
-    compress::compress as compress_func,
-    config::{self, Config, CONNECT_TIMEOUT, READ_TIMEOUT},
+    config::{self, Config, CONNECT_TIMEOUT, READ_TIMEOUT, RENDEZVOUS_PORT},
+    futures::future::join_all,
     futures_util::future::poll_fn,
     get_version_number, log,
     message_proto::*,
@@ -146,8 +29,6 @@ use hbb_common::{
     },
     ResultType,
 };
-// #[cfg(any(target_os = "android", target_os = "ios", feature = "cli"))]
-use hbb_common::{config::RENDEZVOUS_PORT, futures::future::join_all};
 
 use crate::{
     hbbs_http::create_http_client_async,
@@ -157,11 +38,15 @@ use crate::{
 //..
 #[cfg(target_os = "android")]
 use scrap::android::call_main_service_set_clip_text;
+#[derive(Debug, Eq, PartialEq)]
+pub enum GrabState {
+    Ready,
+    Run,
+    Wait,
+    Exit,
+}
 
 pub type NotifyMessageBox = fn(String, String, String, String) -> dyn Future<Output = ()>;
-
-pub const CLIPBOARD_NAME: &'static str = "clipboard";
-pub const CLIPBOARD_INTERVAL: u64 = 333;
 
 // the executable name of the portable version
 pub const PORTABLE_APPNAME_RUNTIME_ENV_KEY: &str = "RUSTDESK_APPNAME";
@@ -188,11 +73,7 @@ pub mod input {
 }
 
 lazy_static::lazy_static! {
-    pub static ref CONTENT: Arc<Mutex<String>> = Default::default();
     pub static ref SOFTWARE_UPDATE_URL: Arc<Mutex<String>> = Default::default();
-}
-
-lazy_static::lazy_static! {
     pub static ref DEVICE_ID: Arc<Mutex<String>> = Default::default();
     pub static ref DEVICE_NAME: Arc<Mutex<String>> = Default::default();
 }
@@ -203,11 +84,6 @@ lazy_static::lazy_static! {
     // Is server logic running. The server code can invoked to run by the main process if --server is not running.
     static ref SERVER_RUNNING: Arc<RwLock<bool>> = Default::default();
     static ref IS_MAIN: bool = std::env::args().nth(1).map_or(true, |arg| !arg.starts_with("--"));
-}
-
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
-lazy_static::lazy_static! {
-    static ref ARBOARD_MTX: Arc<Mutex<()>> = Arc::new(Mutex::new(()));
 }
 
 pub struct SimpleCallOnReturn {
@@ -278,50 +154,6 @@ pub fn valid_for_numlock(evt: &KeyEvent) -> bool {
     }
 }
 
-pub fn create_clipboard_msg(content: String) -> Message {
-    let bytes = content.into_bytes();
-    let compressed = compress_func(&bytes);
-    let compress = compressed.len() < bytes.len();
-    let content = if compress { compressed } else { bytes };
-    let mut msg = Message::new();
-    msg.set_clipboard(Clipboard {
-        compress,
-        content: content.into(),
-        ..Default::default()
-    });
-    msg
-}
-
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
-pub fn check_clipboard(
-    ctx: &mut Option<ClipboardContext>,
-    old: Option<&Arc<Mutex<String>>>,
-) -> Option<Message> {
-    if ctx.is_none() {
-        *ctx = ClipboardContext::new().ok();
-    }
-    let ctx2 = ctx.as_mut()?;
-    let side = if old.is_none() { "host" } else { "client" };
-    let old = if let Some(old) = old { old } else { &CONTENT };
-    let content = {
-        let _lock = ARBOARD_MTX.lock().unwrap();
-        ctx2.get_text()
-    };
-    if let Ok(content) = content {
-        if content.len() < 2_000_000 && !content.is_empty() {
-            let changed = content != *old.lock().unwrap();
-            if changed {
-                //..w%%%%%%%1.1
-                log::info!("{} update found on {}", CLIPBOARD_NAME, side);
-                //..m%%%%%%1.1
-                *old.lock().unwrap() = content.clone();
-                return Some(create_clipboard_msg(content));
-            }
-        }
-    }
-    None
-}
-
 /// Set sound input device.
 pub fn set_sound_input(device: String) {
     let prior_device = get_option("audio-input".to_owned());
@@ -370,46 +202,6 @@ pub fn get_default_sound_input() -> Option<String> {
     None
 }
 
-//..
-#[cfg(not(any(target_os = "ios")))]
-pub fn update_clipboard(clipboard: Clipboard, old: Option<&Arc<Mutex<String>>>) {
-    let content = if clipboard.compress {
-        decompress(&clipboard.content)
-    } else {
-        clipboard.content.into()
-    };
-    if let Ok(content) = String::from_utf8(content) {
-        if content.is_empty() {
-            // ctx.set_text may crash if content is empty
-            return;
-        }
-        //..
-        #[cfg(target_os = "android")]
-        {
-            let old = if let Some(old) = old { old } else { &CONTENT };
-            *old.lock().unwrap() = content.clone();
-            if let Err(e) = call_main_service_set_clip_text(&content)
-            {
-                log::debug!("call_service_set_clip_text fail,{}", e);
-            }
-        }
-        #[cfg(not(target_os = "android"))]
-        match ClipboardContext::new() {
-            Ok(mut ctx) => {
-                let side = if old.is_none() { "host" } else { "client" };
-                let old = if let Some(old) = old { old } else { &CONTENT };
-                *old.lock().unwrap() = content.clone();
-                let _lock = ARBOARD_MTX.lock().unwrap();
-                //..w%%%%%%2.2
-                allow_err!(ctx.set_text(content));
-                log::debug!("{} updated on {}", CLIPBOARD_NAME, side);
-            }
-            Err(err) => {
-                log::error!("Failed to create clipboard context: {}", err);
-            }
-        }
-    }
-}
 
 #[cfg(feature = "use_rubato")]
 pub fn resample_channels(
@@ -1521,64 +1313,6 @@ pub type RustDeskInterval = ThrottledInterval;
 #[inline]
 pub fn rustdesk_interval(i: Interval) -> ThrottledInterval {
     ThrottledInterval::new(i)
-}
-
-#[cfg(not(any(
-    target_os = "android",
-    target_os = "ios",
-    all(target_os = "linux", feature = "unix-file-copy-paste")
-)))]
-pub struct ClipboardContext(arboard::Clipboard);
-
-#[cfg(not(any(
-    target_os = "android",
-    target_os = "ios",
-    all(target_os = "linux", feature = "unix-file-copy-paste")
-)))]
-impl ClipboardContext {
-    #[inline]
-    #[cfg(any(target_os = "windows", target_os = "macos"))]
-    pub fn new() -> ResultType<ClipboardContext> {
-        Ok(ClipboardContext(arboard::Clipboard::new()?))
-    }
-
-    #[cfg(target_os = "linux")]
-    pub fn new() -> ResultType<ClipboardContext> {
-        for _ in 0..3 {
-            let (tx, rx) = std::sync::mpsc::channel();
-            std::thread::spawn(move || {
-                tx.send(arboard::Clipboard::new()).ok();
-            });
-            match rx.recv_timeout(Duration::from_millis(40)) {
-                Ok(Ok(c)) => return Ok(ClipboardContext(c)),
-                Ok(Err(e)) => return Err(e.into()),
-                Err(_) => continue,
-            }
-        }
-        bail!("Failed to create clipboard context, timeout");
-    }
-
-    #[inline]
-    #[cfg(any(target_os = "windows", target_os = "macos"))]
-    pub fn get_text(&mut self) -> ResultType<String> {
-        Ok(self.0.get_text()?)
-    }
-
-    // CAUTION: This function must not be called in the main thread!!! It can only be called in the clibpoard thread.
-    // There's no timeout for this function, so it may block.
-    // Because of https://github.com/1Password/arboard/blob/151e679ee5c208403b06ba02d28f92c5891f7867/src/platform/linux/x11.rs#L296
-    // We cannot use a new thread to get text because the clipboard context is `&mut self`.
-    // The crate design is somehow not good.
-    #[cfg(target_os = "linux")]
-    pub fn get_text(&mut self) -> ResultType<String> {
-        Ok(self.0.get_text()?)
-    }
-
-    #[inline]
-    pub fn set_text<'a, T: Into<Cow<'a, str>>>(&mut self, text: T) -> ResultType<()> {
-        self.0.set_text(text)?;
-        Ok(())
-    }
 }
 
 pub fn load_custom_client() {

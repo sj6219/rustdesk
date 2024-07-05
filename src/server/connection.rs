@@ -1,8 +1,8 @@
 use super::{input_service::*, *};
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+use crate::clipboard::update_clipboard;
 #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
 use crate::clipboard_file::*;
-#[cfg(not(target_os = "ios"))]
-use crate::common::update_clipboard;
 #[cfg(target_os = "android")]
 use crate::keyboard::client::map_key_to_control_key;
 #[cfg(target_os = "linux")]
@@ -1757,11 +1757,6 @@ impl Connection {
                         .await;
                 }
                 return true;
-            } else if password::approve_mode() == ApproveMode::Password
-                && !password::has_valid_password()
-            {
-                self.send_login_error("Connection not allowed").await;
-                return false;
             } else if self.is_recent_session(false) {
                 if err_msg.is_empty() {
                     #[cfg(target_os = "linux")]
@@ -3170,6 +3165,7 @@ impl Connection {
             .map(|t| t.0 = Instant::now());
     }
 
+    #[cfg(feature = "hwcodec")]
     fn update_supported_encoding(&mut self) {
         let Some(last) = &self.last_supported_encoding else {
             return;
