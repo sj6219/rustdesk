@@ -21,7 +21,7 @@ use clipboard::ContextSend;
 use hbb_common::tokio::sync::mpsc::unbounded_channel;
 use hbb_common::{
     allow_err,
-    config::Config,
+    config::{keys::*, option2bool, Config},
     fs::is_write_need_confirmation,
     fs::{self, get_string, new_send_confirm, DigestCheckResult},
     log,
@@ -277,6 +277,15 @@ pub fn close(id: i32) {
     if let Some(client) = CLIENTS.read().unwrap().get(&id) {
         allow_err!(client.tx.send(Data::Close));
     };
+}
+
+#[inline]
+#[cfg(target_os = "android")]
+pub fn notify_input_control(v: bool) {
+    for (_, mut client) in CLIENTS.write().unwrap().iter_mut() {
+        client.keyboard = v;
+        allow_err!(client.tx.send(Data::InputControl(v)));
+    }
 }
 
 #[inline]
@@ -574,9 +583,10 @@ pub async fn start_ipc<T: InvokeUiCM>(cm: ConnectionManager<T>) {
             feature = "unix-file-copy-paste"
         ),
     ))]
-    ContextSend::enable(
-        Config::get_option(hbb_common::config::keys::OPTION_ENABLE_FILE_TRANSFER).is_empty(),
-    );
+    ContextSend::enable(option2bool(
+        OPTION_ENABLE_FILE_TRANSFER,
+        &Config::get_option(OPTION_ENABLE_FILE_TRANSFER),
+    ));
 
     match ipc::new_listener("_cm").await {
         Ok(mut incoming) => {

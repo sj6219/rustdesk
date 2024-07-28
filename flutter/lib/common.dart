@@ -31,7 +31,6 @@ import 'mobile/pages/file_manager_page.dart';
 import 'mobile/pages/remote_page.dart';
 import 'desktop/pages/remote_page.dart' as desktop_remote;
 import 'package:flutter_hbb/desktop/widgets/remote_toolbar.dart';
-import 'models/input_model.dart';
 import 'models/model.dart';
 import 'models/platform_model.dart';
 
@@ -647,8 +646,12 @@ String formatDurationToTime(Duration duration) {
 
 closeConnection({String? id}) {
   if (isAndroid || isIOS) {
-    gFFI.chatModel.hideChatOverlay();
-    Navigator.popUntil(globalKey.currentContext!, ModalRoute.withName("/"));
+    () async {
+      await SystemChrome.setEnabledSystemUIMode(SystemUiMode.manual,
+          overlays: SystemUiOverlay.values);
+      gFFI.chatModel.hideChatOverlay();
+      Navigator.popUntil(globalKey.currentContext!, ModalRoute.withName("/"));
+    }();
   } else {
     if (isWeb) {
       Navigator.popUntil(globalKey.currentContext!, ModalRoute.withName("/"));
@@ -718,7 +721,21 @@ class OverlayDialogManager {
   int _tagCount = 0;
 
   OverlayEntry? _mobileActionsOverlayEntry;
-  RxBool mobileActionsOverlayVisible = false.obs;
+  RxBool mobileActionsOverlayVisible = true.obs;
+
+  setMobileActionsOverlayVisible(bool v, {store = true}) {
+    if (store) {
+      bind.setLocalFlutterOption(k: kOptionShowMobileAction, v: v ? 'Y' : 'N');
+    }
+    // No need to read the value from local storage after setting it.
+    // It better to toggle the value directly.
+    mobileActionsOverlayVisible.value = v;
+  }
+
+  loadMobileActionsOverlayVisible() {
+    mobileActionsOverlayVisible.value =
+        bind.getLocalFlutterOption(k: kOptionShowMobileAction) != 'N';
+  }
 
   void setOverlayState(OverlayKeyState overlayKeyState) {
     _overlayKeyState = overlayKeyState;
@@ -865,14 +882,14 @@ class OverlayDialogManager {
     );
     overlayState.insert(overlay);
     _mobileActionsOverlayEntry = overlay;
-    mobileActionsOverlayVisible.value = true;
+    setMobileActionsOverlayVisible(true);
   }
 
-  void hideMobileActionsOverlay() {
+  void hideMobileActionsOverlay({store = true}) {
     if (_mobileActionsOverlayEntry != null) {
       _mobileActionsOverlayEntry!.remove();
       _mobileActionsOverlayEntry = null;
-      mobileActionsOverlayVisible.value = false;
+      setMobileActionsOverlayVisible(false, store: store);
       return;
     }
   }
@@ -891,30 +908,32 @@ class OverlayDialogManager {
 }
 
 makeMobileActionsOverlayEntry(VoidCallback? onHide, {FFI? ffi}) {
-  final position = SimpleWrapper(Offset(0, 0));
   makeMobileActions(BuildContext context, double s) {
     final scale = s < 0.85 ? 0.85 : s;
     final session = ffi ?? gFFI;
-    // compute overlay position
-    final screenW = MediaQuery.of(context).size.width;
-    final screenH = MediaQuery.of(context).size.height;
     const double overlayW = 200;
     const double overlayH = 45;
-    final left = (screenW - overlayW * scale) / 2;
-    final top = screenH - (overlayH + 80) * scale;
-    position.value = Offset(left, top);
+    computeOverlayPosition() {
+      final screenW = MediaQuery.of(context).size.width;
+      final screenH = MediaQuery.of(context).size.height;
+      final left = (screenW - overlayW * scale) / 2;
+      final top = screenH - (overlayH + 80) * scale;
+      return Offset(left, top);
+    }
+
+    if (draggablePositions.mobileActions.isInvalid()) {
+      draggablePositions.mobileActions.update(computeOverlayPosition());
+    } else {
+      draggablePositions.mobileActions.tryAdjust(overlayW, overlayH, scale);
+    }
     return DraggableMobileActions(
       scale: scale,
-      position: position,
+      position: draggablePositions.mobileActions,
       width: overlayW,
       height: overlayH,
-      onBackPressed: () => session.inputModel.tap(MouseButtons.right),
-      onHomePressed: () => session.inputModel.tap(MouseButtons.wheel),
-      onRecentPressed: () async {
-        session.inputModel.sendMouse('down', MouseButtons.wheel);
-        await Future.delayed(const Duration(milliseconds: 500));
-        session.inputModel.sendMouse('up', MouseButtons.wheel);
-      },
+      onBackPressed: session.inputModel.onMobileBack,
+      onHomePressed: session.inputModel.onMobileHome,
+      onRecentPressed: session.inputModel.onMobileApps,
       onHidePressed: onHide,
     );
   }
@@ -1046,7 +1065,7 @@ void msgBox(SessionID sessionId, String type, String title, String text,
   bool hasOk = false;
   submit() {
     dialogManager.dismissAll();
-    // https://github.com/fufesou/rustdesk/blob/5e9a31340b899822090a3731769ae79c6bf5f3e5/src/ui/common.tis#L263
+    // https://github.com/rustdesk/rustdesk/blob/5e9a31340b899822090a3731769ae79c6bf5f3e5/src/ui/common.tis#L263
     if (!type.contains("custom") && desktopType != DesktopType.portForward) {
       closeConnection();
     }
@@ -1080,21 +1099,33 @@ void msgBox(SessionID sessionId, String type, String title, String text,
           dialogManager.dismissAll();
         }));
   }
-  if (reconnect != null &&
-      title == "Connection Error" &&
-      reconnectTimeout != null) {
+  if (reconnect != null && title == "Connection Error") {
     // `enabled` is used to disable the dialog button once the button is clicked.
     final enabled = true.obs;
-    final button = Obx(() => _ReconnectCountDownButton(
-          second: reconnectTimeout,
-          onPressed: enabled.isTrue
-              ? () {
-                  // Disable the button
-                  enabled.value = false;
-                  reconnect(dialogManager, sessionId, false);
-                }
-              : null,
-        ));
+    final button = reconnectTimeout != null
+        ? Obx(() => _ReconnectCountDownButton(
+              second: reconnectTimeout,
+              onPressed: enabled.isTrue
+                  ? () {
+                      // Disable the button
+                      enabled.value = false;
+                      reconnect(dialogManager, sessionId, false);
+                    }
+                  : null,
+            ))
+        : Obx(
+            () => dialogButton(
+              'Reconnect',
+              isOutline: true,
+              onPressed: enabled.isTrue
+                  ? () {
+                      // Disable the button
+                      enabled.value = false;
+                      reconnect(dialogManager, sessionId, false);
+                    }
+                  : null,
+            ),
+          );
     buttons.insert(0, button);
   }
   if (link.isNotEmpty) {
@@ -1183,7 +1214,8 @@ Widget msgboxContent(String type, String title, String text) {
               translate(title),
               style: TextStyle(fontSize: 21),
             ).marginOnly(bottom: 10),
-            Text(translateText(text), style: const TextStyle(fontSize: 15)),
+            SelectableText(translateText(text),
+                style: const TextStyle(fontSize: 15)),
           ],
         ),
       ),
@@ -1378,14 +1410,10 @@ class AndroidPermissionManager {
   }
 }
 
-// TODO move this to mobile/widgets.
-// Used only for mobile, pages remote, settings, dialog
-// TODO remove argument contentPadding, it’s not used, getToggle() has not
 RadioListTile<T> getRadio<T>(
     Widget title, T toValue, T curValue, ValueChanged<T?>? onChange,
-    {EdgeInsetsGeometry? contentPadding, bool? dense}) {
+    {bool? dense}) {
   return RadioListTile<T>(
-    contentPadding: contentPadding ?? EdgeInsets.zero,
     visualDensity: VisualDensity.compact,
     controlAffinity: ListTileControlAffinity.trailing,
     title: title,
@@ -1412,7 +1440,7 @@ Future<void> initGlobalFFI() async {
   _globalFFI = FFI(null);
   debugPrint("_globalFFI init end");
   // after `put`, can also be globally found by Get.find<FFI>();
-  Get.put(_globalFFI, permanent: true);
+  Get.put<FFI>(_globalFFI, permanent: true);
 }
 
 String translate(String name) {
@@ -1422,14 +1450,16 @@ String translate(String name) {
   return platformFFI.translate(name, localeName);
 }
 
+// This function must be kept the same as the one in rust and sciter code.
+// rust: libs/hbb_common/src/config.rs -> option2bool()
+// sciter: Does not have the function, but it should be kept the same.
 bool option2bool(String option, String value) {
   bool res;
   if (option.startsWith("enable-")) {
     res = value != "N";
   } else if (option.startsWith("allow-") ||
-      option == "stop-service" ||
+      option == kOptionStopService ||
       option == kOptionDirectServer ||
-      option == "stop-rendezvous-service" ||
       option == kOptionForceAlwaysRelay) {
     res = value == "Y";
   } else {
@@ -1444,9 +1474,8 @@ String bool2option(String option, bool b) {
   if (option.startsWith('enable-')) {
     res = b ? defaultOptionYes : 'N';
   } else if (option.startsWith('allow-') ||
-      option == "stop-service" ||
+      option == kOptionStopService ||
       option == kOptionDirectServer ||
-      option == "stop-rendezvous-service" ||
       option == kOptionForceAlwaysRelay) {
     res = b ? 'Y' : defaultOptionNo;
   } else {
@@ -1482,9 +1511,9 @@ bool mainGetPeerBoolOptionSync(String id, String key) {
   return option2bool(key, bind.mainGetPeerOptionSync(id: id, key: key));
 }
 
-mainSetPeerBoolOptionSync(String id, String key, bool v) {
-  bind.mainSetPeerOptionSync(id: id, key: key, value: bool2option(key, v));
-}
+// Don't use `option2bool()` and `bool2option()` to convert the session option.
+// Use `sessionGetToggleOption()` and `sessionToggleOption()` instead.
+// Because all session options use `Y` and `<Empty>` as values.
 
 Future<bool> matchPeer(String searchText, Peer peer) async {
   if (searchText.isEmpty) {
@@ -2669,36 +2698,55 @@ Future<void> start_service(bool is_start) async {
       !isMacOS ||
       await callMainCheckSuperUserPermission();
   if (checked) {
-    bind.mainSetOption(key: "stop-service", value: is_start ? "" : "Y");
+    mainSetBoolOption(kOptionStopService, !is_start);
   }
 }
 
+Future<bool> canBeBlocked() async {
+  var access_mode = await bind.mainGetOption(key: kOptionAccessMode);
+  var option = option2bool(kOptionAllowRemoteConfigModification,
+      await bind.mainGetOption(key: kOptionAllowRemoteConfigModification));
+  return access_mode == 'view' || (access_mode.isEmpty && !option);
+}
+
+Future<void> shouldBeBlocked(RxBool block, WhetherUseRemoteBlock? use) async {
+  if (use != null && !await use()) {
+    block.value = false;
+    return;
+  }
+  var time0 = DateTime.now().millisecondsSinceEpoch;
+  await bind.mainCheckMouseTime();
+  Timer(const Duration(milliseconds: 120), () async {
+    var d = time0 - await bind.mainGetMouseTime();
+    if (d < 120) {
+      block.value = true;
+    } else {
+      block.value = false;
+    }
+  });
+}
+
 typedef WhetherUseRemoteBlock = Future<bool> Function();
-Widget buildRemoteBlock({required Widget child, WhetherUseRemoteBlock? use}) {
-  var block = false.obs;
+Widget buildRemoteBlock(
+    {required Widget child,
+    required RxBool block,
+    required bool mask,
+    WhetherUseRemoteBlock? use}) {
   return Obx(() => MouseRegion(
         onEnter: (_) async {
-          if (use != null && !await use()) {
-            block.value = false;
-            return;
-          }
-          var time0 = DateTime.now().millisecondsSinceEpoch;
-          await bind.mainCheckMouseTime();
-          Timer(const Duration(milliseconds: 120), () async {
-            var d = time0 - await bind.mainGetMouseTime();
-            if (d < 120) {
-              block.value = true;
-            }
-          });
+          await shouldBeBlocked(block, use);
         },
         onExit: (event) => block.value = false,
         child: Stack(children: [
-          child,
-          Offstage(
-              offstage: !block.value,
-              child: Container(
-                color: Colors.black.withOpacity(0.5),
-              )),
+          // scope block tab
+          FocusScope(child: child, canRequestFocus: !block.value),
+          // mask block click, cm not block click and still use check_click_time to avoid block local click
+          if (mask)
+            Offstage(
+                offstage: !block.value,
+                child: Container(
+                  color: Colors.black.withOpacity(0.5),
+                )),
         ]),
       ));
 }
@@ -2746,12 +2794,10 @@ Widget buildErrorBanner(BuildContext context,
     required RxString err,
     required Function? retry,
     required Function close}) {
-  const double height = 25;
   return Obx(() => Offstage(
         offstage: !(!loading.value && err.value.isNotEmpty),
         child: Center(
             child: Container(
-          height: height,
           color: MyTheme.color(context).errorBannerBg,
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -2768,9 +2814,8 @@ Widget buildErrorBanner(BuildContext context,
                     alignment: Alignment.centerLeft,
                     child: Tooltip(
                       message: translate(err.value),
-                      child: Text(
+                      child: SelectableText(
                         translate(err.value),
-                        overflow: TextOverflow.ellipsis,
                       ),
                     )).marginSymmetric(vertical: 2),
               ),
@@ -2890,6 +2935,16 @@ openMonitorInTheSameTab(int i, FFI ffi, PeerInfo pi,
   final displays = i == kAllDisplayValue
       ? List.generate(pi.displays.length, (index) => index)
       : [i];
+  // Try clear image model before switching from all displays
+  // 1. The remote side has multiple displays.
+  // 2. Do not use texture render.
+  // 3. Connect to Display 1.
+  // 4. Switch to multi-displays `kAllDisplayValue`
+  // 5. Switch to Display 2.
+  // Then the remote page will display last picture of Display 1 at the beginning.
+  if (pi.forceTextureRender && i != kAllDisplayValue) {
+    ffi.imageModel.clearImage();
+  }
   bind.sessionSwitchDisplay(
     isDesktop: isDesktop,
     sessionId: ffi.sessionId,
@@ -2923,10 +2978,15 @@ openMonitorInNewTabOrWindow(int i, String peerId, PeerInfo pi,
       kMainWindowId, kWindowEventOpenMonitorSession, jsonEncode(args));
 }
 
-setNewConnectWindowFrame(int windowId, String peerId, Rect? screenRect) async {
+setNewConnectWindowFrame(int windowId, String peerId, int preSessionCount,
+    int? display, Rect? screenRect) async {
   if (screenRect == null) {
-    await restoreWindowPosition(WindowType.RemoteDesktop,
-        windowId: windowId, peerId: peerId);
+    // Do not restore window position to new connection if there's a pre-session.
+    // https://github.com/rustdesk/rustdesk/discussions/8825
+    if (preSessionCount == 0) {
+      await restoreWindowPosition(WindowType.RemoteDesktop,
+          windowId: windowId, display: display, peerId: peerId);
+    }
   } else {
     await tryMoveToScreenAndSetFullscreen(screenRect);
   }
@@ -3052,9 +3112,16 @@ Future<bool> setServerConfig(
   List<RxString>? errMsgs,
   ServerConfig config,
 ) async {
-  config.idServer = config.idServer.trim();
-  config.relayServer = config.relayServer.trim();
-  config.apiServer = config.apiServer.trim();
+  String removeEndSlash(String input) {
+    if (input.endsWith('/')) {
+      return input.substring(0, input.length - 1);
+    }
+    return input;
+  }
+
+  config.idServer = removeEndSlash(config.idServer.trim());
+  config.relayServer = removeEndSlash(config.relayServer.trim());
+  config.apiServer = removeEndSlash(config.apiServer.trim());
   config.key = config.key.trim();
   if (controllers != null) {
     controllers[0].text = config.idServer;
@@ -3263,6 +3330,42 @@ bool isInHomePage() {
   return controller.state.value.selected == 0;
 }
 
+Widget _buildPresetPasswordWarning() {
+  if (bind.mainGetBuildinOption(key: kOptionRemovePresetPasswordWarning) !=
+      'N') {
+    return SizedBox.shrink();
+  }
+  return Container(
+    color: Colors.yellow,
+    child: Column(
+      children: [
+        Align(
+            child: Text(
+          translate("Security Alert"),
+          style: TextStyle(
+            color: Colors.red,
+            fontSize:
+                18, // https://github.com/rustdesk/rustdesk-server-pro/issues/261
+            fontWeight: FontWeight.bold,
+          ),
+        )).paddingOnly(bottom: 8),
+        Text(
+          translate("preset_password_warning"),
+          style: TextStyle(color: Colors.red),
+        )
+      ],
+    ).paddingAll(8),
+  ); // Show a warning message if the Future completed with true
+}
+
+Widget buildPresetPasswordWarningMobile() {
+  if (bind.isPresetPasswordMobileOnly()) {
+    return _buildPresetPasswordWarning();
+  } else {
+    return SizedBox.shrink();
+  }
+}
+
 Widget buildPresetPasswordWarning() {
   return FutureBuilder<bool>(
     future: bind.isPresetPassword(),
@@ -3273,27 +3376,7 @@ Widget buildPresetPasswordWarning() {
         return Text(
             'Error: ${snapshot.error}'); // Show an error message if the Future completed with an error
       } else if (snapshot.hasData && snapshot.data == true) {
-        return Container(
-          color: Colors.yellow,
-          child: Column(
-            children: [
-              Align(
-                  child: Text(
-                translate("Security Alert"),
-                style: TextStyle(
-                  color: Colors.red,
-                  fontSize:
-                      18, // https://github.com/rustdesk/rustdesk-server-pro/issues/261
-                  fontWeight: FontWeight.bold,
-                ),
-              )).paddingOnly(bottom: 8),
-              Text(
-                translate("preset_password_warning"),
-                style: TextStyle(color: Colors.red),
-              )
-            ],
-          ).paddingAll(8),
-        ); // Show a warning message if the Future completed with true
+        return _buildPresetPasswordWarning();
       } else {
         return SizedBox
             .shrink(); // Show nothing if the Future completed with false or null
@@ -3365,7 +3448,12 @@ setResizable(bool resizable) {
 
 isOptionFixed(String key) => bind.mainIsOptionFixed(key: key);
 
-final isCustomClient = bind.isCustomClient();
+bool? _isCustomClient;
+bool get isCustomClient {
+  _isCustomClient ??= bind.isCustomClient();
+  return _isCustomClient!;
+}
+
 get defaultOptionLang => isCustomClient ? 'default' : '';
 get defaultOptionTheme => isCustomClient ? 'system' : '';
 get defaultOptionYes => isCustomClient ? 'Y' : '';
@@ -3373,6 +3461,12 @@ get defaultOptionNo => isCustomClient ? 'N' : '';
 get defaultOptionWhitelist => isCustomClient ? ',' : '';
 get defaultOptionAccessMode => isCustomClient ? 'custom' : '';
 get defaultOptionApproveMode => isCustomClient ? 'password-click' : '';
+
+bool whitelistNotEmpty() {
+  // https://rustdesk.com/docs/en/self-host/client-configuration/advanced-settings/#whitelist
+  final v = bind.mainGetOptionSync(key: kOptionWhitelist);
+  return v != '' && v != ',';
+}
 
 // `setMovable()` is only supported on macOS.
 //
@@ -3396,4 +3490,21 @@ disableWindowMovable(int? windowId) {
   } else {
     WindowController.fromWindowId(windowId).setMovable(false);
   }
+}
+
+Widget netWorkErrorWidget() {
+  return Center(
+      child: Column(
+    mainAxisAlignment: MainAxisAlignment.center,
+    crossAxisAlignment: CrossAxisAlignment.center,
+    children: [
+      Text(translate("network_error_tip")),
+      ElevatedButton(
+              onPressed: gFFI.userModel.refreshCurrentUser,
+              child: Text(translate("Retry")))
+          .marginSymmetric(vertical: 16),
+      SelectableText(gFFI.userModel.networkError.value,
+          style: TextStyle(fontSize: 11, color: Colors.red)),
+    ],
+  ));
 }

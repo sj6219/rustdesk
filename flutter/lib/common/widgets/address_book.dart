@@ -36,16 +36,13 @@ class _AddressBookState extends State<AddressBook> {
   var menuPos = RelativeRect.fill;
 
   @override
-  void initState() {
-    super.initState();
-  }
-
-  @override
   Widget build(BuildContext context) => Obx(() {
         if (!gFFI.userModel.isLogin) {
           return Center(
               child: ElevatedButton(
                   onPressed: loginDialog, child: Text(translate("Login"))));
+        } else if (gFFI.userModel.networkError.isNotEmpty) {
+          return netWorkErrorWidget();
         } else {
           return Column(
             children: [
@@ -110,6 +107,7 @@ class _AddressBookState extends State<AddressBook> {
   }
 
   Widget _buildAddressBookMobile() {
+    const padding = 8.0;
     return Column(
       children: [
         Offstage(
@@ -120,7 +118,8 @@ class _AddressBookState extends State<AddressBook> {
                   border: Border.all(
                       color: Theme.of(context).colorScheme.background)),
               child: Container(
-                padding: const EdgeInsets.all(8.0),
+                padding:
+                    const EdgeInsets.fromLTRB(padding, 0, padding, padding),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -130,7 +129,6 @@ class _AddressBookState extends State<AddressBook> {
                       width: double.infinity,
                       child: _buildTags(),
                     ),
-                    _buildAbPermission(),
                   ],
                 ),
               ),
@@ -198,24 +196,28 @@ class _AddressBookState extends State<AddressBook> {
     if (contains) {
       names.insert(0, personalAddressBookName);
     }
+
+    Row buildItem(String e, {bool button = false}) {
+      return Row(
+        children: [
+          Expanded(
+            child: Tooltip(
+                waitDuration: Duration(milliseconds: 500),
+                message: gFFI.abModel.translatedName(e),
+                child: Text(
+                  gFFI.abModel.translatedName(e),
+                  style: button ? null : TextStyle(fontSize: 14.0),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: button ? TextAlign.center : null,
+                )),
+          ),
+        ],
+      );
+    }
+
     final items = names
-        .map((e) => DropdownMenuItem(
-            value: e,
-            child: Row(
-              children: [
-                Expanded(
-                  child: Tooltip(
-                      waitDuration: Duration(milliseconds: 500),
-                      message: gFFI.abModel.translatedName(e),
-                      child: Text(
-                        gFFI.abModel.translatedName(e),
-                        style: TextStyle(fontSize: 14.0),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      )),
-                ),
-              ],
-            )))
+        .map((e) => DropdownMenuItem(value: e, child: buildItem(e)))
         .toList();
     var menuItemStyleData = MenuItemStyleData(height: 36);
     if (contains && items.length > 1) {
@@ -237,14 +239,22 @@ class _AddressBookState extends State<AddressBook> {
                 bind.setLocalFlutterOption(k: kOptionCurrentAbName, v: value);
               }
             },
+      customButton: Container(
+        height: isDesktop ? 48 : 40,
+        child: Row(children: [
+          Expanded(
+              child: buildItem(gFFI.abModel.currentName.value, button: true)),
+          Icon(Icons.arrow_drop_down),
+        ]),
+      ),
       underline: Container(
         height: 0.7,
         color: Theme.of(context).dividerColor.withOpacity(0.1),
       ),
-      buttonStyleData: ButtonStyleData(height: 48),
       menuItemStyleData: menuItemStyleData,
       items: items,
       isExpanded: true,
+      isDense: true,
       dropdownSearchData: DropdownSearchData(
         searchController: textEditingController,
         searchInnerWidgetHeight: 50,
@@ -412,7 +422,8 @@ class _AddressBookState extends State<AddressBook> {
       if (canWrite) getEntry(translate("Add ID"), addIdToCurrentAb),
       if (canWrite) getEntry(translate("Add Tag"), abAddTag),
       getEntry(translate("Unselect all tags"), gFFI.abModel.unsetSelectedTags),
-      sortMenuItem(),
+      if (gFFI.abModel.legacyMode.value)
+        sortMenuItem(), // It's already sorted after pulling down
       if (canWrite) syncMenuItem(),
       filterMenuItem(),
       if (!gFFI.abModel.legacyMode.value && canWrite)

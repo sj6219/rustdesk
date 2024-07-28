@@ -76,8 +76,11 @@ class _PeerTabPageState extends State<PeerTabPage>
 
   final isOptVisiableFixed = isOptionFixed(kOptionPeerTabVisible);
 
-  @override
-  void initState() {
+  _PeerTabPageState() {
+    _loadLocalOptions();
+  }
+
+  void _loadLocalOptions() {
     final uiType = bind.getLocalFlutterOption(k: kOptionPeerCardUiType);
     if (uiType != '') {
       peerCardUiType.value = int.parse(uiType) == 0
@@ -87,8 +90,7 @@ class _PeerTabPageState extends State<PeerTabPage>
               : PeerUiType.list;
     }
     hideAbTagsPanel.value =
-        bind.mainGetLocalOption(key: kOptionHideAbTagsPanel).isNotEmpty;
-    super.initState();
+        bind.mainGetLocalOption(key: kOptionHideAbTagsPanel) == 'Y';
   }
 
   Future<void> handleTabSelection(int tabIndex) async {
@@ -399,9 +401,9 @@ class _PeerTabPageState extends State<PeerTabPage>
             final peers = model.selectedPeers;
             switch (model.currentTab) {
               case 0:
-                peers.map((p) async {
+                for (var p in peers) {
                   await bind.mainRemovePeer(id: p.id);
-                }).toList();
+                }
                 await bind.mainLoadRecentPeers();
                 break;
               case 1:
@@ -413,9 +415,9 @@ class _PeerTabPageState extends State<PeerTabPage>
                 await bind.mainLoadFavPeers();
                 break;
               case 2:
-                peers.map((p) async {
+                for (var p in peers) {
                   await bind.mainRemoveDiscovered(id: p.id);
-                }).toList();
+                }
                 await bind.mainLoadLanPeers();
                 break;
               case 3:
@@ -802,13 +804,20 @@ class _PeerViewDropdownState extends State<PeerViewDropdown> {
                 child: SizedBox(
                   height: 36,
                   child: getRadio<PeerUiType>(
-                      Text(
-                          translate(types.indexOf(e) == 0
+                      Tooltip(
+                          message: translate(types.indexOf(e) == 0
                               ? 'Big tiles'
                               : types.indexOf(e) == 1
                                   ? 'Small tiles'
                                   : 'List'),
-                          style: style),
+                          child: Icon(
+                            e == PeerUiType.grid
+                                ? Icons.grid_view_rounded
+                                : e == PeerUiType.list
+                                    ? Icons.view_list_rounded
+                                    : Icons.view_agenda_rounded,
+                            size: 18,
+                          )),
                       e,
                       peerCardUiType.value,
                       dense: true,
@@ -838,7 +847,7 @@ class _PeerViewDropdownState extends State<PeerViewDropdown> {
         child: Icon(
           peerCardUiType.value == PeerUiType.grid
               ? Icons.grid_view_rounded
-              : peerCardUiType.value == PeerUiType.tile
+              : peerCardUiType.value == PeerUiType.list
                   ? Icons.view_list_rounded
                   : Icons.view_agenda_rounded,
           size: 18,
@@ -865,16 +874,18 @@ class PeerSortDropdown extends StatefulWidget {
 }
 
 class _PeerSortDropdownState extends State<PeerSortDropdown> {
-  @override
-  void initState() {
+  _PeerSortDropdownState() {
     if (!PeerSortType.values.contains(peerSort.value)) {
-      peerSort.value = PeerSortType.remoteId;
-      bind.setLocalFlutterOption(
-        k: kOptionPeerSorting,
-        v: peerSort.value,
-      );
+      _loadLocalOptions();
     }
-    super.initState();
+  }
+
+  void _loadLocalOptions() {
+    peerSort.value = PeerSortType.remoteId;
+    bind.setLocalFlutterOption(
+      k: kOptionPeerSorting,
+      v: peerSort.value,
+    );
   }
 
   @override
