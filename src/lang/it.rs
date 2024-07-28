@@ -626,8 +626,11 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Power", "Alimentazione"),
         ("Telegram bot", "Bot Telgram"),
         ("enable-bot-tip", "If you enable this feature, you can receive the 2FA code from your bot. It can also function as a connection notification."),
-        ("enable-bot-desc", "1, apri una chat con @BotFather.\n2, Invia il comando \"/newbot\", dopo aver completato questo passaggio riceverai un token.\n3, Avvia una chat con il tuo bot appena creato. Per attivarlo Invia un messaggio che inizia con una barra (\"/\") tipo \"/hello\".\n"),
+        ("enable-bot-desc", "1. apri una chat con @BotFather.\n2. Invia il comando \"/newbot\", dopo aver completato questo passaggio riceverai un token.\n3. Avvia una chat con il tuo bot appena creato. Per attivarlo Invia un messaggio che inizia con una barra (\"/\") tipo \"/hello\".\n"),
         ("cancel-2fa-confirm-tip", "Sei sicuro di voler annullare 2FA?"),
         ("cancel-bot-confirm-tip", "Sei sicuro di voler annulare Telegram?"),
+        ("About RustDesk", "Info su RustDesk"),
+        ("Send clipboard keystrokes", "Invia sequenze tasti appunti"),
+        ("network_error_tip", ""),
     ].iter().cloned().collect();
 }

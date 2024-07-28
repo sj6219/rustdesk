@@ -89,7 +89,7 @@ pub fn stop_global_event_stream(app_type: String) {
 pub enum EventToUI {
     Event(String),
     Rgba(usize),
-    Texture(usize),
+    Texture(usize, bool), // (display, gpu_texture)
 }
 
 pub fn host_stop_system_key_propagate(_stopped: bool) {
@@ -1319,6 +1319,29 @@ pub fn cm_close_voice_call(id: i32) {
     crate::ui_cm_interface::close_voice_call(id);
 }
 
+pub fn set_voice_call_input_device(_is_cm: bool, _device: String) {
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    if _is_cm {
+        let _ = crate::ipc::set_config("voice-call-input", _device);
+    } else {
+        crate::audio_service::set_voice_call_input_device(Some(_device), true);
+    }
+}
+
+pub fn get_voice_call_input_device(_is_cm: bool) -> String {
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    if _is_cm {
+        match crate::ipc::get_config("voice-call-input") {
+            Ok(Some(device)) => device,
+            _ => "".to_owned(),
+        }
+    } else {
+        crate::audio_service::get_voice_call_input_device().unwrap_or_default()
+    }
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    "".to_owned()
+}
+
 pub fn main_get_last_remote_id() -> String {
     LocalConfig::get_remote_id()
 }
@@ -1943,6 +1966,12 @@ pub fn is_preset_password() -> bool {
         })
 }
 
+// Don't call this function for desktop version.
+// We need this function because we want a sync return for mobile version.
+pub fn is_preset_password_mobile_only() -> SyncReturn<bool> {
+    SyncReturn(is_preset_password())
+}
+
 /// Send a url scheme through the ipc.
 ///
 /// * macOS only
@@ -2188,6 +2217,10 @@ pub fn main_has_valid_bot_sync() -> SyncReturn<bool> {
 
 pub fn main_get_hard_option(key: String) -> SyncReturn<String> {
     SyncReturn(get_hard_option(key))
+}
+
+pub fn main_get_buildin_option(key: String) -> SyncReturn<String> {
+    SyncReturn(get_buildin_option(&key))
 }
 
 pub fn main_check_hwcodec() {
