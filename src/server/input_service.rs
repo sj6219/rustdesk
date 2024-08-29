@@ -312,7 +312,7 @@ pub fn new_window_focus() -> GenericService {
 fn update_last_cursor_pos(x: i32, y: i32) {
     let mut lock = LATEST_SYS_CURSOR_POS.lock().unwrap();
     if lock.1 .0 != x || lock.1 .1 != y {
-        (lock.0, lock.1) = (Instant::now(), (x, y))
+        (lock.0, lock.1) = (Some(Instant::now()), (x, y))
     }
 }
 
@@ -385,6 +385,9 @@ fn run_cursor(sp: MouseCursorService, state: &mut StateCursor) -> ResultType<()>
 
 fn run_window_focus(sp: EmptyExtraFieldService, state: &mut StateWindowFocus) -> ResultType<()> {
     let displays = super::display_service::get_sync_displays();
+    if displays.len() <= 1 {
+        return Ok(());
+    }
     let disp_idx = crate::get_focused_display(displays);
     if let Some(disp_idx) = disp_idx.map(|id| id as i32) {
         if state.is_changed(disp_idx) {
@@ -411,7 +414,7 @@ lazy_static::lazy_static! {
     };
     static ref KEYS_DOWN: Arc<Mutex<HashMap<KeysDown, Instant>>> = Default::default();
     static ref LATEST_PEER_INPUT_CURSOR: Arc<Mutex<Input>> = Default::default();
-    static ref LATEST_SYS_CURSOR_POS: Arc<Mutex<(Instant, (i32, i32))>> = Arc::new(Mutex::new((Instant::now().sub(MOUSE_MOVE_PROTECTION_TIMEOUT), (INVALID_CURSOR_POS, INVALID_CURSOR_POS))));
+    static ref LATEST_SYS_CURSOR_POS: Arc<Mutex<(Option<Instant>, (i32, i32))>> = Arc::new(Mutex::new((None, (INVALID_CURSOR_POS, INVALID_CURSOR_POS))));
 }
 static EXITING: AtomicBool = AtomicBool::new(false);
 
@@ -809,7 +812,13 @@ fn active_mouse_(conn: i32) -> bool {
     true
     /* this method is buggy (not working on macOS, making fast moving mouse event discarded here) and added latency (this is blocking way, must do in async way), so we disable it for now
     // out of time protection
-    if LATEST_SYS_CURSOR_POS.lock().unwrap().0.elapsed() > MOUSE_MOVE_PROTECTION_TIMEOUT {
+    if LATEST_SYS_CURSOR_POS
+        .lock()
+        .unwrap()
+        .0
+        .map(|t| t.elapsed() > MOUSE_MOVE_PROTECTION_TIMEOUT)
+        .unwrap_or(true)
+    {
         return true;
     }
 
@@ -969,12 +978,11 @@ pub fn handle_mouse_(evt: &MouseEvent, conn: i32) {
         },
         MOUSE_TYPE_WHEEL | MOUSE_TYPE_TRACKPAD => {
             #[allow(unused_mut)]
-            let mut x = evt.x;
+            let mut x = -evt.x;
             #[allow(unused_mut)]
             let mut y = evt.y;
             #[cfg(not(windows))]
             {
-                x = -x;
                 y = -y;
             }
 
@@ -1642,6 +1650,18 @@ async fn send_sas() -> ResultType<()> {
         crate::platform::send_sas();
     };
     Ok(())
+}
+
+#[inline]
+#[cfg(target_os = "linux")]
+pub fn wayland_use_uinput() -> bool {
+    !crate::platform::is_x11() && crate::is_server()
+}
+
+#[inline]
+#[cfg(target_os = "linux")]
+pub fn wayland_use_rdp_input() -> bool {
+    !crate::platform::is_x11() && !crate::is_server()
 }
 
 lazy_static::lazy_static! {

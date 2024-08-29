@@ -6,6 +6,7 @@ import 'package:bot_toast/bot_toast.dart';
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_hbb/common/widgets/overlay.dart';
 import 'package:flutter_hbb/desktop/pages/desktop_tab_page.dart';
 import 'package:flutter_hbb/desktop/pages/install_page.dart';
 import 'package:flutter_hbb/desktop/pages/server_page.dart';
@@ -156,6 +157,7 @@ void runMobileApp() async {
   await initEnv(kAppTypeMain);
   if (isAndroid) androidChannelInit();
   if (isAndroid) platformFFI.syncAndroidServiceAppDirConfigPath();
+  draggablePositions.load();
   await Future.wait([gFFI.abModel.loadCache(), gFFI.groupModel.loadCache()]);
   gFFI.userModel.refreshCurrentUser();
   runApp(App());
@@ -176,6 +178,7 @@ void runMultiWindow(
   late Widget widget;
   switch (appType) {
     case kAppTypeDesktopRemote:
+      draggablePositions.load();
       widget = DesktopRemoteScreen(
         params: argument,
       );
@@ -257,7 +260,7 @@ showCmWindow({bool isStartup = false}) async {
     WindowOptions windowOptions = getHiddenTitleBarWindowOptions(
         size: kConnectionManagerWindowSizeClosedChat, alwaysOnTop: true);
     await windowManager.waitUntilReadyToShow(windowOptions, null);
-    bind.mainHideDocker();
+    bind.mainHideDock();
     await Future.wait([
       windowManager.show(),
       windowManager.focus(),
@@ -285,14 +288,14 @@ hideCmWindow({bool isStartup = false}) async {
         size: kConnectionManagerWindowSizeClosedChat);
     windowManager.setOpacity(0);
     await windowManager.waitUntilReadyToShow(windowOptions, null);
-    bind.mainHideDocker();
+    bind.mainHideDock();
     await windowManager.minimize();
     await windowManager.hide();
     _isCmReadyToShow = true;
   } else if (_isCmReadyToShow) {
     if (await windowManager.getOpacity() != 0) {
       await windowManager.setOpacity(0);
-      bind.mainHideDocker();
+      bind.mainHideDock();
       await windowManager.minimize();
       await windowManager.hide();
     }

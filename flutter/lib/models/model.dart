@@ -192,10 +192,10 @@ class FfiModel with ChangeNotifier {
       _permissions[k] = v == 'true';
     });
     // Only inited at remote page
-    if (desktopType == DesktopType.remote) {
+    if (parent.target?.connType == ConnType.defaultConn) {
       KeyboardEnabledState.find(id).value = _permissions['keyboard'] != false;
     }
-    debugPrint('$_permissions');
+    debugPrint('updatePermission: $_permissions');
     notifyListeners();
   }
 
@@ -304,8 +304,13 @@ class FfiModel with ChangeNotifier {
       } else if (name == 'job_progress') {
         parent.target?.fileModel.jobController.tryUpdateJobProgress(evt);
       } else if (name == 'job_done') {
-        parent.target?.fileModel.jobController.jobDone(evt);
-        parent.target?.fileModel.refreshAll();
+        bool? refresh =
+            await parent.target?.fileModel.jobController.jobDone(evt);
+        if (refresh == true) {
+          // many job done for delete directory
+          // todo: refresh may not work when confirm delete local directory
+          parent.target?.fileModel.refreshAll();
+        }
       } else if (name == 'job_error') {
         parent.target?.fileModel.jobController.jobError(evt);
       } else if (name == 'override_file_confirm') {
@@ -384,7 +389,7 @@ class FfiModel with ChangeNotifier {
       } else if (name == 'use_texture_render') {
         _handleUseTextureRender(evt, sessionId, peerId);
       } else {
-        debugPrint('Unknown event name: $name');
+        debugPrint('Event is not handled in the fixed branch: $name');
       }
     };
   }
@@ -438,20 +443,6 @@ class FfiModel with ChangeNotifier {
   _handlePortableServiceRunning(String peerId, Map<String, dynamic> evt) {
     final running = evt['running'] == 'true';
     parent.target?.elevationModel.onPortableServiceRunning(running);
-    if (running) {
-      if (pi.primaryDisplay != kInvalidDisplayIndex) {
-        if (pi.currentDisplay != pi.primaryDisplay) {
-          // Notify to switch display
-          msgBox(sessionId, 'custom-nook-nocancel-hasclose-info', 'Prompt',
-              'elevated_switch_display_msg', '', parent.target!.dialogManager);
-          bind.sessionSwitchDisplay(
-            isDesktop: isDesktop,
-            sessionId: sessionId,
-            value: Int32List.fromList([pi.primaryDisplay]),
-          );
-        }
-      }
-    }
   }
 
   handleAliasChanged(Map<String, dynamic> evt) {
@@ -737,6 +728,8 @@ class FfiModel with ChangeNotifier {
 
   /// Handle the peer info event based on [evt].
   handlePeerInfo(Map<String, dynamic> evt, String peerId, bool isCache) async {
+    parent.target?.chatModel.voiceCallStatus.value = VoiceCallStatus.notStarted;
+
     // This call is to ensuer the keyboard mode is updated depending on the peer version.
     parent.target?.inputModel.updateKeyboardMode();
 
@@ -917,10 +910,12 @@ class FfiModel with ChangeNotifier {
       if (parent.target?.connType == ConnType.defaultConn &&
           parent.target != null &&
           parent.target!.ffiModel.permissions['keyboard'] != false) {
-        Timer(
-            Duration(milliseconds: delayMSecs),
-            () => parent.target!.dialogManager
-                .showMobileActionsOverlay(ffi: parent.target!));
+        Timer(Duration(milliseconds: delayMSecs), () {
+          if (parent.target!.dialogManager.mobileActionsOverlayVisible.isTrue) {
+            parent.target!.dialogManager
+                .showMobileActionsOverlay(ffi: parent.target!);
+          }
+        });
       }
     }
   }
@@ -1013,14 +1008,15 @@ class FfiModel with ChangeNotifier {
             // Notify to switch display
             msgBox(sessionId, 'custom-nook-nocancel-hasclose-info', 'Prompt',
                 'display_is_plugged_out_msg', '', parent.target!.dialogManager);
-            final newDisplay = pi.primaryDisplay == kInvalidDisplayIndex
-                ? 0
-                : pi.primaryDisplay;
-            final displays = newDisplay;
+            final isPeerPrimaryDisplayValid =
+                pi.primaryDisplay == kInvalidDisplayIndex ||
+                    pi.primaryDisplay >= pi.displays.length;
+            final newDisplay =
+                isPeerPrimaryDisplayValid ? 0 : pi.primaryDisplay;
             bind.sessionSwitchDisplay(
               isDesktop: isDesktop,
               sessionId: sessionId,
-              value: Int32List.fromList([displays]),
+              value: Int32List.fromList([newDisplay]),
             );
 
             if (_pi.isSupportMultiUiSession) {
@@ -1185,26 +1181,28 @@ class ImageModel with ChangeNotifier {
 
   addCallbackOnFirstImage(Function(String) cb) => callbacksOnFirstImage.add(cb);
 
-  onRgba(int display, Uint8List rgba) {
+  clearImage() => _image = null;
+
+  onRgba(int display, Uint8List rgba) async {
+    try {
+      await decodeAndUpdate(display, rgba);
+    } catch (e) {
+      debugPrint('onRgba error: $e');
+    }
+    platformFFI.nextRgba(sessionId, display);
+  }
+
+  decodeAndUpdate(int display, Uint8List rgba) async {
     final pid = parent.target?.id;
     final rect = parent.target?.ffiModel.pi.getDisplayRect(display);
-    img.decodeImageFromPixels(
-        rgba,
-        rect?.width.toInt() ?? 0,
-        rect?.height.toInt() ?? 0,
-        isWeb ? ui.PixelFormat.rgba8888 : ui.PixelFormat.bgra8888,
-        onPixelsCopied: () {
-      // Unlock the rgba memory from rust codes.
-      platformFFI.nextRgba(sessionId, display);
-    }).then((image) {
-      if (parent.target?.id != pid) return;
-      try {
-        // my throw exception, because the listener maybe already dispose
-        update(image);
-      } catch (e) {
-        debugPrint('update image: $e');
-      }
-    });
+    final image = await img.decodeImageFromPixels(
+      rgba,
+      rect?.width.toInt() ?? 0,
+      rect?.height.toInt() ?? 0,
+      isWeb ? ui.PixelFormat.rgba8888 : ui.PixelFormat.bgra8888,
+    );
+    if (parent.target?.id != pid) return;
+    await update(image);
   }
 
   update(ui.Image? image) async {
@@ -1576,22 +1574,24 @@ class CanvasModel with ChangeNotifier {
     notifyListeners();
   }
 
-  updateScale(double v) {
+  updateScale(double v, Offset focalPoint) {
     if (parent.target?.imageModel.image == null) return;
-    final offset = parent.target?.cursorModel.offset ?? const Offset(0, 0);
-    var r = parent.target?.cursorModel.getVisibleRect() ?? Rect.zero;
-    final px0 = (offset.dx - r.left) * _scale;
-    final py0 = (offset.dy - r.top) * _scale;
+    final s = _scale;
     _scale *= v;
     final maxs = parent.target?.imageModel.maxScale ?? 1;
     final mins = parent.target?.imageModel.minScale ?? 1;
     if (_scale > maxs) _scale = maxs;
     if (_scale < mins) _scale = mins;
-    r = parent.target?.cursorModel.getVisibleRect() ?? Rect.zero;
-    final px1 = (offset.dx - r.left) * _scale;
-    final py1 = (offset.dy - r.top) * _scale;
-    _x -= px1 - px0;
-    _y -= py1 - py0;
+    // (focalPoint.dx - _x_1) / s1 + displayOriginX = (focalPoint.dx - _x_2) / s2 + displayOriginX
+    // _x_2 = focalPoint.dx - (focalPoint.dx - _x_1) / s1 * s2
+    _x = focalPoint.dx - (focalPoint.dx - _x) / s * _scale;
+    final adjustForKeyboard =
+        parent.target?.cursorModel.adjustForKeyboard() ?? 0.0;
+    // (focalPoint.dy - _y_1 + adjust) / s1 + displayOriginY = (focalPoint.dy - _y_2 + adjust) / s2 + displayOriginY
+    // _y_2 = focalPoint.dy + adjust - (focalPoint.dy - _y_1 + adjust) / s1 * s2
+    _y = focalPoint.dy +
+        adjustForKeyboard -
+        (focalPoint.dy - _y + adjustForKeyboard) / s * _scale;
     notifyListeners();
   }
 
@@ -1736,7 +1736,7 @@ class PredefinedCursor {
     _image2 = img2.decodePng(base64Decode(png));
     if (_image2 != null) {
       // The png type of forbidden cursor image is `PngColorType.indexed`.
-      if (isWindows && id == kPreForbiddenCursorId) {
+      if (id == kPreForbiddenCursorId) {
         _image2 = _image2!.convert(format: img2.Format.uint8, numChannels: 4);
       }
 
@@ -1807,21 +1807,22 @@ class CursorModel with ChangeNotifier {
   // But we're now using a Container(child: Stack(...)) to wrap the KeyHelpTools,
   // and the listener is on the Container.
   Rect? _keyHelpToolsRect;
+  // `lastIsBlocked` is only used in common/widgets/remote_input.dart -> _RawTouchGestureDetectorRegionState -> onDoubleTap()
+  // Because onDoubleTap() doesn't have the `event` parameter, we can't get the touch event's position.
   bool _lastIsBlocked = false;
+  double _yForKeyboardAdjust = 0;
 
-  set keyHelpToolsRect(Rect? r) {
+  keyHelpToolsVisibilityChanged(Rect? r) {
     _keyHelpToolsRect = r;
     if (r == null) {
       _lastIsBlocked = false;
     } else {
-      // `lastIsBlocked` is only used in common/widgets/remote_input.dart -> _RawTouchGestureDetectorRegionState -> onDoubleTap()
-      // Because onDoubleTap() doesn't have the `event` parameter, we can't get the touch event's position.
-      //
       // Block the touch event is safe here.
-      // `lastIsBlocked` is only used in onDoubleTap() to block the touch event from the KeyHelpTools. 
+      // `lastIsBlocked` is only used in onDoubleTap() to block the touch event from the KeyHelpTools.
       // `lastIsBlocked` will be set when the cursor is moving or touch somewhere else.
       _lastIsBlocked = true;
     }
+    _yForKeyboardAdjust = _y;
   }
 
   get lastIsBlocked => _lastIsBlocked;
@@ -1871,14 +1872,18 @@ class CursorModel with ChangeNotifier {
   }
 
   get keyboardHeight => MediaQueryData.fromWindow(ui.window).viewInsets.bottom;
+  get scale => parent.target?.canvasModel.scale ?? 1.0;
 
   double adjustForKeyboard() {
+    if (keyboardHeight < 100) {
+      return 0.0;
+    }
+
     final m = MediaQueryData.fromWindow(ui.window);
     final size = m.size;
-    if (keyboardHeight < 100) return 0;
-    final s = parent.target?.canvasModel.scale ?? 1.0;
     final thresh = (size.height - keyboardHeight) / 2;
-    var h = (_y - getVisibleRect().top) * s; // local physical display height
+    final h = (_yForKeyboardAdjust - getVisibleRect().top) *
+        scale; // local physical display height
     return h - thresh;
   }
 
@@ -1902,17 +1907,16 @@ class CursorModel with ChangeNotifier {
       return false;
     }
     _lastIsBlocked = false;
-    moveLocal(x, y);
+    moveLocal(x, y, adjust: adjustForKeyboard());
     parent.target?.inputModel.moveMouse(_x, _y);
     return true;
   }
 
-  moveLocal(double x, double y) {
-    final scale = parent.target?.canvasModel.scale ?? 1.0;
+  moveLocal(double x, double y, {double adjust = 0}) {
     final xoffset = parent.target?.canvasModel.x ?? 0;
     final yoffset = parent.target?.canvasModel.y ?? 0;
     _x = (x - xoffset) / scale + _displayOriginX;
-    _y = (y - yoffset) / scale + _displayOriginY;
+    _y = (y - yoffset + adjust) / scale + _displayOriginY;
     notifyListeners();
   }
 
@@ -2179,6 +2183,7 @@ class CursorModel with ChangeNotifier {
       debugPrint("deleting cursor with key $k");
       deleteCustomCursor(k);
     }
+    resetSystemCursor();
   }
 
   trySetRemoteWindowCoords() {
@@ -2553,32 +2558,30 @@ class FFI {
           }
         } else if (message is EventToUI_Rgba) {
           final display = message.field0;
-          if (imageModel.useTextureRender || ffiModel.pi.forceTextureRender) {
-            //debugPrint("EventToUI_Rgba display:$display");
-            textureModel.setTextureType(display: display, gpuTexture: false);
+          // Fetch the image buffer from rust codes.
+          final sz = platformFFI.getRgbaSize(sessionId, display);
+          if (sz == 0) {
+            platformFFI.nextRgba(sessionId, display);
+            return;
+          }
+          final rgba = platformFFI.getRgba(sessionId, display, sz);
+          if (rgba != null) {
             onEvent2UIRgba();
+            await imageModel.onRgba(display, rgba);
           } else {
-            // Fetch the image buffer from rust codes.
-            final sz = platformFFI.getRgbaSize(sessionId, display);
-            if (sz == 0) {
-              platformFFI.nextRgba(sessionId, display);
-              return;
-            }
-            final rgba = platformFFI.getRgba(sessionId, display, sz);
-            if (rgba != null) {
-              onEvent2UIRgba();
-              imageModel.onRgba(display, rgba);
-            } else {
-              platformFFI.nextRgba(sessionId, display);
-            }
+            platformFFI.nextRgba(sessionId, display);
           }
         } else if (message is EventToUI_Texture) {
           final display = message.field0;
-          debugPrint("EventToUI_Texture display:$display");
-          if (hasGpuTextureRender) {
-            textureModel.setTextureType(display: display, gpuTexture: true);
-            onEvent2UIRgba();
+          final gpuTexture = message.field1;
+          debugPrint(
+              "EventToUI_Texture display:$display, gpuTexture:$gpuTexture");
+          if (gpuTexture && !hasGpuTextureRender) {
+            debugPrint('the gpuTexture is not supported.');
+            return;
           }
+          textureModel.setTextureType(display: display, gpuTexture: gpuTexture);
+          onEvent2UIRgba();
         }
       }();
     });
@@ -2614,8 +2617,9 @@ class FFI {
         remember: remember);
   }
 
-  void send2FA(SessionID sessionId, String code) {
-    bind.sessionSend2Fa(sessionId: sessionId, code: code);
+  void send2FA(SessionID sessionId, String code, bool trustThisDevice) {
+    bind.sessionSend2Fa(
+        sessionId: sessionId, code: code, trustThisDevice: trustThisDevice);
   }
 
   /// Close the remote session.
@@ -2632,7 +2636,7 @@ class FFI {
           canvasModel.scale,
           ffiModel.pi.currentDisplay);
     }
-    imageModel.update(null);
+    await imageModel.update(null);
     cursorModel.clear();
     ffiModel.clear();
     canvasModel.clear();

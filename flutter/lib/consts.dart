@@ -32,6 +32,7 @@ const String kPeerPlatformWindows = "Windows";
 const String kPeerPlatformLinux = "Linux";
 const String kPeerPlatformMacOS = "Mac OS";
 const String kPeerPlatformAndroid = "Android";
+const String kPeerPlatformWebDesktop = "WebDesktop";
 
 const double kScrollbarThickness = 12.0;
 
@@ -134,12 +135,27 @@ const String kOptionEnableCheckUpdate = "enable-check-update";
 const String kOptionAllowLinuxHeadless = "allow-linux-headless";
 const String kOptionAllowRemoveWallpaper = "allow-remove-wallpaper";
 const String kOptionStopService = "stop-service";
+const String kOptionDirectxCapture = "enable-directx-capture";
+const String kOptionAllowRemoteCmModification = "allow-remote-cm-modification";
+const String kOptionEnableTrustedDevices = "enable-trusted-devices";
+
+// buildin opitons
+const String kOptionHideServerSetting = "hide-server-settings";
+const String kOptionHideProxySetting = "hide-proxy-settings";
+const String kOptionHideSecuritySetting = "hide-security-settings";
+const String kOptionHideNetworkSetting = "hide-network-settings";
+const String kOptionRemovePresetPasswordWarning =
+    "remove-preset-password-warning";
+const kHideUsernameOnCard = "hide-username-on-card";
+const String kOptionHideHelpCards = "hide-help-cards";
 
 const String kOptionToggleViewOnly = "view-only";
 
 const String kOptionDisableFloatingWindow = "disable-floating-window";
 
 const String kOptionKeepScreenOn = "keep-screen-on";
+
+const String kOptionShowMobileAction = "showMobileActions";
 
 const String kUrlActionClose = "close";
 
@@ -151,6 +167,8 @@ const int kWindowMainId = 0;
 
 const String kPointerEventKindTouch = "touch";
 const String kPointerEventKindMouse = "mouse";
+
+const String kKeyFlutterKey = "flutter_key";
 
 const String kKeyShowDisplaysAsIndividualWindows =
     'displays_as_individual_windows';
@@ -224,9 +242,9 @@ const kDefaultScrollDuration = Duration(milliseconds: 50);
 const kDefaultMouseWheelThrottleDuration = Duration(milliseconds: 50);
 const kFullScreenEdgeSize = 0.0;
 const kMaximizeEdgeSize = 0.0;
-// Do not use kWindowEdgeSize directly. Use `windowEdgeSize` in `common.dart` instead.
-final kWindowEdgeSize = isWindows ? 1.0 : 5.0;
-final kWindowBorderWidth = 1.0;
+// Do not use kWindowResizeEdgeSize directly. Use `windowResizeEdgeSize` in `common.dart` instead.
+const kWindowResizeEdgeSize = 5.0;
+const kWindowBorderWidth = 1.0;
 const kDesktopMenuPadding = EdgeInsets.only(left: 12.0, right: 3.0);
 const kFrameBorderRadius = 12.0;
 const kFrameClipRRectBorderRadius = 12.0;

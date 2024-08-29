@@ -45,7 +45,9 @@ class RemotePage extends StatefulWidget {
     this.switchUuid,
     this.forceRelay,
     this.isSharedPassword,
-  }) : super(key: key);
+  }) : super(key: key) {
+    initSharedStates(id);
+  }
 
   final String id;
   final SessionID? sessionId;
@@ -64,7 +66,7 @@ class RemotePage extends StatefulWidget {
 
   @override
   State<RemotePage> createState() {
-    final state = _RemotePageState();
+    final state = _RemotePageState(id);
     _lastState.value = state;
     return state;
   }
@@ -94,8 +96,11 @@ class _RemotePageState extends State<RemotePage>
 
   SessionID get sessionId => _ffi.sessionId;
 
+  _RemotePageState(String id) {
+    _initStates(id);
+  }
+
   void _initStates(String id) {
-    initSharedStates(id);
     _zoomCursor = PeerBoolOption.find(id, kOptionZoomCursor);
     _showRemoteCursor = ShowRemoteCursorState.find(id);
     _keyboardEnabled = KeyboardEnabledState.find(id);
@@ -105,9 +110,8 @@ class _RemotePageState extends State<RemotePage>
   @override
   void initState() {
     super.initState();
-    _initStates(widget.id);
     _ffi = FFI(widget.sessionId);
-    Get.put(_ffi, tag: widget.id);
+    Get.put<FFI>(_ffi, tag: widget.id);
     _ffi.imageModel.addCallbackOnFirstImage((String peerId) {
       showKBLayoutTypeChooserIfNeeded(
           _ffi.ffiModel.pi.platform, _ffi.dialogManager);
@@ -134,11 +138,14 @@ class _RemotePageState extends State<RemotePage>
     _ffi.ffiModel.updateEventListener(sessionId, widget.id);
     if (!isWeb) bind.pluginSyncUi(syncTo: kAppTypeDesktopRemote);
     _ffi.qualityMonitorModel.checkShowQualityMonitor(sessionId);
-    // Session option should be set after models.dart/FFI.start
-    _showRemoteCursor.value = bind.sessionGetToggleOptionSync(
-        sessionId: sessionId, arg: 'show-remote-cursor');
-    _zoomCursor.value = bind.sessionGetToggleOptionSync(
-        sessionId: sessionId, arg: kOptionZoomCursor);
+    _ffi.dialogManager.loadMobileActionsOverlayVisible();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Session option should be set after models.dart/FFI.start
+      _showRemoteCursor.value = bind.sessionGetToggleOptionSync(
+          sessionId: sessionId, arg: 'show-remote-cursor');
+      _zoomCursor.value = bind.sessionGetToggleOptionSync(
+          sessionId: sessionId, arg: kOptionZoomCursor);
+    });
     DesktopMultiWindow.addListener(this);
     // if (!_isCustomCursorInited) {
     //   customCursorController.registerNeedUpdateCursorCallback(
@@ -153,7 +160,10 @@ class _RemotePageState extends State<RemotePage>
     // }
 
     _blockableOverlayState.applyFfi(_ffi);
-    widget.tabController?.onSelected?.call(widget.id);
+    // Call onSelected in post frame callback, since we cannot guarantee that the callback will not call setState.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      widget.tabController?.onSelected?.call(widget.id);
+    });
   }
 
   @override
@@ -322,22 +332,13 @@ class _RemotePageState extends State<RemotePage>
                       if (!_ffi.ffiModel.isPeerAndroid) {
                         return Offstage();
                       } else {
-                        if (_ffi.connType == ConnType.defaultConn &&
-                            _ffi.ffiModel.permissions['keyboard'] != false) {
-                          Timer(
-                              Duration(milliseconds: 10),
-                              () => _ffi.dialogManager
-                                  .mobileActionsOverlayVisible.value = true);
-                        }
                         return Obx(() => Offstage(
                               offstage: _ffi.dialogManager
                                   .mobileActionsOverlayVisible.isFalse,
                               child: Overlay(initialEntries: [
                                 makeMobileActionsOverlayEntry(
-                                  () => _ffi
-                                      .dialogManager
-                                      .mobileActionsOverlayVisible
-                                      .value = false,
+                                  () => _ffi.dialogManager
+                                      .setMobileActionsOverlayVisible(false),
                                   ffi: _ffi,
                                 )
                               ]),
@@ -514,12 +515,13 @@ class _RemotePageState extends State<RemotePage>
     ];
 
     if (!_ffi.canvasModel.cursorEmbedded) {
-      paints.add(Obx(() => Offstage(
-          offstage: _showRemoteCursor.isFalse || _remoteCursorMoved.isFalse,
-          child: CursorPaint(
-            id: widget.id,
-            zoomCursor: _zoomCursor,
-          ))));
+      paints
+          .add(Obx(() => _showRemoteCursor.isFalse || _remoteCursorMoved.isFalse
+              ? Offstage()
+              : CursorPaint(
+                  id: widget.id,
+                  zoomCursor: _zoomCursor,
+                )));
     }
     paints.add(
       Positioned(
@@ -571,11 +573,6 @@ class _ImagePaintState extends State<ImagePaint> {
   RxBool get keyboardEnabled => widget.keyboardEnabled;
   RxBool get remoteCursorMoved => widget.remoteCursorMoved;
   Widget Function(Widget)? get listenerBuilder => widget.listenerBuilder;
-
-  @override
-  void initState() {
-    super.initState();
-  }
 
   @override
   Widget build(BuildContext context) {
