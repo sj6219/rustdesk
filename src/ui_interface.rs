@@ -3,7 +3,10 @@ use hbb_common::password_security;
 use hbb_common::{
     allow_err,
     bytes::Bytes,
-    config::{self, Config, LocalConfig, PeerConfig, CONNECT_TIMEOUT, RENDEZVOUS_PORT},
+    config::{
+        self, keys::*, option2bool, Config, LocalConfig, PeerConfig, CONNECT_TIMEOUT,
+        RENDEZVOUS_PORT,
+    },
     directories_next,
     futures::future::join_all,
     log,
@@ -198,6 +201,16 @@ pub fn get_hard_option(key: String) -> String {
         .read()
         .unwrap()
         .get(&key)
+        .cloned()
+        .unwrap_or_default()
+}
+
+#[inline]
+pub fn get_builtin_option(key: &str) -> String {
+    config::BUILTIN_SETTINGS
+        .read()
+        .unwrap()
+        .get(key)
         .cloned()
         .unwrap_or_default()
 }
@@ -414,34 +427,53 @@ pub fn install_path() -> String {
 }
 
 #[inline]
+pub fn install_options() -> String {
+    #[cfg(windows)]
+    return crate::platform::windows::get_install_options();
+    #[cfg(not(windows))]
+    return "{}".to_owned();
+}
+
+#[inline]
 pub fn get_socks() -> Vec<String> {
-    #[cfg(any(target_os = "android", target_os = "ios"))]
-    return Vec::new();
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    {
-        let s = ipc::get_socks();
-        match s {
-            None => Vec::new(),
-            Some(s) => {
-                let mut v = Vec::new();
-                v.push(s.proxy);
-                v.push(s.username);
-                v.push(s.password);
-                v
-            }
+    let s = ipc::get_socks();
+    #[cfg(target_os = "android")]
+    let s = Config::get_socks();
+    #[cfg(target_os = "ios")]
+    let s: Option<config::Socks5Server> = None;
+    match s {
+        None => Vec::new(),
+        Some(s) => {
+            let mut v = Vec::new();
+            v.push(s.proxy);
+            v.push(s.username);
+            v.push(s.password);
+            v
         }
     }
 }
 
 #[inline]
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub fn set_socks(proxy: String, username: String, password: String) {
-    ipc::set_socks(config::Socks5Server {
+    let socks = config::Socks5Server {
         proxy,
         username,
         password,
-    })
-    .ok();
+    };
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    ipc::set_socks(socks).ok();
+    #[cfg(target_os = "android")]
+    {
+        if socks.proxy.is_empty() {
+            Config::set_socks(None);
+        } else {
+            Config::set_socks(Some(socks));
+        }
+        crate::common::test_nat_type();
+        crate::RendezvousMediator::restart();
+        log::info!("socks updated");
+    }
 }
 
 #[inline]
@@ -453,9 +485,6 @@ pub fn get_proxy_status() -> bool {
     #[cfg(any(target_os = "android", target_os = "ios"))]
     return false;
 }
-
-#[cfg(any(target_os = "android", target_os = "ios"))]
-pub fn set_socks(_: String, _: String, _: String) {}
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 #[inline]
@@ -663,7 +692,6 @@ pub fn create_shortcut(_id: String) {
 #[cfg(any(target_os = "android", target_os = "ios", feature = "flutter"))]
 #[inline]
 pub fn discover() {
-    #[cfg(not(any(target_os = "ios")))]
     std::thread::spawn(move || {
         allow_err!(crate::lan::discover());
     });
@@ -760,6 +788,7 @@ pub fn http_request(url: String, method: String, body: Option<String>, header: S
         current_request.lock().unwrap().insert(url, res);
     });
 }
+
 #[inline]
 pub fn get_async_http_status(url: String) -> Option<String> {
     match ASYNC_HTTP_STATUS.lock().unwrap().get(&url) {
@@ -904,8 +933,7 @@ pub fn get_api_server() -> String {
 #[inline]
 pub fn has_hwcodec() -> bool {
     // Has real hardware codec using gpu
-    (cfg!(feature = "hwcodec") && (cfg!(windows) || cfg!(target_os = "linux")))
-        || cfg!(feature = "mediacodec")
+    (cfg!(feature = "hwcodec") && cfg!(not(target_os = "ios"))) || cfg!(feature = "mediacodec")
 }
 
 #[inline]
@@ -1110,6 +1138,7 @@ async fn check_connect_status_(reconnect: bool, rx: mpsc::UnboundedReceiver<ipc:
         )
     ))]
     let mut enable_file_transfer = "".to_owned();
+    let is_cm = crate::common::is_cm();
 
     loop {
         if let Ok(mut c) = ipc::connect(1000, "").await {
@@ -1120,6 +1149,9 @@ async fn check_connect_status_(reconnect: bool, rx: mpsc::UnboundedReceiver<ipc:
                         match res {
                             Err(err) => {
                                 log::error!("ipc connection closed: {}", err);
+                                if is_cm {
+                                    crate::ui_cm_interface::quit_cm();
+                                }
                                 break;
                             }
                             #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -1139,9 +1171,9 @@ async fn check_connect_status_(reconnect: bool, rx: mpsc::UnboundedReceiver<ipc:
                                             )
                                         ))]
                                 {
-                                    let b = OPTIONS.lock().unwrap().get(config::keys::OPTION_ENABLE_FILE_TRANSFER).map(|x| x.to_string()).unwrap_or_default();
+                                    let b = OPTIONS.lock().unwrap().get(OPTION_ENABLE_FILE_TRANSFER).map(|x| x.to_string()).unwrap_or_default();
                                     if b != enable_file_transfer {
-                                        clipboard::ContextSend::enable(b.is_empty());
+                                        clipboard::ContextSend::enable(option2bool(OPTION_ENABLE_FILE_TRANSFER, &b));
                                         enable_file_transfer = b;
                                     }
                                 }
@@ -1408,7 +1440,7 @@ pub fn verify_bot(token: String) -> String {
 
 pub fn check_hwcodec() {
     #[cfg(feature = "hwcodec")]
-    #[cfg(any(target_os = "windows", target_os = "linux"))]
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
         use std::sync::Once;
         static ONCE: Once = Once::new();
@@ -1422,4 +1454,53 @@ pub fn check_hwcodec() {
             }
         })
     }
+}
+
+#[cfg(feature = "flutter")]
+pub fn get_unlock_pin() -> String {
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    return String::default();
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    return ipc::get_unlock_pin();
+}
+
+#[cfg(feature = "flutter")]
+pub fn set_unlock_pin(pin: String) -> String {
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    return String::default();
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    match ipc::set_unlock_pin(pin, true) {
+        Ok(_) => String::default(),
+        Err(err) => err.to_string(),
+    }
+}
+
+#[cfg(feature = "flutter")]
+pub fn get_trusted_devices() -> String {
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    return Config::get_trusted_devices_json();
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    return ipc::get_trusted_devices();
+}
+
+#[cfg(feature = "flutter")]
+pub fn remove_trusted_devices(json: &str) {
+    let hwids = serde_json::from_str::<Vec<Bytes>>(json).unwrap_or_default();
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    Config::remove_trusted_devices(&hwids);
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    ipc::remove_trusted_devices(hwids);
+}
+
+#[cfg(feature = "flutter")]
+pub fn clear_trusted_devices() {
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    Config::clear_trusted_devices();
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    ipc::clear_trusted_devices();
+}
+
+#[cfg(feature = "flutter")]
+pub fn max_encrypt_len() -> usize {
+    hbb_common::config::ENCRYPT_MAX_LEN
 }
