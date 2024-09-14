@@ -192,19 +192,21 @@ impl EncoderApi for HwRamEncoder {
     }
 
     fn support_abr(&self) -> bool {
-        ["qsv", "vaapi", "mediacodec"]
+        ["qsv", "vaapi", "mediacodec", "videotoolbox"]
             .iter()
             .all(|&x| !self.config.name.contains(x))
     }
 
     fn support_changing_quality(&self) -> bool {
-        ["vaapi", "mediacodec"]
+        ["vaapi", "mediacodec", "videotoolbox"]
             .iter()
             .all(|&x| !self.config.name.contains(x))
     }
 
     fn latency_free(&self) -> bool {
-        !self.config.name.contains("mediacodec")
+        ["mediacodec", "videotoolbox"]
+            .iter()
+            .all(|&x| !self.config.name.contains(x))
     }
 
     fn is_hardware(&self) -> bool {
@@ -496,18 +498,32 @@ pub struct HwCodecConfig {
     pub vram_decode: Vec<hwcodec::vram::DecodeContext>,
 }
 
+// HwCodecConfig2 is used to store the config in json format,
+// confy can't serde HwCodecConfig successfully if the non-first struct Vec is empty due to old toml version.
+// struct T { a: Vec<A>, b: Vec<String>} will fail if b is empty, but struct T { a: Vec<String>, b: Vec<String>} is ok.
+#[derive(Debug, Default, Serialize, Deserialize, Clone)]
+struct HwCodecConfig2 {
+    #[serde(default)]
+    pub config: String,
+}
+
 // ipc server process start check process once, other process get from ipc server once
 // install: --server start check process, check process send to --server,  ui get from --server
 // portable: ui start check process, check process send to ui
 // sciter and unilink: get from ipc server
 impl HwCodecConfig {
-    #[cfg(any(target_os = "windows", target_os = "linux"))]
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
     pub fn set(config: String) {
         let config = serde_json::from_str(&config).unwrap_or_default();
         log::info!("set hwcodec config");
         log::debug!("{config:?}");
-        #[cfg(windows)]
-        hbb_common::config::common_store(&config, "_hwcodec");
+        #[cfg(any(windows, target_os = "macos"))]
+        hbb_common::config::common_store(
+            &HwCodecConfig2 {
+                config: serde_json::to_string_pretty(&config).unwrap_or_default(),
+            },
+            "_hwcodec",
+        );
         *CONFIG.lock().unwrap() = Some(config);
         *CONFIG_SET_BY_IPC.lock().unwrap() = true;
     }
@@ -578,14 +594,15 @@ impl HwCodecConfig {
                 ..Default::default()
             }
         }
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "macos"))]
         {
             let config = CONFIG.lock().unwrap().clone();
             match config {
                 Some(c) => c,
                 None => {
                     log::info!("try load cached hwcodec config");
-                    let c = hbb_common::config::common_load::<HwCodecConfig>("_hwcodec");
+                    let c = hbb_common::config::common_load::<HwCodecConfig2>("_hwcodec");
+                    let c: HwCodecConfig = serde_json::from_str(&c.config).unwrap_or_default();
                     let new_signature = hwcodec::common::get_gpu_signature();
                     if c.signature == new_signature {
                         log::debug!("load cached hwcodec config: {c:?}");
@@ -606,13 +623,13 @@ impl HwCodecConfig {
         {
             CONFIG.lock().unwrap().clone().unwrap_or_default()
         }
-        #[cfg(any(target_os = "macos", target_os = "ios"))]
+        #[cfg(target_os = "ios")]
         {
             HwCodecConfig::default()
         }
     }
 
-    #[cfg(any(target_os = "windows", target_os = "linux"))]
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
     pub fn get_set_value() -> Option<HwCodecConfig> {
         let set = CONFIG_SET_BY_IPC.lock().unwrap().clone();
         if set {
@@ -622,7 +639,7 @@ impl HwCodecConfig {
         }
     }
 
-    #[cfg(any(target_os = "windows", target_os = "linux"))]
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
     pub fn already_set() -> bool {
         CONFIG_SET_BY_IPC.lock().unwrap().clone()
     }
@@ -690,7 +707,7 @@ pub fn check_available_hwcodec() -> String {
     serde_json::to_string(&c).unwrap_or_default()
 }
 
-#[cfg(any(target_os = "windows", target_os = "linux"))]
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub fn start_check_process() {
     if !enable_hwcodec_option() || HwCodecConfig::already_set() {
         return;

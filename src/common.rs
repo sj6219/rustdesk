@@ -56,6 +56,9 @@ pub const PLATFORM_LINUX: &str = "Linux";
 pub const PLATFORM_MACOS: &str = "Mac OS";
 pub const PLATFORM_ANDROID: &str = "Android";
 
+pub const TIMER_OUT: Duration = Duration::from_secs(1);
+pub const DEFAULT_KEEP_ALIVE: i32 = 60_000;
+
 const MIN_VER_MULTI_UI_SESSION: &str = "1.2.4";
 
 pub mod input {
@@ -84,6 +87,7 @@ lazy_static::lazy_static! {
     // Is server logic running. The server code can invoked to run by the main process if --server is not running.
     static ref SERVER_RUNNING: Arc<RwLock<bool>> = Default::default();
     static ref IS_MAIN: bool = std::env::args().nth(1).map_or(true, |arg| !arg.starts_with("--"));
+    static ref IS_CM: bool = std::env::args().nth(1) == Some("--cm".to_owned()) || std::env::args().nth(1) == Some("--cm-no-ui".to_owned());
 }
 
 pub struct SimpleCallOnReturn {
@@ -135,6 +139,11 @@ pub fn is_server() -> bool {
 #[inline]
 pub fn is_main() -> bool {
     *IS_MAIN
+}
+
+#[inline]
+pub fn is_cm() -> bool {
+    *IS_CM
 }
 
 // Is server logic running.
@@ -1342,6 +1351,7 @@ fn read_custom_client_advanced_settings(
     map_display_settings: &HashMap<String, &&str>,
     map_local_settings: &HashMap<String, &&str>,
     map_settings: &HashMap<String, &&str>,
+    map_buildin_settings: &HashMap<String, &&str>,
     is_override: bool,
 ) {
     let mut display_settings = if is_override {
@@ -1359,6 +1369,8 @@ fn read_custom_client_advanced_settings(
     } else {
         config::DEFAULT_SETTINGS.write().unwrap()
     };
+    let mut buildin_settings = config::BUILTIN_SETTINGS.write().unwrap();
+
     if let Some(settings) = settings.as_object() {
         for (k, v) in settings {
             let Some(v) = v.as_str() else {
@@ -1370,6 +1382,8 @@ fn read_custom_client_advanced_settings(
                 local_settings.insert(k2.to_string(), v.to_owned());
             } else if let Some(k2) = map_settings.get(k) {
                 server_settings.insert(k2.to_string(), v.to_owned());
+            } else if let Some(k2) = map_buildin_settings.get(k) {
+                buildin_settings.insert(k2.to_string(), v.to_owned());
             } else {
                 let k2 = k.replace("_", "-");
                 let k = k2.replace("-", "_");
@@ -1382,6 +1396,9 @@ fn read_custom_client_advanced_settings(
                 // server
                 server_settings.insert(k.clone(), v.to_owned());
                 server_settings.insert(k2.clone(), v.to_owned());
+                // buildin
+                buildin_settings.insert(k.clone(), v.to_owned());
+                buildin_settings.insert(k2.clone(), v.to_owned());
             }
         }
     }
@@ -1444,12 +1461,17 @@ pub fn read_custom_client(config: &str) {
     for s in config::keys::KEYS_SETTINGS {
         map_settings.insert(s.replace("_", "-"), s);
     }
+    let mut buildin_settings = HashMap::new();
+    for s in config::keys::KEYS_BUILDIN_SETTINGS {
+        buildin_settings.insert(s.replace("_", "-"), s);
+    }
     if let Some(default_settings) = data.remove("default-settings") {
         read_custom_client_advanced_settings(
             default_settings,
             &map_display_settings,
             &map_local_settings,
             &map_settings,
+            &buildin_settings,
             false,
         );
     }
@@ -1459,6 +1481,7 @@ pub fn read_custom_client(config: &str) {
             &map_display_settings,
             &map_local_settings,
             &map_settings,
+            &buildin_settings,
             true,
         );
     }
@@ -1479,6 +1502,15 @@ pub fn is_empty_uni_link(arg: &str) -> bool {
         return false;
     }
     arg[prefix.len()..].chars().all(|c| c == '/')
+}
+
+pub fn get_hwid() -> Bytes {
+    use sha2::{Digest, Sha256};
+
+    let uuid = hbb_common::get_uuid();
+    let mut hasher = Sha256::new();
+    hasher.update(&uuid);
+    Bytes::from(hasher.finalize().to_vec())
 }
 
 #[cfg(test)]
