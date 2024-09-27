@@ -17,17 +17,17 @@ import '../common.dart';
 
 final syncAbOption = 'sync-ab-with-recent-sessions';
 bool shouldSyncAb() {
-  return bind.mainGetLocalOption(key: syncAbOption).isNotEmpty;
+  return bind.mainGetLocalOption(key: syncAbOption) == 'Y';
 }
 
 final sortAbTagsOption = 'sync-ab-tags';
 bool shouldSortTags() {
-  return bind.mainGetLocalOption(key: sortAbTagsOption).isNotEmpty;
+  return bind.mainGetLocalOption(key: sortAbTagsOption) == 'Y';
 }
 
 final filterAbTagOption = 'filter-ab-by-intersection';
 bool filterAbTagByIntersection() {
-  return bind.mainGetLocalOption(key: filterAbTagOption).isNotEmpty;
+  return bind.mainGetLocalOption(key: filterAbTagOption) == 'Y';
 }
 
 const _personalAddressBookName = "My address book";
@@ -66,10 +66,16 @@ class AbModel {
   var listInitialized = false;
   var _maxPeerOneAb = 0;
 
+  late final Peers peersModel;
+
   WeakReference<FFI> parent;
 
   AbModel(this.parent) {
     addressbooks.clear();
+    peersModel = Peers(
+        name: PeersModelName.addressBook,
+        getInitPeers: () => currentAbPeers,
+        loadEvent: LoadEvent.addressBook);
     if (desktopType == DesktopType.main) {
       Timer.periodic(Duration(milliseconds: 500), (timer) async {
         if (_timerCounter++ % 6 == 0) {
@@ -111,9 +117,10 @@ class AbModel {
   Future<void> _pullAb(
       {required ForcePullAb? force, required bool quiet}) async {
     if (bind.isDisableAb()) return;
-    debugPrint("pullAb, force: $force, quiet: $quiet");
     if (!gFFI.userModel.isLogin) return;
+    if (gFFI.userModel.networkError.isNotEmpty) return;
     if (force == null && listInitialized && current.initialized) return;
+    debugPrint("pullAb, force: $force, quiet: $quiet");
     if (!listInitialized || force == ForcePullAb.listAndCurrent) {
       try {
         // Read personal guid every time to avoid upgrading the server without closing the main window
@@ -815,8 +822,6 @@ abstract class BaseAb {
 }
 
 class LegacyAb extends BaseAb {
-  final sortTags = shouldSortTags().obs;
-  final filterByIntersection = filterAbTagByIntersection().obs;
   bool get emtpy => peers.isEmpty && tags.isEmpty;
   // licensedDevices is obtained from personal ab, shared ab restrict it in server
   var licensedDevices = 0;
@@ -1209,8 +1214,6 @@ class LegacyAb extends BaseAb {
 class Ab extends BaseAb {
   AbProfile profile;
   late final bool personal;
-  final sortTags = shouldSortTags().obs;
-  final filterByIntersection = filterAbTagByIntersection().obs;
   bool get emtpy => peers.isEmpty && tags.isEmpty;
 
   Ab(this.profile, this.personal);
