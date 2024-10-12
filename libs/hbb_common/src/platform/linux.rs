@@ -7,6 +7,9 @@ lazy_static::lazy_static! {
 
 pub const DISPLAY_SERVER_WAYLAND: &str = "wayland";
 pub const DISPLAY_SERVER_X11: &str = "x11";
+pub const DISPLAY_DESKTOP_KDE: &str = "KDE";
+
+pub const XDG_CURRENT_DESKTOP: &str = "XDG_CURRENT_DESKTOP";
 
 pub struct Distro {
     pub name: String,
@@ -26,6 +29,15 @@ impl Distro {
             .trim_matches('"')
             .to_string();
         Self { name, version_id }
+    }
+}
+
+#[inline]
+pub fn is_kde() -> bool {
+    if let Ok(env) = std::env::var(XDG_CURRENT_DESKTOP) {
+        env == DISPLAY_DESKTOP_KDE
+    } else {
+        false
     }
 }
 
@@ -85,40 +97,19 @@ pub fn get_display_server_of_session(session: &str) -> String {
         run_loginctl(Some(vec!["show-session", "-p", "Type", session]))
     // Check session type of the session
     {
-        let display_server = String::from_utf8_lossy(&output.stdout)
+        String::from_utf8_lossy(&output.stdout)
             .replace("Type=", "")
             .trim_end()
-            .into();
-        if display_server == "tty" {
-            // If the type is tty...
-            if let Ok(output) = run_loginctl(Some(vec!["show-session", "-p", "TTY", session]))
-            // Get the tty number
-            {
-                let tty: String = String::from_utf8_lossy(&output.stdout)
-                    .replace("TTY=", "")
-                    .trim_end()
-                    .into();
-                if let Ok(xorg_results) = run_cmds(&format!("ps -e | grep \"{tty}.\\\\+Xorg\""))
-                // And check if Xorg is running on that tty
-                {
-                    if xorg_results.trim_end() != "" {
-                        // If it is, manually return "x11", otherwise return tty
-                        return "x11".to_owned();
-                    }
-                }
-            }
-        }
-        display_server
+            .into()
     } else {
         "".to_owned()
     };
     if display_server.is_empty() || display_server == "tty" {
-        // loginctl has not given the expected output.  try something else.
         if let Ok(sestype) = std::env::var("XDG_SESSION_TYPE") {
-            display_server = sestype;
+            if !sestype.is_empty() {
+                return sestype.to_lowercase();
+            }
         }
-    }
-    if display_server == "" {
         display_server = "x11".to_owned();
     }
     display_server.to_lowercase()

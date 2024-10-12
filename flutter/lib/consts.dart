@@ -32,6 +32,7 @@ const String kPeerPlatformWindows = "Windows";
 const String kPeerPlatformLinux = "Linux";
 const String kPeerPlatformMacOS = "Mac OS";
 const String kPeerPlatformAndroid = "Android";
+const String kPeerPlatformWebDesktop = "WebDesktop";
 
 const double kScrollbarThickness = 12.0;
 
@@ -73,6 +74,7 @@ const String kOptionViewStyle = "view_style";
 const String kOptionScrollStyle = "scroll_style";
 const String kOptionImageQuality = "image_quality";
 const String kOptionOpenNewConnInTabs = "enable-open-new-connections-in-tabs";
+const String kOptionTextureRender = "use-texture-render";
 const String kOptionOpenInTabs = "allow-open-in-tabs";
 const String kOptionOpenInWindows = "allow-open-in-windows";
 const String kOptionForceAlwaysRelay = "force-always-relay";
@@ -132,8 +134,28 @@ const String kOptionAllowAlwaysSoftwareRender = "allow-always-software-render";
 const String kOptionEnableCheckUpdate = "enable-check-update";
 const String kOptionAllowLinuxHeadless = "allow-linux-headless";
 const String kOptionAllowRemoveWallpaper = "allow-remove-wallpaper";
+const String kOptionStopService = "stop-service";
+const String kOptionDirectxCapture = "enable-directx-capture";
+const String kOptionAllowRemoteCmModification = "allow-remote-cm-modification";
+const String kOptionEnableTrustedDevices = "enable-trusted-devices";
+
+// buildin opitons
+const String kOptionHideServerSetting = "hide-server-settings";
+const String kOptionHideProxySetting = "hide-proxy-settings";
+const String kOptionHideSecuritySetting = "hide-security-settings";
+const String kOptionHideNetworkSetting = "hide-network-settings";
+const String kOptionRemovePresetPasswordWarning =
+    "remove-preset-password-warning";
+const kHideUsernameOnCard = "hide-username-on-card";
+const String kOptionHideHelpCards = "hide-help-cards";
 
 const String kOptionToggleViewOnly = "view-only";
+
+const String kOptionDisableFloatingWindow = "disable-floating-window";
+
+const String kOptionKeepScreenOn = "keep-screen-on";
+
+const String kOptionShowMobileAction = "showMobileActions";
 
 const String kUrlActionClose = "close";
 
@@ -146,6 +168,8 @@ const int kWindowMainId = 0;
 const String kPointerEventKindTouch = "touch";
 const String kPointerEventKindMouse = "mouse";
 
+const String kKeyFlutterKey = "flutter_key";
+
 const String kKeyShowDisplaysAsIndividualWindows =
     'displays_as_individual_windows';
 const String kKeyUseAllMyDisplaysForTheRemoteSession =
@@ -153,10 +177,13 @@ const String kKeyUseAllMyDisplaysForTheRemoteSession =
 const String kKeyShowMonitorsToolbar = 'show_monitors_toolbar';
 const String kKeyReverseMouseWheel = "reverse_mouse_wheel";
 
+const String kMsgboxTextWaitingForImage = 'Connected, waiting for image...';
+
 // the executable name of the portable version
 const String kEnvPortableExecutable = "RUSTDESK_APPNAME";
 
 const Color kColorWarn = Color.fromARGB(255, 245, 133, 59);
+const Color kColorCanvas = Colors.black;
 
 const int kMobileDefaultDisplayWidth = 720;
 const int kMobileDefaultDisplayHeight = 1280;
@@ -174,7 +201,7 @@ const double kMinFps = 5;
 const double kDefaultFps = 30;
 const double kMaxFps = 120;
 
-const double kMinQuality = 10;
+const double kMinQuality = 5;
 const double kDefaultQuality = 50;
 const double kMaxQuality = 100;
 const double kMaxMoreQuality = 2000;
@@ -215,9 +242,9 @@ const kDefaultScrollDuration = Duration(milliseconds: 50);
 const kDefaultMouseWheelThrottleDuration = Duration(milliseconds: 50);
 const kFullScreenEdgeSize = 0.0;
 const kMaximizeEdgeSize = 0.0;
-// Do not use kWindowEdgeSize directly. Use `windowEdgeSize` in `common.dart` instead.
-final kWindowEdgeSize = isWindows ? 1.0 : 5.0;
-final kWindowBorderWidth = 1.0;
+// Do not use kWindowResizeEdgeSize directly. Use `windowResizeEdgeSize` in `common.dart` instead.
+const kWindowResizeEdgeSize = 5.0;
+const kWindowBorderWidth = 1.0;
 const kDesktopMenuPadding = EdgeInsets.only(left: 12.0, right: 3.0);
 const kFrameBorderRadius = 12.0;
 const kFrameClipRRectBorderRadius = 12.0;
@@ -543,3 +570,5 @@ enum WindowsTarget {
 extension WindowsTargetExt on int {
   WindowsTarget get windowsVersion => getWindowsTarget(this);
 }
+
+const kCheckSoftwareUpdateFinish = 'check_software_update_finish';

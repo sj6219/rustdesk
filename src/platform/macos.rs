@@ -18,13 +18,13 @@ use core_graphics::{
     window::{kCGWindowName, kCGWindowOwnerPID},
 };
 use hbb_common::{
-    allow_err,
     anyhow::anyhow,
     bail, log,
     message_proto::{DisplayInfo, Resolution},
     sysinfo::{Pid, Process, ProcessRefreshKind, System},
 };
 use include_dir::{include_dir, Dir};
+use objc::rc::autoreleasepool;
 use objc::{class, msg_send, sel, sel_impl};
 use scrap::{libc::c_void, quartz::ffi::*};
 use std::path::PathBuf;
@@ -61,6 +61,10 @@ pub fn major_version() -> u32 {
 }
 
 pub fn is_process_trusted(prompt: bool) -> bool {
+    autoreleasepool(|| unsafe_is_process_trusted(prompt))
+}
+
+fn unsafe_is_process_trusted(prompt: bool) -> bool {
     unsafe {
         let value = if prompt { YES } else { NO };
         let value: id = msg_send![class!(NSNumber), numberWithBool: value];
@@ -80,10 +84,14 @@ pub fn is_can_input_monitoring(prompt: bool) -> bool {
     }
 }
 
+pub fn is_can_screen_recording(prompt: bool) -> bool {
+    autoreleasepool(|| unsafe_is_can_screen_recording(prompt))
+}
+
 // macOS >= 10.15
 // https://stackoverflow.com/questions/56597221/detecting-screen-recording-settings-on-macos-catalina/
 // remove just one app from all the permissions: tccutil reset All com.carriez.rustdesk
-pub fn is_can_screen_recording(prompt: bool) -> bool {
+fn unsafe_is_can_screen_recording(prompt: bool) -> bool {
     // we got some report that we show no permission even after set it, so we try to use new api for screen recording check
     // the new api is only available on macOS >= 10.15, but on stackoverflow, some people said it works on >= 10.16 (crash on 10.15),
     // but also some said it has bug on 10.16, so we just use it on 11.0.
@@ -203,15 +211,6 @@ pub fn is_installed_daemon(prompt: bool) -> bool {
                         .args(&["load", "-w", &agent_plist_file])
                         .status()
                         .ok();
-                    std::process::Command::new("sh")
-                        .arg("-c")
-                        .arg(&format!(
-                            "sleep 0.5; open -n /Applications/{}.app",
-                            crate::get_app_name(),
-                        ))
-                        .spawn()
-                        .ok();
-                    quit_gui();
                 }
             }
         }
@@ -268,14 +267,13 @@ pub fn uninstall_service(show_new_window: bool, sync: bool) -> bool {
                         .status()
                         .ok();
                     if show_new_window {
-                        std::process::Command::new("sh")
-                            .arg("-c")
-                            .arg(&format!(
-                                "sleep 0.5; open /Applications/{}.app",
-                                crate::get_app_name(),
-                            ))
+                        std::process::Command::new("open")
+                            .arg("-n")
+                            .arg(&format!("/Applications/{}.app", crate::get_app_name()))
                             .spawn()
                             .ok();
+                        // leave open a little time
+                        std::thread::sleep(std::time::Duration::from_millis(300));
                     }
                     quit_gui();
                 }
@@ -308,6 +306,10 @@ pub fn get_cursor_pos() -> Option<(i32, i32)> {
 }
 
 pub fn get_focused_display(displays: Vec<DisplayInfo>) -> Option<usize> {
+    autoreleasepool(|| unsafe_get_focused_display(displays))
+}
+
+fn unsafe_get_focused_display(displays: Vec<DisplayInfo>) -> Option<usize> {
     unsafe {
         let main_screen: id = msg_send![class!(NSScreen), mainScreen];
         let screen: id = msg_send![main_screen, deviceDescription];
@@ -322,6 +324,10 @@ pub fn get_focused_display(displays: Vec<DisplayInfo>) -> Option<usize> {
 }
 
 pub fn get_cursor() -> ResultType<Option<u64>> {
+    autoreleasepool(|| unsafe_get_cursor())
+}
+
+fn unsafe_get_cursor() -> ResultType<Option<u64>> {
     unsafe {
         let seed = CGSCurrentCursorSeed();
         if seed == LATEST_SEED {
@@ -386,8 +392,12 @@ fn get_cursor_id() -> ResultType<(id, u64)> {
     }
 }
 
-// https://github.com/stweil/OSXvnc/blob/master/OSXvnc-server/mousecursor.c
 pub fn get_cursor_data(hcursor: u64) -> ResultType<CursorData> {
+    autoreleasepool(|| unsafe_get_cursor_data(hcursor))
+}
+
+// https://github.com/stweil/OSXvnc/blob/master/OSXvnc-server/mousecursor.c
+fn unsafe_get_cursor_data(hcursor: u64) -> ResultType<CursorData> {
     unsafe {
         let (c, hcursor2) = get_cursor_id()?;
         if hcursor != hcursor2 {
@@ -504,12 +514,15 @@ pub fn lock_screen() {
 }
 
 pub fn start_os_service() {
-    crate::platform::macos::hide_dock();
     log::info!("Username: {}", crate::username());
     let mut sys = System::new();
     let path =
         std::fs::canonicalize(std::env::current_exe().unwrap_or_default()).unwrap_or_default();
     let mut server = get_server_start_time(&mut sys, &path);
+    if server.is_none() {
+        log::error!("Agent not started yet, please restart --server first to make delegate work",);
+        std::process::exit(-1);
+    }
     let my_start_time = sys
         .process((std::process::id() as usize).into())
         .map(|p| p.start_time())
@@ -521,28 +534,31 @@ pub fn start_os_service() {
         if server.is_none() {
             server = get_server_start_time(&mut sys, &path);
         }
-        if let Some((start_time, pid)) = server {
-            if my_start_time <= start_time {
-                // I tried add delegate (using tao and with its main loop0, but it works in normal mode, but not work as daemon
-                log::info!(
-                    "Agent start later, {my_start_time} vs {start_time}, will restart --service to make delegate work",
+        let Some((start_time, pid)) = server else {
+            log::error!(
+                "Agent not started yet, please restart --server first to make delegate work",
+            );
+            std::process::exit(-1);
+        };
+        if my_start_time <= start_time + 3 {
+            log::error!(
+                    "Agent start later, {my_start_time} vs {start_time}, please start --server first to make delegate work, earlier more 3 seconds",
                 );
-                std::process::exit(0);
-            }
-            // only refresh this pid and check if valid, no need to refresh all processes since refreshing all is expensive, about 10ms on my machine
-            if !sys.refresh_process_specifics(pid, ProcessRefreshKind::new()) {
-                server = None;
-                continue;
-            }
-            if let Some(p) = sys.process(pid.into()) {
-                if let Some(p) = get_server_start_time_of(p, &path) {
-                    server = Some((p, pid));
-                } else {
-                    server = None;
-                }
+            std::process::exit(-1);
+        }
+        // only refresh this pid and check if valid, no need to refresh all processes since refreshing all is expensive, about 10ms on my machine
+        if !sys.refresh_process_specifics(pid, ProcessRefreshKind::new()) {
+            server = None;
+            continue;
+        }
+        if let Some(p) = sys.process(pid.into()) {
+            if let Some(p) = get_server_start_time_of(p, &path) {
+                server = Some((p, pid));
             } else {
                 server = None;
             }
+        } else {
+            server = None;
         }
     });
 
