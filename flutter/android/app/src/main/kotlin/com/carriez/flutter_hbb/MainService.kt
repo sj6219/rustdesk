@@ -313,6 +313,8 @@ class MainService : Service() {
                     stopCapture()
                     FFI.refreshScreen()
                     startCapture()
+                } else {
+                    FFI.refreshScreen()
                 }
             }
 

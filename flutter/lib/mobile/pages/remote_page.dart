@@ -26,6 +26,19 @@ import '../widgets/dialog.dart';
 
 final initText = '1' * 1024;
 
+// Workaround for Android (default input method, Microsoft SwiftKey keyboard) when using physical keyboard.
+// When connecting a physical keyboard, `KeyEvent.physicalKey.usbHidUsage` are wrong is using Microsoft SwiftKey keyboard.
+// https://github.com/flutter/flutter/issues/159384
+// https://github.com/flutter/flutter/issues/159383
+void _disableAndroidSoftKeyboard({bool? isKeyboardVisible}) {
+  if (isAndroid) {
+    if (isKeyboardVisible != true) {
+      // `enable_soft_keyboard` will be set to `true` when clicking the keyboard icon, in `openKeyboard()`.
+      gFFI.invokeMethod("enable_soft_keyboard", false);
+    }
+  }
+}
+
 class RemotePage extends StatefulWidget {
   RemotePage({Key? key, required this.id, this.password, this.isSharedPassword})
       : super(key: key);
@@ -99,6 +112,8 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
       if (gFFI.recordingModel.start) {
         showToast(translate('Automatically record outgoing sessions'));
       }
+      _disableAndroidSoftKeyboard(
+          isKeyboardVisible: keyboardVisibilityController.isVisible);
     });
     WidgetsBinding.instance.addObserver(this);
   }
@@ -134,6 +149,13 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
 
   @override
   void didChangeMetrics() {
+    // If the soft keyboard is visible and the canvas has been changed(panned or scaled)
+    // Don't try reset the view style and focus the cursor.
+    if (gFFI.cursorModel.lastKeyboardIsVisible &&
+        gFFI.canvasModel.isMobileCanvasChanged) {
+      return;
+    }
+
     final newBottom = MediaQueryData.fromView(ui.window).viewInsets.bottom;
     _timerDidChangeMetrics?.cancel();
     _timerDidChangeMetrics = Timer(Duration(milliseconds: 100), () async {
@@ -269,14 +291,10 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     }
   }
 
-  Future<void> handleSoftKeyboardInput(String newValue) async {
+  // handle mobile virtual keyboard
+  void handleSoftKeyboardInput(String newValue) {
     if (isIOS) {
-      // fix: TextFormField onChanged event triggered multiple times when Korean input
-      // https://github.com/rustdesk/rustdesk/pull/9644
-      await Future.delayed(const Duration(milliseconds: 10));
-
-      if (newValue != _textController.text) return;
-      _handleIOSSoftKeyboardInput(_textController.text);
+      _handleIOSSoftKeyboardInput(newValue);
     } else {
       _handleNonIOSSoftKeyboardInput(newValue);
     }
@@ -542,7 +560,9 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
               right: 10,
               child: QualityMonitor(gFFI.qualityMonitorModel),
             ),
-            KeyHelpTools(requestShow: (keyboardIsVisible || _showGestureHelp)),
+            KeyHelpTools(
+                keyboardIsVisible: keyboardIsVisible,
+                showGestureHelp: _showGestureHelp),
             SizedBox(
               width: 0,
               height: 0,
@@ -562,6 +582,14 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                       controller: _textController,
                       // trick way to make backspace work always
                       keyboardType: TextInputType.multiline,
+                      // `onChanged` may be called depending on the input method if this widget is wrapped in
+                      // `Focus(onKeyEvent: ..., child: ...)`
+                      // For `Backspace` button in the soft keyboard:
+                      // en/fr input method:
+                      //      1. The button will not trigger `onKeyEvent` if the text field is not empty.
+                      //      2. The button will trigger `onKeyEvent` if the text field is empty.
+                      // ko/zh/ja input method: the button will trigger `onKeyEvent`
+                      //                     and the event will not popup if `KeyEventResult.handled` is returned.
                       onChanged: handleSoftKeyboardInput,
                     ),
             ),
@@ -771,10 +799,14 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
 }
 
 class KeyHelpTools extends StatefulWidget {
-  /// need to show by external request, etc [keyboardIsVisible] or [changeTouchMode]
-  final bool requestShow;
+  final bool keyboardIsVisible;
+  final bool showGestureHelp;
 
-  KeyHelpTools({required this.requestShow});
+  /// need to show by external request, etc [keyboardIsVisible] or [changeTouchMode]
+  bool get requestShow => keyboardIsVisible || showGestureHelp;
+
+  KeyHelpTools(
+      {required this.keyboardIsVisible, required this.showGestureHelp});
 
   @override
   State<KeyHelpTools> createState() => _KeyHelpToolsState();
@@ -819,7 +851,8 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
       final size = renderObject.size;
       Offset pos = renderObject.localToGlobal(Offset.zero);
       gFFI.cursorModel.keyHelpToolsVisibilityChanged(
-          Rect.fromLTWH(pos.dx, pos.dy, size.width, size.height));
+          Rect.fromLTWH(pos.dx, pos.dy, size.width, size.height),
+          widget.keyboardIsVisible);
     }
   }
 
@@ -831,13 +864,16 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
         inputModel.command;
 
     if (!_pin && !hasModifierOn && !widget.requestShow) {
-      gFFI.cursorModel.keyHelpToolsVisibilityChanged(null);
+      gFFI.cursorModel
+          .keyHelpToolsVisibilityChanged(null, widget.keyboardIsVisible);
       return Offstage();
     }
     final size = MediaQuery.of(context).size;
 
     final pi = gFFI.ffiModel.pi;
     final isMac = pi.platform == kPeerPlatformMacOS;
+    final isWin = pi.platform == kPeerPlatformWindows;
+    final isLinux = pi.platform == kPeerPlatformLinux;
     final modifiers = <Widget>[
       wrap('Ctrl ', () {
         setState(() => inputModel.ctrl = !inputModel.ctrl);
@@ -917,6 +953,28 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
       }),
       wrap('PgDn', () {
         inputModel.inputKey('VK_NEXT');
+      }),
+      // to-do: support PrtScr on Mac
+      if (isWin || isLinux)
+        wrap('PrtScr', () {
+          inputModel.inputKey('VK_SNAPSHOT');
+        }),
+      if (isWin || isLinux)
+        wrap('ScrollLock', () {
+          inputModel.inputKey('VK_SCROLL');
+        }),
+      if (isWin || isLinux)
+        wrap('Pause', () {
+          inputModel.inputKey('VK_PAUSE');
+        }),
+      if (isWin || isLinux)
+        // Maybe it's better to call it "Menu"
+        // https://en.wikipedia.org/wiki/Menu_key
+        wrap('Menu', () {
+          inputModel.inputKey('Apps');
+        }),
+      wrap('Enter', () {
+        inputModel.inputKey('VK_ENTER');
       }),
       SizedBox(width: 9999),
       wrap('', () {
@@ -1225,7 +1283,9 @@ void showOptions(
               toggles +
               [privacyModeWidget]),
     );
-  }, clickMaskDismiss: true, backDismiss: true);
+  }, clickMaskDismiss: true, backDismiss: true).then((value) {
+    _disableAndroidSoftKeyboard();
+  });
 }
 
 TTextMenu? getVirtualDisplayMenu(FFI ffi, String id) {
@@ -1244,7 +1304,9 @@ TTextMenu? getVirtualDisplayMenu(FFI ffi, String id) {
             children: children,
           ),
         );
-      }, clickMaskDismiss: true, backDismiss: true);
+      }, clickMaskDismiss: true, backDismiss: true).then((value) {
+        _disableAndroidSoftKeyboard();
+      });
     },
   );
 }
@@ -1286,7 +1348,9 @@ TTextMenu? getResolutionMenu(FFI ffi, String id) {
             children: children,
           ),
         );
-      }, clickMaskDismiss: true, backDismiss: true);
+      }, clickMaskDismiss: true, backDismiss: true).then((value) {
+        _disableAndroidSoftKeyboard();
+      });
     },
   );
 }
