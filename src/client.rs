@@ -2321,7 +2321,7 @@ pub fn start_video_thread<F, T>(
             if let Ok(data) = video_receiver.recv() {
                 match data {
                     //..w::::::+5.3
-                    MediaData::VideoFrame(_) | MediaData::VideoQueue(_) => {
+                    MediaData::VideoFrame(_) | MediaData::VideoQueue => {
                         let vf = match data {
                             MediaData::VideoFrame(vf) => {
                                 *discard_queue.write().unwrap() = false;
