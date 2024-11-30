@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:auto_size_text_field/auto_size_text_field.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_hbb/common/formatter/id_formatter.dart';
+import 'package:flutter_hbb/common/widgets/connection_page_title.dart';
 import 'package:get/get.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -47,6 +48,9 @@ class _ConnectionPageState extends State<ConnectionPage> {
   bool isPeersLoaded = false;
   StreamSubscription? _uniLinksSubscription;
 
+  // https://github.com/flutter/flutter/issues/157244
+  Iterable<Peer> _autocompleteOpts = [];
+
   _ConnectionPageState() {
     if (!isWeb) _uniLinksSubscription = listenUniLinks();
     _idController.addListener(() {
@@ -70,9 +74,17 @@ class _ConnectionPageState extends State<ConnectionPage> {
     }
     if (isAndroid) {
       if (!bind.isCustomClient()) {
+        platformFFI.registerEventHandler(
+            kCheckSoftwareUpdateFinish, kCheckSoftwareUpdateFinish,
+            (Map<String, dynamic> evt) async {
+          if (evt['url'] is String) {
+            setState(() {
+              _updateUrl = evt['url'];
+            });
+          }
+        });
         Timer(const Duration(seconds: 1), () async {
-          _updateUrl = await bind.mainGetSoftwareUpdateUrl();
-          if (_updateUrl.isNotEmpty) setState(() {});
+          bind.mainGetSoftwareUpdateUrl();
         });
       }
     }
@@ -157,7 +169,7 @@ class _ConnectionPageState extends State<ConnectionPage> {
                   child: Autocomplete<Peer>(
                     optionsBuilder: (TextEditingValue textEditingValue) {
                       if (textEditingValue.text == '') {
-                        return const Iterable<Peer>.empty();
+                        _autocompleteOpts = const Iterable<Peer>.empty();
                       } else if (peers.isEmpty && !isPeersLoaded) {
                         Peer emptyPeer = Peer(
                           id: '',
@@ -173,7 +185,7 @@ class _ConnectionPageState extends State<ConnectionPage> {
                           rdpUsername: '',
                           loginName: '',
                         );
-                        return [emptyPeer];
+                        _autocompleteOpts = [emptyPeer];
                       } else {
                         String textWithoutSpaces =
                             textEditingValue.text.replaceAll(" ", "");
@@ -185,7 +197,7 @@ class _ConnectionPageState extends State<ConnectionPage> {
                         }
                         String textToFind = textEditingValue.text.toLowerCase();
 
-                        return peers
+                        _autocompleteOpts = peers
                             .where((peer) =>
                                 peer.id.toLowerCase().contains(textToFind) ||
                                 peer.username
@@ -197,12 +209,15 @@ class _ConnectionPageState extends State<ConnectionPage> {
                                 peer.alias.toLowerCase().contains(textToFind))
                             .toList();
                       }
+                      return _autocompleteOpts;
                     },
                     fieldViewBuilder: (BuildContext context,
                         TextEditingController fieldTextEditingController,
                         FocusNode fieldFocusNode,
                         VoidCallback onFieldSubmitted) {
                       fieldTextEditingController.text = _idController.text;
+                      Get.put<TextEditingController>(
+                          fieldTextEditingController);
                       fieldFocusNode.addListener(() async {
                         _idEmpty.value =
                             fieldTextEditingController.text.isEmpty;
@@ -263,6 +278,7 @@ class _ConnectionPageState extends State<ConnectionPage> {
                     optionsViewBuilder: (BuildContext context,
                         AutocompleteOnSelected<Peer> onSelected,
                         Iterable<Peer> options) {
+                      options = _autocompleteOpts;
                       double maxHeight = options.length * 50;
                       if (options.length == 1) {
                         maxHeight = 52;
@@ -341,9 +357,15 @@ class _ConnectionPageState extends State<ConnectionPage> {
         ),
       ),
     );
+    final child = Column(children: [
+      if (isWebDesktop)
+        getConnectionPageTitle(context, true)
+            .marginOnly(bottom: 10, top: 15, left: 12),
+      w
+    ]);
     return Align(
         alignment: Alignment.topCenter,
-        child: Container(constraints: kMobilePageConstraints, child: w));
+        child: Container(constraints: kMobilePageConstraints, child: child));
   }
 
   @override
@@ -352,6 +374,13 @@ class _ConnectionPageState extends State<ConnectionPage> {
     _idController.dispose();
     if (Get.isRegistered<IDTextEditingController>()) {
       Get.delete<IDTextEditingController>();
+    }
+    if (Get.isRegistered<TextEditingController>()) {
+      Get.delete<TextEditingController>();
+    }
+    if (!bind.isCustomClient()) {
+      platformFFI.unregisterEventHandler(
+          kCheckSoftwareUpdateFinish, kCheckSoftwareUpdateFinish);
     }
     super.dispose();
   }
