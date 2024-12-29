@@ -216,5 +216,5 @@ sodiumoxide = { git = "https://github.com/sj6219/sodiumoxide", branch = "0.2.7_a
 #rdev = { path = "../rdev" }
 #rdev = { git = "https://github.com/sj6219/rdev", branch = "sigma" }
 
-[patch."https://github.com/open-trade/rust-sciter"]
+[patch."https://github.com/rustdesk-org/rust-sciter"]
 sciter-rs = { git = "https://github.com/sj6219/rust-sciter" , branch = "0.5.57_alpha" }
