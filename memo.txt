@@ -23,7 +23,6 @@ reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\AeDebug" /v Auto /t R
 reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\rustdesk.exe" /v Debugger /t REG_SZ /d "vsjitdebugger.exe" /f
 
 #macos
-FLUTTER_VERSION: "3.27.1"
 flutter pub upgrade && flutter clean && flutter pub cache clean
 
 pushd flutter && flutter pub get && popd
