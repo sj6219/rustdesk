@@ -1,11 +1,15 @@
 use super::*;
-pub use crate::clipboard::{
-    check_clipboard, ClipboardContext, ClipboardSide, CLIPBOARD_INTERVAL as INTERVAL,
-    CLIPBOARD_NAME as NAME,
-};
+#[cfg(not(target_os = "android"))]
+pub use crate::clipboard::{check_clipboard, ClipboardContext, ClipboardSide};
+pub use crate::clipboard::{CLIPBOARD_INTERVAL as INTERVAL, CLIPBOARD_NAME as NAME};
 #[cfg(windows)]
 use crate::ipc::{self, ClipboardFile, ClipboardNonFile, Data};
+#[cfg(not(target_os = "android"))]
 use clipboard_master::{CallbackResult, ClipboardHandler};
+#[cfg(target_os = "android")]
+use hbb_common::config::{keys, option2bool};
+#[cfg(target_os = "android")]
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::{
     io,
     sync::mpsc::{channel, RecvTimeoutError, Sender},
@@ -14,6 +18,10 @@ use std::{
 #[cfg(windows)]
 use tokio::runtime::Runtime;
 
+#[cfg(target_os = "android")]
+static CLIPBOARD_SERVICE_OK: AtomicBool = AtomicBool::new(false);
+
+#[cfg(not(target_os = "android"))]
 struct Handler {
     sp: EmptyExtraFieldService,
     ctx: Option<ClipboardContext>,
@@ -24,12 +32,18 @@ struct Handler {
     rt: Option<Runtime>,
 }
 
+#[cfg(target_os = "android")]
+pub fn is_clipboard_service_ok() -> bool {
+    CLIPBOARD_SERVICE_OK.load(Ordering::SeqCst)
+}
+
 pub fn new() -> GenericService {
-    let svc = EmptyExtraFieldService::new(NAME.to_owned(), true);
+    let svc = EmptyExtraFieldService::new(NAME.to_owned(), false);
     GenericService::run(&svc.clone(), run);
     svc.sp
 }
 
+#[cfg(not(target_os = "android"))]
 fn run(sp: EmptyExtraFieldService) -> ResultType<()> {
     let (tx_cb_result, rx_cb_result) = channel();
     let handler = Handler {
@@ -73,9 +87,9 @@ fn run(sp: EmptyExtraFieldService) -> ResultType<()> {
     Ok(())
 }
 
+#[cfg(not(target_os = "android"))]
 impl ClipboardHandler for Handler {
     fn on_clipboard_change(&mut self) -> CallbackResult {
-        self.sp.snapshot(|_sps| Ok(())).ok();
         if self.sp.ok() {
             if let Some(msg) = self.get_clipboard_msg() {
                 self.sp.send(msg);
@@ -92,6 +106,7 @@ impl ClipboardHandler for Handler {
     }
 }
 
+#[cfg(not(target_os = "android"))]
 impl Handler {
     fn get_clipboard_msg(&mut self) -> Option<Message> {
         #[cfg(target_os = "windows")]
@@ -117,6 +132,7 @@ impl Handler {
                                     format: ClipboardFormat::from_i32(c.format)
                                         .unwrap_or(ClipboardFormat::Text)
                                         .into(),
+                                    special_name: c.special_name,
                                     ..Default::default()
                                 })
                                 .collect(),
@@ -133,7 +149,7 @@ impl Handler {
 
     // Read clipboard data from cm using ipc.
     //
-    // We cannot use `#[tokio::main(flavor = "current_thread")]` here, 
+    // We cannot use `#[tokio::main(flavor = "current_thread")]` here,
     // because the auto-managed tokio runtime (async context) will be dropped after the call.
     // The next call will create a new runtime, which will cause the previous stream to be unusable.
     // So we need to manage the tokio runtime manually.
@@ -172,7 +188,13 @@ impl Handler {
                             bail!("{}", err);
                         } else {
                             if contents.iter().any(|c| c.next_raw) {
-                                match rt.block_on(timeout(1000, stream.next_raw())) {
+                                // Wrap the future with a `Timeout` in an async block to avoid panic.
+                                // We cannot use `rt.block_on(timeout(1000, stream.next_raw()))` here, because it causes panic:
+                                // thread '<unnamed>' panicked at D:\Projects\rust\rustdesk\libs\hbb_common\src\lib.rs:98:5:
+                                // there is no reactor running, must be called from the context of a Tokio 1.x runtime
+                                // note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+                                match rt.block_on(async { timeout(1000, stream.next_raw()).await })
+                                {
                                     Ok(Ok(mut data)) => {
                                         for c in &mut contents {
                                             if c.next_raw {
@@ -208,4 +230,17 @@ impl Handler {
         // unreachable!
         bail!("failed to get clipboard data from cm");
     }
+}
+
+#[cfg(target_os = "android")]
+fn run(sp: EmptyExtraFieldService) -> ResultType<()> {
+    CLIPBOARD_SERVICE_OK.store(sp.ok(), Ordering::SeqCst);
+    while sp.ok() {
+        if let Some(msg) = crate::clipboard::get_clipboards_msg(false) {
+            sp.send(msg);
+        }
+        std::thread::sleep(Duration::from_millis(INTERVAL));
+    }
+    CLIPBOARD_SERVICE_OK.store(false, Ordering::SeqCst);
+    Ok(())
 }
