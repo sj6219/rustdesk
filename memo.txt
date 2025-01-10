@@ -23,7 +23,7 @@ reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\AeDebug" /v Auto /t R
 reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\rustdesk.exe" /v Debugger /t REG_SZ /d "vsjitdebugger.exe" /f
 
 #macos
-flutter pub upgrade && flutter clean && flutter pub cache clean
+pushd flutter && flutter pub upgrade && flutter clean && flutter pub cache clean && popd
 
 pushd flutter && flutter pub get && popd
 ~/.cargo/bin/flutter_rust_bridge_codegen --rust-input ./src/flutter_ffi.rs --dart-output ./flutter/lib/generated_bridge.dart --c-output ./flutter/macos/Runner/bridge_generated.h
